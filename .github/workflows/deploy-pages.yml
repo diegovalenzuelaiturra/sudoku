@@ -1,0 +1,59 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; never cancel one midway, so a run cannot leave the
+# published site half-replaced.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/configure-pages@v6
+
+      # The site is a single self-contained file. Publish only that, so tests,
+      # workflows and package metadata are not served alongside it.
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
