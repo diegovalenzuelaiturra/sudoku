@@ -2,7 +2,7 @@
 <html lang="es-CL">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sudoku 数独</title>
 <style>
   :root{
@@ -67,6 +67,10 @@
   .status .chip{color:var(--indigo);font-weight:600;letter-spacing:.08em;text-transform:uppercase}
   .status .spacer{flex:1}
   .status .warn b{color:var(--vermilion)}
+  .visually-hidden{
+    position:absolute;width:1px;height:1px;margin:-1px;padding:0;
+    overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;
+  }
 
   /* ---------- layout ---------- */
   main{display:grid;grid-template-columns:minmax(0,1fr) 232px;gap:30px;align-items:start}
@@ -248,7 +252,7 @@
     <span class="chip" id="diffLabel">Normal</span>
     <span class="warn">Errores <b id="mistakes">0</b></span>
     <span>Pistas <b id="hints">0</b></span>
-    <span class="frychip" title="Papas fritas de la sesión">🍟 <b id="fries">0</b></span>
+    <span class="frychip" id="frychip">🍟 <b id="fries">0</b> <span class="visually-hidden">papas fritas de la sesión</span></span>
     <span class="spacer"></span>
     <span id="remaining"><b>81</b> por llenar</span>
   </div>
@@ -280,24 +284,24 @@
 </div>
 
 <div class="overlay" id="startOverlay">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="startTitle">
     <div class="seal" aria-hidden="true">数</div>
-    <h2>SUDOKU</h2>
+    <h2 id="startTitle">SUDOKU</h2>
     <p class="lede">Llena la cuadrícula: cada fila, columna y cuadrante con los números del 1 al 9, sin repetir.</p>
     <div class="diffs">
-      <button class="diff" data-d="easy">Piola <span>40 números</span></button>
-      <button class="diff" data-d="medium">Normal <span>34 números</span></button>
-      <button class="diff" data-d="hard">Peludo <span>28 números</span></button>
-      <button class="diff" data-d="expert">Brígido <span>24 números</span></button>
+      <button class="diff" data-d="easy"></button>
+      <button class="diff" data-d="medium"></button>
+      <button class="diff" data-d="hard"></button>
+      <button class="diff" data-d="expert"></button>
     </div>
     <button class="quiet" id="cancelNew" hidden>Seguir jugando</button>
   </div>
 </div>
 
 <div class="overlay" id="winOverlay">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="winTitle">
     <div class="seal" aria-hidden="true">解</div>
-    <h2>¡SECA!</h2>
+    <h2 id="winTitle">¡SECA!</h2>
     <p class="lede" id="winLede">Una cuadrícula limpia.</p>
     <div class="stats">
       <div class="stat"><b id="wTime">0:00</b><i>Tiempo</i></div>
@@ -366,28 +370,40 @@ function countSolutions(grid,limit){
   return count;
 }
 
-function makePuzzle(clues){
+/* Digging is greedy, so a single pass can stall above the target at low clue counts.
+   Retry with a fresh grid (bailing as soon as we land on it) and keep the sparsest. */
+function makePuzzle(clues,tries=4){
+  let best=null;
+  for(let t=0;t<tries;t++){
+    const r=dig(clues);
+    if(!best||r.clues<best.clues)best=r;
+    if(best.clues<=clues)break;
+  }
+  return best;
+}
+
+function dig(clues){
   const solution=generateFull();
   const g=solution.slice();
   let filled=81;
-  for(const i of shuffle([...Array(81).keys()])){
-    if(filled<=clues)break;
-    if(g[i]===0)continue;
-    const j=80-i,a=g[i],b=g[j];
-    if(i===j){
-      g[i]=0;
-      if(countSolutions(g,2)!==1)g[i]=a;else filled--;
-    }else if(g[j]!==0){
-      g[i]=0;g[j]=0;
-      if(countSolutions(g,2)!==1){g[i]=a;g[j]=b}else filled-=2;
-    }
+  function tryRemove(cells){
+    const saved=cells.map(i=>g[i]);
+    for(const i of cells)g[i]=0;
+    if(countSolutions(g,2)!==1){cells.forEach((i,k)=>{g[i]=saved[k]});return false}
+    filled-=cells.length;return true;
   }
+  /* pass 1: 180-degree-symmetric pairs, walking one index per pair (0..40) so a
+     rejected pair is never re-tested from its partner index */
+  for(const i of shuffle([...Array(41).keys()])){
+    if(filled<=clues)break;
+    if(i===80-i)tryRemove([i]);
+    else if(filled-2>=clues)tryRemove([i,80-i]);
+  }
+  /* pass 2: single cells, to land exactly on the advertised clue count */
   if(filled>clues){
     for(const i of shuffle([...Array(81).keys()])){
       if(filled<=clues)break;
-      if(g[i]===0)continue;
-      const a=g[i];g[i]=0;
-      if(countSolutions(g,2)!==1)g[i]=a;else filled--;
+      if(g[i]!==0)tryRemove([i]);
     }
   }
   return{puzzle:g,solution,clues:filled};
@@ -399,9 +415,11 @@ const DIFF={easy:{clues:40,label:'Piola',fries:5},medium:{clues:34,label:'Normal
 const $=id=>document.getElementById(id);
 const boardEl=$('board'),padEl=$('pad');
 
-let solution=[],fixed=[],values=[],notes=Array.from({length:81},()=>new Set()),sel=-1;
+let solution=new Array(81).fill(0),fixed=new Array(81).fill(false),values=new Array(81).fill(0);
+let notes=Array.from({length:81},()=>new Set()),sel=-1;
 let notesMode=false,mistakes=0,hints=0,seconds=0,tick=null,paused=false,solved=false,playing=false;
-let undoStack=[],diffKey='medium',friesTotal=0;
+let undoStack=[],diffKey='medium',friesTotal=0,winTimers=[],pausedByDialog=false;
+const reduceMotion=matchMedia('(prefers-reduced-motion:reduce)');
 
 /* ---- build DOM once ---- */
 const cells=[];
@@ -412,7 +430,7 @@ for(let i=0;i<81;i++){
   const n=document.createElement('div');n.className='notes';
   for(let d=1;d<=9;d++)n.appendChild(document.createElement('span'));
   b.append(v,n);
-  b.addEventListener('click',()=>{sel=i;render()});
+  b.addEventListener('click',()=>{if(!playing||paused)return;sel=i;render()});
   boardEl.appendChild(b);cells.push(b);
 }
 const keys=[];
@@ -424,9 +442,10 @@ for(let d=1;d<=9;d++){
 }
 
 /* ---- helpers ---- */
-const fmt=s=>`${(s/60)|0}:${String(s%60).padStart(2,'0')}`;
+const pad2=n=>String(n).padStart(2,'0');
+const fmt=s=>s<3600?`${(s/60)|0}:${pad2(s%60)}`:`${(s/3600)|0}:${pad2(((s/60)|0)%60)}:${pad2(s%60)}`;
 function snapshot(){
-  undoStack.push({values:values.slice(),notes:notes.map(s=>[...s])});
+  undoStack.push({values:values.slice(),fixed:fixed.slice(),notes:notes.map(s=>[...s]),mistakes,hints});
   if(undoStack.length>300)undoStack.shift();
 }
 function peers(i){
@@ -436,6 +455,21 @@ function peers(i){
     if(((k/9)|0)===r||k%9===c||boxOf(k)===b)out.add(k);
   }
   return out;
+}
+/* peer sets are fixed board geometry: build them once instead of on every render */
+const PEERS=Array.from({length:81},(_,i)=>peers(i));
+
+/* ---- overlays ---- */
+const appEl=document.querySelector('.app');
+function showOverlay(el){
+  el.classList.add('show');
+  appEl.inert=true;
+  const first=el.querySelector('button:not([hidden])');
+  if(first)first.focus();
+}
+function hideOverlay(el){
+  el.classList.remove('show');
+  if(!$('startOverlay').classList.contains('show')&&!$('winOverlay').classList.contains('show'))appEl.inert=false;
 }
 
 /* ---- timer ---- */
@@ -456,23 +490,22 @@ function setPaused(p){
 /* ---- game flow ---- */
 function newGame(key){
   diffKey=key;
+  winTimers.forEach(clearTimeout);winTimers=[];
+  document.querySelectorAll('.fry').forEach(f=>f.remove());
   const{puzzle,solution:sol}=makePuzzle(DIFF[key].clues);
   solution=sol;
   values=puzzle.slice();
   fixed=puzzle.map(v=>v!==0);
   notes=Array.from({length:81},()=>new Set());
-  undoStack=[];mistakes=0;hints=0;seconds=0;solved=false;paused=false;playing=true;notesMode=false;
+  undoStack=[];mistakes=0;hints=0;seconds=0;solved=false;playing=true;notesMode=false;pausedByDialog=false;
   sel=values.indexOf(0);
   $('notesBtn').setAttribute('aria-pressed','false');
   $('diffLabel').textContent=DIFF[key].label;
   $('time').textContent='0:00';
-  $('pauseBtn').textContent='❚❚';
-  $('veil').classList.remove('show');
-  boardEl.classList.remove('veiled');
   $('stamp').classList.remove('show');
-  $('startOverlay').classList.remove('show');
-  $('winOverlay').classList.remove('show');
-  startTimer();
+  hideOverlay($('startOverlay'));
+  hideOverlay($('winOverlay'));
+  setPaused(false); /* resets veil, pause glyph + aria-label, and restarts the timer */
   render();
 }
 
@@ -502,32 +535,35 @@ function win(){
   $('stamp').classList.add('show');
   const flawless=mistakes===0&&hints===0;
   const earned=DIFF[diffKey].fries*(flawless?2:1);
+  const finalTime=seconds,finalMist=mistakes,finalHints=hints;
   friesTotal+=earned;
-  setTimeout(()=>fryRain(Math.min(earned,30)),450);
-  setTimeout(()=>{
+  /* reduced motion: no fry rain, and don't make the player wait out the animation */
+  const slow=reduceMotion.matches?0:1;
+  if(!reduceMotion.matches)winTimers.push(setTimeout(()=>fryRain(Math.min(earned,30)),450));
+  winTimers.push(setTimeout(()=>{
     $('fries').textContent=friesTotal;
-    const chip=document.querySelector('.frychip');
+    const chip=$('frychip');
     chip.classList.remove('pop');void chip.offsetWidth;chip.classList.add('pop');
-  },950);
-  setTimeout(()=>{
-    $('wTime').textContent=fmt(seconds);
-    $('wMist').textContent=mistakes;
-    $('wHint').textContent=hints;
+  },950*slow));
+  winTimers.push(setTimeout(()=>{
+    $('wTime').textContent=fmt(finalTime);
+    $('wMist').textContent=finalMist;
+    $('wHint').textContent=finalHints;
     $('winLede').textContent=
       flawless?'La más seca: cero errores, cero pistas.':
-      mistakes===0?'Sin errores. Filete.':'Costó, pero salió igual.';
+      finalMist===0?'Sin errores. Filete.':'Costó, pero salió igual.';
     $('fryBanner').innerHTML=`🍟 Te ganaste +${earned} papas fritas${flawless?' — bono impecable ×2':''}`
       +`<small>llevas ${friesTotal} en esta sesión</small>`;
-    $('winOverlay').classList.add('show');
-  },1900);
+    showOverlay($('winOverlay'));
+  },1900*slow));
 }
 
 /* ---- actions ---- */
 function inputDigit(d){
   if(!playing||paused||sel<0||fixed[sel])return;
+  if(notesMode&&values[sel]!==0)return; /* checked before snapshot(): a no-op must not evict undo history */
   snapshot();
   if(notesMode){
-    if(values[sel]!==0){undoStack.pop();return}
     notes[sel].has(d)?notes[sel].delete(d):notes[sel].add(d);
   }else{
     if(values[sel]===d){values[sel]=0}
@@ -535,7 +571,7 @@ function inputDigit(d){
       values[sel]=d;
       notes[sel].clear();
       if(d===solution[sel]){
-        for(const p of peers(sel))notes[p].delete(d);
+        for(const p of PEERS[sel])notes[p].delete(d);
       }else mistakes++;
     }
   }
@@ -553,7 +589,9 @@ function undo(){
   if(!playing||paused||undoStack.length===0)return;
   const s=undoStack.pop();
   values=s.values;
+  fixed=s.fixed;
   notes=s.notes.map(a=>new Set(a));
+  mistakes=s.mistakes;hints=s.hints;
   render();
 }
 function hint(){
@@ -569,7 +607,7 @@ function hint(){
   values[i]=solution[i];
   fixed[i]=true;
   notes[i].clear();
-  for(const p of peers(i))notes[p].delete(solution[i]);
+  for(const p of PEERS[i])notes[p].delete(solution[i]);
   hints++;sel=i;
   render();
   if(values.every((v,k)=>v===solution[k]))win();
@@ -578,13 +616,14 @@ function hint(){
 /* ---- render ---- */
 function render(){
   const selVal=sel>=0?values[sel]:0;
-  const pr=sel>=0?peers(sel):null;
+  const pr=sel>=0?PEERS[sel]:null;
   let left=0;
   const counts=new Array(10).fill(0);
   for(let i=0;i<81;i++){
     const v=values[i];
-    if(v)counts[v]++;
-    if(v!==solution[i])left++;
+    /* count only correct placements, so wrong entries never retire a digit key */
+    if(v&&v===solution[i])counts[v]++;
+    if(!v||v!==solution[i])left++;
     const el=cells[i];
     el.firstChild.textContent=v||'';
     const ns=el.lastChild.children;
@@ -611,6 +650,7 @@ function render(){
 $('pauseBtn').addEventListener('click',()=>setPaused(!paused));
 $('resumeBtn').addEventListener('click',()=>setPaused(false));
 $('notesBtn').addEventListener('click',e=>{
+  if(!playing||paused)return;
   notesMode=!notesMode;
   e.currentTarget.setAttribute('aria-pressed',String(notesMode));
 });
@@ -619,30 +659,50 @@ $('undoBtn').addEventListener('click',undo);
 $('hintBtn').addEventListener('click',hint);
 $('newBtn').addEventListener('click',()=>{
   $('cancelNew').hidden=!playing;
-  if(playing&&!paused)setPaused(true);
-  $('startOverlay').classList.add('show');
+  pausedByDialog=playing&&!paused;
+  if(pausedByDialog)setPaused(true);
+  showOverlay($('startOverlay'));
 });
 $('cancelNew').addEventListener('click',()=>{
-  $('startOverlay').classList.remove('show');
-  setPaused(false);
+  hideOverlay($('startOverlay'));
+  if(pausedByDialog)setPaused(false); /* only resume if this dialog is what paused it */
+  pausedByDialog=false;
 });
 $('againBtn').addEventListener('click',()=>{
-  $('winOverlay').classList.remove('show');
+  hideOverlay($('winOverlay'));
   $('cancelNew').hidden=true;
-  $('startOverlay').classList.add('show');
+  showOverlay($('startOverlay'));
 });
-document.querySelectorAll('.diff').forEach(b=>b.addEventListener('click',()=>newGame(b.dataset.d)));
+/* difficulty labels come from DIFF so the copy can't drift from the generated clue count */
+let genDoneAt=0;
+document.querySelectorAll('.diff').forEach(b=>{
+  const d=DIFF[b.dataset.d];
+  b.innerHTML=`${d.label} <span>${d.clues} números</span>`;
+  b.addEventListener('click',e=>{
+    /* generation blocks the main thread; drop clicks the user made during the freeze */
+    if(e.timeStamp<genDoneAt)return;
+    newGame(b.dataset.d);
+    genDoneAt=performance.now();
+  });
+});
 
 document.addEventListener('keydown',e=>{
   if(!e.key)return;
-  if($('startOverlay').classList.contains('show')||$('winOverlay').classList.contains('show'))return;
-  if(e.key>='1'&&e.key<='9'){inputDigit(+e.key);return}
   const k=e.key.toLowerCase();
+  if($('startOverlay').classList.contains('show')){
+    if(k==='escape'&&!$('cancelNew').hidden)$('cancelNew').click();
+    return;
+  }
+  if($('winOverlay').classList.contains('show'))return;
+  /* let browser shortcuts through: only Ctrl/Cmd+Z is ours */
+  if((e.ctrlKey||e.metaKey||e.altKey)&&k!=='z')return;
+  if(k==='p'){setPaused(!paused);return}
+  if(!playing||paused)return;
+  if(e.key>='1'&&e.key<='9'){inputDigit(+e.key);return}
   if(k==='backspace'||k==='delete'||e.key==='0'){e.preventDefault();erase()}
   else if(k==='n')$('notesBtn').click();
   else if(k==='h')hint();
-  else if(k==='p')setPaused(!paused);
-  else if(k==='z'||(k==='z'&&(e.metaKey||e.ctrlKey)))undo();
+  else if(k==='z')undo();
   else if(k.startsWith('arrow')){
     e.preventDefault();
     if(sel<0){sel=0;render();return}
@@ -659,7 +719,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)setPaused(t
 /* ---- boot ---- */
 render();
 $('cancelNew').hidden=true;
-$('startOverlay').classList.add('show');
+showOverlay($('startOverlay'));
 </script>
 </body>
 </html>
