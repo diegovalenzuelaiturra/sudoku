@@ -22,6 +22,8 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
+    # A hung job otherwise runs to GitHub's 360-minute default.
+    timeout-minutes: 10
     steps:
       # Actions are pinned to full commit SHAs. A tag like v7 is mutable, so
       # pinning by tag would let a moved tag swap the action out from under us.
@@ -42,6 +44,8 @@ jobs:
     name: Deploy
     needs: verify
     runs-on: ubuntu-latest
+    # A hung job otherwise runs to GitHub's 360-minute default.
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
