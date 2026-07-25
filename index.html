@@ -399,7 +399,7 @@ const DIFF={easy:{clues:40,label:'Piola',fries:5},medium:{clues:34,label:'Normal
 const $=id=>document.getElementById(id);
 const boardEl=$('board'),padEl=$('pad');
 
-let solution=[],fixed=[],values=[],notes=[],sel=-1;
+let solution=[],fixed=[],values=[],notes=Array.from({length:81},()=>new Set()),sel=-1;
 let notesMode=false,mistakes=0,hints=0,seconds=0,tick=null,paused=false,solved=false,playing=false;
 let undoStack=[],diffKey='medium',friesTotal=0;
 
