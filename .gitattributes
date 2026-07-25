@@ -1,0 +1,10 @@
+# Every tracked file in this repository is text, and all of it is LF today.
+# Normalise line endings to LF both in the repository and in the working tree,
+# so a clone or a commit made on Windows cannot introduce CRLF. That matters
+# most for index.html, which GitHub Pages publishes byte for byte.
+* text=auto eol=lf
+
+# index.html is the entire application - markup, styles and logic in one file -
+# so every diff lands deep inside it with no filename for context. Git's
+# built-in html driver names the enclosing tag in the hunk header instead.
+*.html diff=html
