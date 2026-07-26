@@ -227,11 +227,13 @@
   .modal .stat i{font-style:normal;font-size:10.5px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
   .modal .quiet{margin-top:12px;background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;text-decoration:underline}
 
-  /* ---------- fries ---------- */
-  .frychip b{display:inline-block}
-  .frychip.pop b{animation:frypop .45s ease}
+  /* ---------- prizes ---------- */
+  /* Named for the mechanic rather than the glyph: papas fritas and chocolates
+     share the chip, the pop and the rain, and differ only in what they emit. */
+  .prize b{display:inline-block}
+  .prize.pop b{animation:frypop .45s ease}
   @keyframes frypop{0%{transform:scale(1)}40%{transform:scale(1.7)}100%{transform:scale(1)}}
-  .fry{
+  .drop{
     position:absolute;top:-44px;z-index:5;pointer-events:none;line-height:1;
     animation:fryfall var(--dur) linear var(--delay) forwards;opacity:0;
   }
@@ -297,7 +299,8 @@
     <span class="chip" id="diffLabel">Normal</span>
     <span class="warn">Errores <b id="mistakes">0</b></span>
     <span>Pistas <b id="hints">0</b></span>
-    <span class="frychip" id="frychip">🍟 <b id="fries">0</b> <span class="visually-hidden">papas fritas de la sesión</span></span>
+    <span class="prize" id="frychip">🍟 <b id="fries">0</b> <span class="visually-hidden">papas fritas ganadas</span></span>
+    <span class="prize" id="chocochip">🍫 <b id="chocos">0</b> <span class="visually-hidden">chocolates ganados</span></span>
     <span class="spacer"></span>
     <span id="remaining"><b>81</b> por llenar</span>
     <span id="srStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></span>
@@ -462,17 +465,24 @@ function dig(clues){
 /* =============== END LOGIC =============== */
 
 /* ================== UI =================== */
-const DIFF={easy:{clues:40,label:'Piola',fries:5},medium:{clues:34,label:'Normal',fries:10},hard:{clues:28,label:'Peludo',fries:15},expert:{clues:24,label:'Brígido',fries:25}};
+/* Two prizes, two rules. Papas fritas are paid for every win, doubled by the
+   flawless bonus. Chocolates are paid only for a flawless win, so they are the
+   scarce one and the count says something the fries total cannot. */
+const DIFF={easy:{clues:40,label:'Piola',fries:5,choco:1},medium:{clues:34,label:'Normal',fries:10,choco:2},hard:{clues:28,label:'Peludo',fries:15,choco:3},expert:{clues:24,label:'Brígido',fries:25,choco:5}};
 const $=id=>document.getElementById(id);
 const boardEl=$('board'),padEl=$('pad');
 
 let solution=new Array(81).fill(0),fixed=new Array(81).fill(false),values=new Array(81).fill(0),puzzle=new Array(81).fill(0);
 let notes=Array.from({length:81},()=>new Set()),sel=-1;
 let notesMode=false,mistakes=0,hints=0,seconds=0,tick=null,paused=false,solved=false,playing=false;
-let undoStack=[],diffKey='medium',friesTotal=0,winTimers=[],pausedByDialog=false;
+let undoStack=[],diffKey='medium',friesTotal=0,chocoTotal=0,winTimers=[],pausedByDialog=false;
 const reduceMotion=matchMedia('(prefers-reduced-motion:reduce)');
 /* persistence: bump SAVE_VERSION and loadGame()'s shape checks together if this payload shape ever changes */
 const SAVE_KEY='sudoku:save',SAVE_VERSION=1;
+/* The prize totals live in their own key, deliberately not in the game save:
+   winning is what pays them and winning is also what deletes the save, so a
+   total kept in there was lost on the next reload. */
+const WALLET_KEY='sudoku:wallet',WALLET_VERSION=1;
 
 /* ---- build DOM once ---- */
 const cells=[];
@@ -579,7 +589,7 @@ function setPaused(p){
 function newGame(key){
   diffKey=key;
   winTimers.forEach(clearTimeout);winTimers=[];
-  document.querySelectorAll('.fry').forEach(f=>f.remove());
+  document.querySelectorAll('.drop').forEach(f=>f.remove());
   const{puzzle:generated,solution:sol}=makePuzzle(DIFF[key].clues);
   puzzle=generated;
   solution=sol;
@@ -629,7 +639,6 @@ function saveGame(){
       hints,
       seconds,
       diffKey,
-      friesTotal,
       solved,
     }));
   }catch(e){/* Safari private mode throws on setItem, quota can be exceeded, etc: losing the autosave is fine, losing the game isn't */}
@@ -648,6 +657,52 @@ function saveSelectionSoon(){
 }
 function clearSavedGame(){
   try{localStorage.removeItem(SAVE_KEY)}catch(e){}
+}
+/* ---- prizes ----
+   The totals live in a key of their own rather than in the game save. That
+   save used to carry friesTotal, but win() is both what pays a prize and what
+   calls clearSavedGame(), so the total survived only as long as the tab did:
+   reloading after a win put it back to zero.
+
+   Dropping the field needs no SAVE_VERSION bump. loadGame() checks the grids,
+   the notes array and diffKey, never friesTotal, and reads every scalar
+   through Number(x)||0, so a save written before this change still restores.
+   Bumping would have been the expensive choice: an unrecognised version is
+   rejected outright, which would have thrown away every game in progress. */
+function saveWallet(){
+  try{localStorage.setItem(WALLET_KEY,JSON.stringify({v:WALLET_VERSION,fries:friesTotal,choco:chocoTotal}))}catch(e){/* as with the autosave: a wallet that cannot be written is not worth failing a win over */}
+}
+function paintWallet(){
+  $('fries').textContent=friesTotal;
+  $('chocos').textContent=chocoTotal;
+}
+/* Restarts the pop even if the chip is already mid-animation: removing the
+   class is not enough on its own, the reflow between is what replays it. */
+function popChip(id){
+  const chip=$(id);
+  chip.classList.remove('pop');void chip.offsetWidth;chip.classList.add('pop');
+}
+/* Reads the wallet at boot. Anything unreadable, corrupt or from a version
+   this build does not know leaves both totals at zero rather than guessing. */
+function loadWallet(){
+  let raw=null;
+  try{raw=localStorage.getItem(WALLET_KEY)}catch(e){return}
+  if(raw!==null){
+    let w;
+    try{w=JSON.parse(raw)}catch(e){return}
+    if(!w||typeof w!=='object'||w.v!==WALLET_VERSION)return;
+    friesTotal=Number(w.fries)||0;
+    chocoTotal=Number(w.choco)||0;
+    return;
+  }
+  /* No wallet yet: either a new player, or one whose papas are still sitting
+     in a game save from before this key existed. Carry those across, then
+     write the key so this branch is taken once. */
+  try{
+    const s=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');
+    friesTotal=Number(s&&s.friesTotal)||0;
+  }catch(e){}
+  saveWallet();
 }
 /* Restores a saved game on boot. Returns false, leaving every global
    untouched, for: nothing saved, corrupt JSON, a getItem/localStorage
@@ -679,13 +734,11 @@ function loadGame(){
   hints=Number(s.hints)||0;
   seconds=Number(s.seconds)||0;
   diffKey=s.diffKey;
-  friesTotal=Number(s.friesTotal)||0;
   solved=false;playing=true;notesMode=false;pausedByDialog=false;undoStack=[];
   winTimers.forEach(clearTimeout);winTimers=[];
   $('notesBtn').setAttribute('aria-pressed','false');
   $('diffLabel').textContent=DIFF[diffKey].label;
   $('time').textContent=fmt(seconds);
-  $('fries').textContent=friesTotal;
   $('stamp').classList.remove('show');
   /* seed the announcement tracker with the restored counters, so resuming a
      game with mistakes on the board does not announce them as fresh ones */
@@ -695,12 +748,14 @@ function loadGame(){
   return true;
 }
 
-function fryRain(n){
+/* Falls whatever glyph it is handed: the animation is the prize mechanic, and
+   papas and chocolates differ only in what rains and how much of it. */
+function rain(n,glyph){
   const wrap=document.querySelector('.board-wrap');
   const w=wrap.clientWidth,h=wrap.clientHeight;
   for(let k=0;k<n;k++){
     const f=document.createElement('span');
-    f.className='fry';f.textContent='🍟';
+    f.className='drop';f.textContent=glyph;
     const dur=1.1+Math.random()*1.2,delay=Math.random()*.9;
     f.style.left=(Math.random()*(w-34))+'px';
     f.style.fontSize=(20+Math.random()*15)+'px';
@@ -720,20 +775,35 @@ function win(){
   clearInterval(tick);
   sel=-1;render();
   $('stamp').classList.add('show');
-  /* assertive: the win is the one event worth interrupting for, and the modal
-     it belongs to only appears after ~2s of animation */
-  $('srAlert').textContent=`Ganaste. ${fmt(seconds)}, ${mistakes===1?'1 error':mistakes+' errores'}, ${hints===1?'1 pista':hints+' pistas'}.`;
   const flawless=mistakes===0&&hints===0;
   const earned=DIFF[diffKey].fries*(flawless?2:1);
+  const chocoEarned=flawless?DIFF[diffKey].choco:0;
+  const chocoWord=n=>n===1?'1 chocolate':n+' chocolates';
+  /* assertive: the win is the one event worth interrupting for, and the modal
+     it belongs to only appears after ~2s of animation. The prize goes in here
+     too: showOverlay() focuses the dialog's button, not the banner, so this is
+     the only announcement that reliably carries it. */
+  $('srAlert').textContent=`Ganaste. ${fmt(seconds)}, ${mistakes===1?'1 error':mistakes+' errores'}, ${hints===1?'1 pista':hints+' pistas'}.`
+    +` Te llevas ${earned} papas fritas${chocoEarned?` y ${chocoWord(chocoEarned)}`:''}.`;
   const finalTime=seconds,finalMist=mistakes,finalHints=hints;
   friesTotal+=earned;
-  /* reduced motion: no fry rain, and don't make the player wait out the animation */
+  chocoTotal+=chocoEarned;
+  /* Banked now, not on the timers below: those are decoration, and a player
+     who closes the tab during the animation has still won the prize. */
+  saveWallet();
+  /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow=reduceMotion.matches?0:1;
-  if(!reduceMotion.matches)winTimers.push(setTimeout(()=>fryRain(Math.min(earned,30)),450));
+  if(!reduceMotion.matches){
+    winTimers.push(setTimeout(()=>rain(Math.min(earned,30),'🍟'),450));
+    /* staggered: the chocolates are meant to read as a second, rarer shower
+       rather than get lost among the papas. No cap, unlike the papas above:
+       the most the table pays is five. */
+    if(chocoEarned)winTimers.push(setTimeout(()=>rain(chocoEarned,'🍫'),700));
+  }
   winTimers.push(setTimeout(()=>{
-    $('fries').textContent=friesTotal;
-    const chip=$('frychip');
-    chip.classList.remove('pop');void chip.offsetWidth;chip.classList.add('pop');
+    paintWallet();
+    popChip('frychip');
+    if(chocoEarned)popChip('chocochip');
   },950*slow));
   winTimers.push(setTimeout(()=>{
     $('wTime').textContent=fmt(finalTime);
@@ -742,8 +812,13 @@ function win(){
     $('winLede').textContent=
       flawless?'La más seca: cero errores, cero pistas.':
       finalMist===0?'Sin errores. Filete.':'Costó, pero salió igual.';
+    /* innerHTML, and every hole in it is a number: earned and chocoEarned come
+       from the DIFF table, and the running totals pass through Number() in
+       loadWallet() before they ever reach here. Nothing player-authored is
+       interpolated, so there is no markup to inject. */
     $('fryBanner').innerHTML=`🍟 Te ganaste +${earned} papas fritas${flawless?', bono impecable ×2':''}`
-      +`<small>llevas ${friesTotal} en esta sesión</small>`;
+      +(chocoEarned?`<br>🍫 Y ${chocoWord(chocoEarned)} por partida impecable`:'')
+      +`<small>llevas ${friesTotal} papas fritas y ${chocoWord(chocoTotal)}</small>`;
     showOverlay($('winOverlay'));
   },1900*slow));
 }
@@ -933,6 +1008,10 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('visibilitychange',()=>{if(document.hidden)setPaused(true)});
 
 /* ---- boot ---- */
+/* Before loadGame(): the prizes are the player's, not the puzzle's, so they are
+   painted on both paths, the resumed game and the difficulty picker alike. */
+loadWallet();
+paintWallet();
 /* loadGame() renders and unpauses itself when it restores something; only the
    no-save (or rejected-save) path falls through to the difficulty picker. */
 if(!loadGame()){
