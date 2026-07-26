@@ -201,3 +201,54 @@ test('the job holding the publish credentials runs no third party code', () => {
     );
   }
 });
+
+test('the test:coverage script still asks node to enforce a coverage floor', () => {
+  /* The floor exists nowhere but that one script line: the flag that turns
+     measurement on, and three thresholds. Both ways of losing it are silent,
+     which was measured against the node in this checkout, v24.18.0, rather than
+     assumed:
+
+     - drop a --test-coverage-* flag and the run still exits 0, having enforced
+       nothing for that metric;
+     - drop --experimental-test-coverage but keep the three thresholds and node
+       accepts them all, prints no coverage report and exits 0, so the entire
+       floor is gone while the script still reads as though it has one.
+
+     Mistyping a flag is the one variant that is loud: node refuses to start,
+     printing "bad option" and exiting 9, so spelling needs no guard here.
+
+     What this proves is only that the thresholds are still asked for, and still
+     at or above the numbers below. It says nothing about whether the suite
+     meets them. That answer comes from running the script, which CI and the
+     pre-commit hook both do. */
+  const { scripts = {} } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const script = scripts['test:coverage'] ?? '';
+
+  assert.match(
+    script,
+    /--experimental-test-coverage\b/,
+    'the "test:coverage" script no longer enables coverage, so node accepts the thresholds ' +
+      'below, measures nothing and exits 0',
+  );
+
+  /* The numbers this repository already meets. Raising one in package.json is
+     expected and passes here; lowering one to buy a green run is the move this
+     stops, and deleting the flag outright is the one nothing else would
+     notice. */
+  for (const [metric, floor] of [
+    ['lines', 85],
+    ['branches', 75],
+    ['functions', 85],
+  ]) {
+    const found = script.match(new RegExp(`--test-coverage-${metric}=(\\d+(?:\\.\\d+)?)`));
+    assert.ok(
+      found,
+      `the "test:coverage" script no longer passes --test-coverage-${metric}, so ${metric} ` +
+        'coverage is measured and then ignored',
+    );
+    assert.ok(
+      Number(found[1]) >= floor,
+      `--test-coverage-${metric} is ${found[1]}, below the ${floor} this repository already met`,
+    );
+  }
+});

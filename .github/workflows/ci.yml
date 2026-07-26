@@ -11,24 +11,38 @@ on:
   # below still runs read-only, and the deploy workflow is a separate file.
   workflow_dispatch:
 
-permissions:
-  contents: read
+# Empty at the workflow level rather than a shared contents: read. Each job
+# below grants itself the read scope its checkout needs, so a job added later
+# starts with no token scopes at all and has to name what it wants instead of
+# inheriting one by forgetting to ask.
+permissions: {}
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Only pull request runs supersede each other. Every push to main shares the
+  # one group ci-refs/heads/main, so cancelling there would let two merges
+  # landing close together kill the earlier run and leave the commit that just
+  # landed with no verdict at all. That is the commit the "main protection"
+  # ruleset wants a green Test on.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
-    # The "main protection" ruleset requires this check by name. Renaming it
-    # blocks every PR until the ruleset's required status check is updated to
-    # match, so change both together or not at all.
+    # The "main protection" and "development protection" rulesets both require
+    # this check by name. Renaming it blocks every PR until the required status
+    # check in each of them is updated to match, so change all three together or
+    # not at all.
     name: Test
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest, which is a label that migrates to a new
+    # image over weeks: the node, browser and system packages under this suite
+    # would then change without a commit here to point at.
+    runs-on: ubuntu-24.04
     # A hung job otherwise runs to GitHub's 360-minute default. 15 rather than
     # the previous 10, because the chromium download below is a few minutes on
     # a cold cache.
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       # Actions are pinned to full commit SHAs. A tag like v7 is mutable, so
       # pinning by tag would let a moved tag swap the action out from under us.
@@ -44,13 +58,27 @@ jobs:
       # --ignore-scripts: dependency lifecycle scripts would otherwise execute
       # arbitrary code on the runner at install time. Verified the suite passes
       # without them.
-      - run: npm ci --ignore-scripts
+      #
+      # The id is what the steps below gate on. Steps run in order and a failed
+      # one stops the rest by default, so a broken build used to mean the
+      # coverage floor and the browser suite never reported and you learned one
+      # problem per push. They are independent checks, so each one now carries
+      # "!cancelled() && this step succeeded" and reports on its own. The
+      # install is the one dependency all of them share: the build step and
+      # tests/site.test.mjs both run scripts/build.mjs, which imports
+      # html-minifier-terser and terser, and the two steps below drive the
+      # playwright CLI that npm ci puts in node_modules/.bin. Letting them run
+      # after a failed install would add a wall of module noise on top of the
+      # failure that explains it.
+      - id: install
+        run: npm ci --ignore-scripts
 
       # Assembly runs on every pull request, not only on the way to production,
       # so a build that no longer produces a publishable site fails here rather
       # than on main. BUILD_ID is passed in the same shape the deploy workflow
       # uses, so both workflows exercise one code path.
       - name: Build site
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           BUILD_ID: ${{ github.sha }}
         run: npm run build
@@ -65,7 +93,14 @@ jobs:
       # invisible to the percentage instead of dragging it to zero. The floor
       # protects code that is already tested. It is not a guarantee that every
       # file is tested. scripts/check-budget.mjs is exactly that case today.
+      #
+      # Deliberately still runs when the build step above failed, because it
+      # does not read what that step produced: tests/site.test.mjs spawns
+      # scripts/build.mjs itself and asserts on the _site that spawn writes. A
+      # broken build fails both, which is two reports of one cause rather than
+      # one cause hiding a coverage regression.
       - name: Test with coverage floor
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test:coverage
 
       # Browsers are not part of the npm package and have to be fetched
@@ -75,11 +110,22 @@ jobs:
       # with or without that flag. Only chromium, because it is the one browser
       # the suite runs and each extra one is another download.
       - name: Install chromium for Playwright
+        id: chromium
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx playwright install --with-deps chromium
 
       # Runs after npm test so a unit failure, which is cheaper to read, is not
       # buried under a browser log.
+      #
+      # The one step that names a second dependency: with no browser on disk,
+      # playwright test exits on a missing executable and says nothing about
+      # this repository, so a failed download must skip this rather than turn
+      # into a second confusing red. The build step is knowingly left out of the
+      # condition, because playwright.config.mjs rebuilds _site in its own
+      # webServer command instead of reusing the earlier one, so these specs
+      # still have something to open and a build break is reported here too.
       - name: Run Playwright tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.chromium.outcome == 'success' }}
         run: npm run test:e2e
 
   lint:
@@ -89,12 +135,19 @@ jobs:
     # what makes them mean something, and it reads the same config file rather
     # than a second copy of the rules, so the two cannot drift.
     #
-    # Note for whoever wires up branch protection: only "Test" is a required
-    # check today, so a failure here is visible but not blocking until this job
-    # is added to the ruleset as well.
+    # Both the "main protection" and "development protection" rulesets now
+    # require this check by name, alongside "Test", so a failure here blocks the
+    # merge rather than merely being visible. Renaming the job breaks both
+    # rulesets at once, so change the name and the two rulesets together or not
+    # at all.
     name: Lint
-    runs-on: ubuntu-latest
+    # Pinned for the same reason as the Test job: ubuntu-latest moves to a new
+    # image on GitHub's schedule, and the hooks below build actionlint with the
+    # preinstalled Go, so the image is part of what they run.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -117,15 +170,36 @@ jobs:
       # The package declares no lifecycle scripts and ships its binary through
       # platform-gated optionalDependencies, so --ignore-scripts installs it
       # intact. That was checked rather than assumed.
-      - run: npm ci --ignore-scripts
+      #
+      # Carries an id for the same reason as in the Test job. There is only one
+      # step after it here, so nothing is being unblocked; the gate is there so
+      # a failed install skips the hooks instead of adding a second red that
+      # only says the prek binary is missing.
+      - id: install
+        run: npm ci --ignore-scripts
 
       # --skip unit-tests-coverage: that hook runs "npm run test:coverage",
       # which the Test job already does. Running it twice per pull request buys
       # nothing.
+      #
+      # --skip no-commit-to-branch: that hook exists to stop a commit being made
+      # locally on main or development, and this runner never commits anything.
+      # Leaving it in would fail this job on exactly the events where the check
+      # matters most. On a pull request actions/checkout resolves the merge ref
+      # and leaves HEAD detached, where the hook passes because "git
+      # symbolic-ref HEAD" fails; on a push to main or a workflow_dispatch run
+      # the same action checks out with "-B main", HEAD sits on a real branch,
+      # and the hook fails the run for a commit that was already made and
+      # already merged.
+      #
+      # The flag is repeated rather than given a comma separated list. Measured
+      # against the prek in this lockfile: "--skip a,b" is read as one hook name
+      # and warns "selector did not match any hooks", then runs both of them.
       #
       # First run on a cold runner builds actionlint with the preinstalled Go
       # and creates a Python env for zizmor, which was about 20 seconds when
       # measured locally. Nothing is cached yet; caching ~/.cache/prek is the
       # next move if this job starts to drag.
       - name: Run the git hooks
-        run: npm run lint -- --show-diff-on-failure --skip unit-tests-coverage
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint -- --show-diff-on-failure --skip unit-tests-coverage --skip no-commit-to-branch

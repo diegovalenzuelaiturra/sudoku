@@ -5,11 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# The floor for any job that does not say otherwise. Publishing to Pages and
-# minting an OIDC token are granted on the one job that deploys, so a job added
-# to this file later cannot inherit them by forgetting to ask.
-permissions:
-  contents: read
+# Nothing is granted by default, so every job below has to ask for the scopes
+# it needs. A job added to this file later starts with no token permissions at
+# all rather than inheriting a floor nobody revisited, and publishing to Pages
+# and minting an OIDC token are asked for by the one job that deploys.
+permissions: {}
 
 # One deploy at a time; never cancel one midway, so a run cannot leave the
 # published site half-replaced.
@@ -22,9 +22,11 @@ jobs:
   # workflow's "Test" job, which the "main protection" ruleset requires by name.
   verify:
     name: Verify
-    runs-on: ubuntu-latest
-    # This job only reads the repository. The Pages and OIDC permissions the
-    # workflow grants are narrowed to the one job that deploys.
+    # Pinned rather than ubuntu-latest: that label migrates to a new image over
+    # weeks, so the runner would change on GitHub's schedule, not in a commit.
+    runs-on: ubuntu-24.04
+    # This job only reads the repository. The Pages and OIDC permissions are
+    # asked for by the one job that deploys, and by nothing else.
     permissions:
       contents: read
     outputs:
@@ -49,7 +51,8 @@ jobs:
       # --ignore-scripts: dependency lifecycle scripts would otherwise execute
       # arbitrary code on the runner at install time. Verified the suite passes
       # without them.
-      - run: npm ci --ignore-scripts
+      - id: install
+        run: npm ci --ignore-scripts
 
       # The same command the deploy job runs, so a build that fails here never
       # gets as far as being published. The Playwright fixture serves _site and
@@ -61,14 +64,32 @@ jobs:
           BUILD_ID: ${{ github.sha }}
         run: npm run build
 
-      - run: npm test
+      # The unit suite, the chromium download and the browser suite run on
+      # !cancelled() rather than on the implicit success(): a failing unit suite
+      # would otherwise skip the browser suite, and the run would report one
+      # broken thing while hiding whether the other is broken too. The download
+      # is in the gate because skipping it would take the browser suite with it.
+      # All three also require steps.install, because they run binaries npm ci
+      # put in node_modules: after a failed install they would report on nothing
+      # while burying the failure that caused it.
+      #
+      # The gating deliberately stops here. Every step below rebuilds _site,
+      # enumerates it or uploads it, and those keep their implicit success() so
+      # nothing is produced or handed on once a check has failed. needs: verify
+      # requires success and would already block the deploy job, but that only
+      # keeps a bad artifact from being published, not from existing: an upload
+      # on !cancelled() would leave an artifact no step in this job vouched for.
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm test
 
       # --ignore-scripts also blocks Playwright's postinstall browser download,
       # so the browser is fetched explicitly here.
       - name: Install chromium for Playwright
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test:e2e
 
       # Rebuilt here, after the browser suite, and deliberately not before it.
@@ -119,7 +140,9 @@ jobs:
   deploy:
     name: Deploy
     needs: verify
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: that label migrates to a new image over
+    # weeks, so the runner would change on GitHub's schedule, not in a commit.
+    runs-on: ubuntu-24.04
     # pages: write publishes the artifact; id-token: write signs the OIDC token
     # deploy-pages exchanges for it. Nothing else in the workflow needs either.
     permissions:
@@ -232,7 +255,9 @@ jobs:
     # in the checks without ever holding the deployment back or, worse, leaving
     # the site half published.
     needs: deploy
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: that label migrates to a new image over
+    # weeks, so the runner would change on GitHub's schedule, not in a commit.
+    runs-on: ubuntu-24.04
     # Audits an address that is already public, so it needs no write scope.
     permissions:
       contents: read

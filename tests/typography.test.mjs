@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, extname, join, relative } from 'node:path';
+import { dirname, extname, join, relative, sep } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -70,6 +70,22 @@ function walk(dir) {
   return out;
 }
 
+/* The line scan is a named function rather than a loop body inside the test
+   because the second control below has to run this exact code over a string it
+   builds. A copy of the scan down there would be free to drift from this one,
+   and a drifted copy says nothing about what the test above actually does. */
+function scan(text, label) {
+  const offences = [];
+  text.split('\n').forEach((line, i) => {
+    for (const [char, name] of BANNED) {
+      if (line.includes(char)) {
+        offences.push(`${label}:${i + 1} [${name}] ${line.trim().slice(0, 90)}`);
+      }
+    }
+  });
+  return offences;
+}
+
 test('no em dashes, en dashes or middle dots anywhere in the source', () => {
   const offences = [];
 
@@ -80,13 +96,7 @@ test('no em dashes, en dashes or middle dots anywhere in the source', () => {
     } catch {
       continue;
     }
-    text.split('\n').forEach((line, i) => {
-      for (const [char, name] of BANNED) {
-        if (line.includes(char)) {
-          offences.push(`${relative(root, file)}:${i + 1} [${name}] ${line.trim().slice(0, 90)}`);
-        }
-      }
-    });
+    offences.push(...scan(text, relative(root, file)));
   }
 
   assert.deepEqual(
@@ -94,4 +104,75 @@ test('no em dashes, en dashes or middle dots anywhere in the source', () => {
     [],
     `use a comma, colon, semicolon or a rewritten sentence instead:\n  ${offences.join('\n  ')}`,
   );
+});
+
+/* The two tests below are negative controls for the one above, which passes by
+   asserting that an array is empty. An empty array is also what a walk that
+   visited nothing and a scan that no longer matches anything produce, and
+   neither of those breaks loudly: a widened SKIP_DIRS, a directory layout that
+   moves this file and takes root with it, or a BANNED entry retyped into a
+   codepoint nothing emits all leave a green tick that asked nothing. So ask the
+   two questions the empty array cannot answer: did the walk reach the tree, and
+   does the scan still fire on the characters it exists to find. */
+
+test('the walk reaches the tree the check above claims to have read', () => {
+  /* Separators normalised the way tests/site.test.mjs does it, so the names
+     below can be written the one way a reader recognises them. */
+  const files = walk(root).map((file) => relative(root, file).split(sep).join('/'));
+
+  /* 34 files at the time this was written. The floor sits far below that on
+     purpose: files come and go with ordinary work, and a guard that has to be
+     edited on every commit gets deleted instead. What it catches is the failure
+     that matters, a walk that returns nothing or a handful because it never
+     descended past the root. */
+  assert.ok(
+    files.length >= 20,
+    `the walk visited ${files.length} files, far fewer than this repository holds, so the ` +
+      'check above passed without reading the tree',
+  );
+
+  /* Named files as well as a count, because a count cannot say which part of
+     the tree stopped being visited. index.html and sw.js are shipped and cannot
+     be renamed without breaking the deploy, package.json is the manifest the
+     rest of the suite reads, .editorconfig proves entries whose name starts
+     with a dot are still visited, which is also how .github is reached, and the
+     two nested paths prove the walk descends, including into the directory this
+     file sits in. */
+  for (const rel of [
+    '.editorconfig',
+    'index.html',
+    'package.json',
+    'scripts/build.mjs',
+    'sw.js',
+    'tests/typography.test.mjs',
+  ]) {
+    assert.ok(files.includes(rel), `the walk never reached ${rel}, so its contents went unchecked`);
+  }
+});
+
+test('the scan still reports every character it exists to find', () => {
+  /* Written as escapes, never literals, for the same reason BANNED is: a
+     literal here would make this file an offence against its own check.
+
+     The three characters the project rule names are listed again rather than
+     read from BANNED, because a control that draws both its input and its
+     expectation from the list under test cannot notice an entry deleted from
+     that list. Scanning BANNED's own entries too then covers whatever has been
+     added to it since. */
+  const REQUIRED = [
+    ['\u2014', 'EM DASH'],
+    ['\u2013', 'EN DASH'],
+    ['\u00B7', 'MIDDLE DOT'],
+  ];
+
+  for (const [char, name] of [...REQUIRED, ...BANNED]) {
+    const codePoint = `U+${char.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+    const found = scan(`a line that holds one ${char} and nothing else`, 'control');
+    assert.equal(
+      found.length,
+      1,
+      `the scan returned ${found.length} offences for a line holding a single ${name} ` +
+        `(${codePoint}), so the empty result asserted above proves nothing about the tree`,
+    );
+  }
 });
