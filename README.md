@@ -65,3 +65,9 @@ twenty seconds and is cached in `~/.cache/prek` afterwards.
 
 None of this is load bearing: `git commit --no-verify` skips it, and the `Lint`
 job in CI runs the same hooks over every file on every pull request.
+
+One trap. The unit test hook needs `npm` on the `PATH`, and a desktop git client
+or an editor commit button does not load your shell profile, so a version
+manager like nvm will not be set up for it. The hook then fails with
+`No such file or directory (os error 2)`, which does not look like what it is.
+Commit from a terminal, or point the client at a shell that loads node.

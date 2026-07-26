@@ -1,0 +1,58 @@
+name: OSV-Scanner
+
+# Checks the dependency tree against the OSV database on every pull request.
+# The point is not that this repo has many dependencies, it has three direct
+# ones and all of them are dev-only. The point is the transitive tree behind
+# them, which is where a compromised release actually arrives.
+#
+# What this adds over what already runs here:
+#
+#   Dependabot alerts are enabled and cover the same GHSA data, but they are a
+#   notification on a page nobody opens during review. This is a red X on the
+#   pull request that introduces the problem, at the moment it is introduced.
+#
+#   The Dependabot cooldown in dependabot.yml is the stronger control and works
+#   the other way round: it refuses to consider any release younger than a week
+#   rather than trying to recognise a bad one. This catches what is already
+#   known; the cooldown covers the window before anything is known. Neither
+#   replaces the other.
+#
+# Deliberately NOT a required status check. It calls deps.dev and the OSV API,
+# so a network hiccup would otherwise be able to wedge every merge. A red mark
+# a human can read and override is the right shape for a one-maintainer repo.
+
+on:
+  pull_request:
+
+# Nothing at the top level. The reusable workflow below declares what it needs.
+permissions: {}
+
+concurrency:
+  group: osv-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan-pr:
+    # The PR variant, not the full-scan one, for two independent reasons.
+    #
+    # It diffs base against head and reports only what the pull request newly
+    # introduces, so a long-lived advisory in a dev-only transitive dependency
+    # does not shout on every unrelated change.
+    #
+    # And it is the only variant that is honestly pinned. Every "uses:" inside
+    # osv-scanner-reusable-pr.yml at this tag is a full commit SHA. The sibling
+    # osv-scanner-reusable.yml is not: it calls actions/download-artifact@v8, a
+    # mutable major tag that the runner resolves at run time. Pinning the outer
+    # reference does not pin that inner one, so importing the full-scan variant
+    # would quietly reintroduce exactly the mutable-tag risk this repo pins
+    # everything to avoid.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    permissions:
+      # Reading the workflow run to diff base against head.
+      actions: read
+      contents: read
+      # Uploading SARIF so findings appear under Security, Code scanning.
+      # Free on public repositories. This is the widest permission granted
+      # anywhere outside the deploy job, and it is granted to third-party code,
+      # which is why it is scoped to this one job and nothing else.
+      security-events: write

@@ -68,9 +68,12 @@ jobs:
       - name: Test with coverage floor
         run: npm run test:coverage
 
-      # --ignore-scripts also blocks Playwright's postinstall browser download,
-      # so the browser is fetched explicitly here. Only chromium: it is the one
-      # browser the suite runs, and each extra one is another download.
+      # Browsers are not part of the npm package and have to be fetched
+      # separately. This step is not a workaround for --ignore-scripts, whatever
+      # a previous version of this comment claimed: @playwright/test 1.62
+      # declares no lifecycle scripts at all, so the download would not happen
+      # with or without that flag. Only chromium, because it is the one browser
+      # the suite runs and each extra one is another download.
       - name: Install chromium for Playwright
         run: npx playwright install --with-deps chromium
 
