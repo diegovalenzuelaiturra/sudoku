@@ -99,10 +99,16 @@ jobs:
             printf '::error::a published filename holds a control character\n'
             exit 1
           fi
+          # Random delimiter. A fixed one is a second way to forge output from a
+          # filename: a published file named exactly like the delimiter ends the
+          # heredoc early and everything after it is read as further job outputs.
+          # Control characters are already rejected above, but "PUBLISHED_EOF" is
+          # a perfectly ordinary filename.
+          delimiter="PUBLISHED_EOF_$(openssl rand -hex 16)"
           {
-            printf 'list<<PUBLISHED_EOF\n'
+            printf 'list<<%s\n' "$delimiter"
             find _site -type f | sed 's|^_site/||' | sort
-            printf 'PUBLISHED_EOF\n'
+            printf '%s\n' "$delimiter"
           } >> "$GITHUB_OUTPUT"
           printf 'listed %s file(s)\n' "$(find _site -type f | wc -l | tr -d ' ')"
 

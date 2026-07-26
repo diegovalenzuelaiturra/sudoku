@@ -669,7 +669,12 @@ function loadGame(){
   values=s.values.slice();
   fixed=s.fixed.slice();
   notes=s.notes.map(a=>new Set(Array.isArray(a)?a:[]));
-  sel=Number.isInteger(s.sel)?s.sel:-1;
+  /* Bounded, not just integral: sel indexes notes[] and fixed[], and inputDigit()
+     only guards sel<0. An out-of-range sel restores a playable board, then the
+     first digit throws on notes[sel].clear() after values[sel] has already been
+     written past the end of the grid, and the next autosave persists an 82+ cell
+     board that loadGame() rejects on the following load. The game is gone. */
+  sel=Number.isInteger(s.sel)&&s.sel>=0&&s.sel<81?s.sel:-1;
   mistakes=Number(s.mistakes)||0;
   hints=Number(s.hints)||0;
   seconds=Number(s.seconds)||0;

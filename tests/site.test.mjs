@@ -445,6 +445,52 @@ test('the absolute social URLs point at files this site publishes', (t) => {
   );
 });
 
+/* tests/assets.test.mjs asks the same two questions of the repository, which is
+   the wrong artifact for both: the minifier rewrites index.html and substitutes
+   sw.js on the way into _site, so a source file can satisfy them while the
+   bytes a visitor receives do not. */
+
+test('the published page still carries the Apache-2.0 sprite attribution', (t) => {
+  if (!checkable) return t.skip(SKIPPED);
+  const published = readFileSync(join(siteDir, 'index.html'), 'utf8');
+
+  /* removeComments strips HTML comments, and the notice for the inlined
+     Material Symbols sprite is one. NOTICE is repository metadata and is not
+     published, so this comment is the only attribution that reaches a
+     visitor. */
+  assert.match(
+    published,
+    /Material Symbols[^]{0,200}Apache/,
+    '_site/index.html ships the Apache-2.0 icon sprite with no attribution, which the ' +
+      'licence requires to travel with the work. Add the comment to ' +
+      'HTML_MINIFY_OPTIONS.ignoreCustomComments in scripts/build.mjs.',
+  );
+});
+
+test('the published service worker carries a substituted cache name', (t) => {
+  if (!checkable) return t.skip(SKIPPED);
+  const worker = join(siteDir, 'sw.js');
+  if (!existsSync(worker)) return t.skip('no service worker in _site yet');
+  const published = readFileSync(worker, 'utf8');
+
+  /* Both literals are written out here rather than imported from
+     scripts/build.mjs on purpose. The failure this catches is the build and
+     the worker disagreeing about the placeholder, and a check that asks the
+     build what it substitutes cannot see that: it would substitute nothing,
+     report zero, and pass. A cache name frozen at a constant pins every
+     returning visitor to the copy they already have. */
+  assert.doesNotMatch(
+    published,
+    /__BUILD__/,
+    '_site/sw.js still holds the build placeholder, so every deploy reuses one cache name',
+  );
+  assert.match(
+    published,
+    /"sudoku-[A-Za-z0-9][A-Za-z0-9._-]*"|'sudoku-[A-Za-z0-9][A-Za-z0-9._-]*'/,
+    '_site/sw.js has no build-stamped cache name',
+  );
+});
+
 test('nothing private leaked into _site', (t) => {
   if (!checkable) return t.skip(SKIPPED);
 
