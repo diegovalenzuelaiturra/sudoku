@@ -249,8 +249,11 @@ jobs:
         with:
           node-version: '24'
 
-      # Lighthouse is run through npx rather than an action: the repository
-      # allows GitHub owned actions only, and a run step needs no action at all.
+      # Lighthouse is run through npx rather than an action. The repository's
+      # Actions policy is "selected", admitting GitHub-owned actions, verified
+      # creators, and the allowed pattern "google/*". Neither GoogleChrome/* nor
+      # treosh/* matches any of those, so the Lighthouse actions people usually
+      # reach for are refused here, and a run step needs no action at all.
       # The Lighthouse version is pinned exactly, because it is the version the
       # budget in scripts/check-budget.mjs was measured against and a Lighthouse
       # release can change how a metric is computed without the page changing.
