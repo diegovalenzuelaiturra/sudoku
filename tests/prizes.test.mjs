@@ -50,7 +50,7 @@ function prizeTable() {
    pattern then matched nothing at all: readWallet(raw=walletRaw()) is already
    such a signature.
 
-   And braces are counted. Four of the assertions below are assert.doesNotMatch,
+   And braces are counted. Two of the assertions below are assert.doesNotMatch,
    which pass on a fragment exactly as readily as on the whole function, so a
    `}` reaching column 0 mid function would not fail this file, it would empty
    it: the guards would keep passing while guarding a few lines. assert.ok on
