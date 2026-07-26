@@ -52,7 +52,6 @@ export const ALLOWLIST = [
   { path: '404.html', type: 'file', required: false },
   { path: 'manifest.webmanifest', type: 'file', required: false },
   { path: 'sw.js', type: 'file', required: false },
-  { path: 'robots.txt', type: 'file', required: false },
   { path: 'icons', type: 'dir', required: false },
 ];
 
@@ -230,6 +229,14 @@ export function build({ root = REPO_ROOT, outDir, buildId } = {}) {
    this is supposed to be an optimisation for. */
 const HTML_MINIFY_OPTIONS = {
   removeComments: true,
+  /* One exception, and it is not a preference. The button sprite is Material
+     Symbols under Apache-2.0, whose section 4(d) requires the attribution
+     notice to travel with the derivative work. The sprite is inlined into
+     index.html, so the published copy is the distribution, and removeComments
+     was deleting the only notice it carried: NOTICE is repository metadata and
+     is not in the allowlist. Kept by pattern rather than by rewriting the
+     comment as <!--! ... -->, so the source stays readable prose. */
+  ignoreCustomComments: [/Material Symbols/],
   /* conservativeCollapse squeezes a run of whitespace down to a single space
      instead of deleting it at element boundaries. The toolbar buttons are
      inline elements whose spacing is that whitespace, so the full collapse can

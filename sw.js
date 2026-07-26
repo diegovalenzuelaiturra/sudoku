@@ -5,6 +5,13 @@
    every deploy gets its own cache. A fixed name would pin every visitor to
    the first version they ever loaded, the failure this exists to prevent. */
 const CACHE_NAME = 'sudoku-__BUILD__';
+/* CacheStorage is keyed by origin, not by service worker scope. This site is a
+   project page on an account domain shared with every other repository the same
+   account publishes, so caches.keys() below hands back their caches too, and
+   caches.match() would answer this app's request out of one of them. Both are
+   namespaced through this prefix: only caches this app opened are read, and
+   only those are deleted. */
+const CACHE_PREFIX = 'sudoku-';
 /* Every icon the manifest names belongs here. The fetch handler below is
    cache first with no runtime population, so a file that is not precached is
    never stored at all: an installed app that has been offline since it was
@@ -31,15 +38,19 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  /* Delete every cache that is not this version's name. Without this,
-     a bumped CACHE_NAME leaves the old cache's entries on disk forever
-     and each release only grows storage instead of replacing it. */
+  /* Delete this app's older caches. Without this, a bumped CACHE_NAME leaves
+     the old cache's entries on disk forever and each release only grows
+     storage instead of replacing it. Scoped to CACHE_PREFIX: an unfiltered
+     sweep here deletes the offline cache of every other site on the origin,
+     which on a github.io account domain means every other project page. */
   event.waitUntil(
     caches
       .keys()
       .then((names) =>
         Promise.all(
-          names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
+          names
+            .filter((name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
+            .map((name) => caches.delete(name))
         )
       )
       .then(() => self.clients.claim())
@@ -48,7 +59,16 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  /* Matched inside this app's own cache rather than through caches.match(),
+     which searches every cache on the origin and can answer out of a
+     neighbouring project's. ignoreSearch because the precached entry for the
+     app root is './': a visitor who arrives on a link carrying a query string
+     is asking for the same document, and without this the offline load misses
+     the cache and fails. */
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.match(event.request, { ignoreSearch: true }))
+      .then((cached) => cached || fetch(event.request))
   );
 });

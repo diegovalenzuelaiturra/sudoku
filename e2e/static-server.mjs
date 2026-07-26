@@ -65,6 +65,22 @@ function plain(res, status, body) {
   res.end(body);
 }
 
+/* Pages answers an unknown path under the site with the published 404.html and
+   a 404 status, leaving the address bar on the path that was asked for. A plain
+   text body here instead would mean the error page is the one published file
+   the browser suite can never open, and that its only link is never resolved
+   from the depth a real 404 is served at. */
+function notFound(req, res) {
+  const page = resolve(ROOT, '404.html');
+  if (!existsSync(page)) return plain(res, 404, 'not found');
+  res.writeHead(404, {
+    'content-type': TYPES.get('.html'),
+    'cache-control': 'no-store',
+  });
+  if (req.method === 'HEAD') return res.end();
+  createReadStream(page).pipe(res);
+}
+
 const server = createServer(async (req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return plain(res, 405, 'method not allowed');
 
@@ -81,6 +97,8 @@ const server = createServer(async (req, res) => {
     res.writeHead(301, { location: BASE });
     return res.end();
   }
+  /* Outside the prefix is outside the site: Pages would be serving some other
+     repository there, not this one's error page. */
   if (!pathname.startsWith(BASE)) return plain(res, 404, 'not found');
 
   /* resolve() collapses any .. segments, so the containment check below sees
@@ -96,7 +114,7 @@ const server = createServer(async (req, res) => {
       info = await stat(file);
     }
   } catch {
-    return plain(res, 404, 'not found');
+    return notFound(req, res);
   }
 
   res.writeHead(200, {
