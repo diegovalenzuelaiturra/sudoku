@@ -124,6 +124,13 @@
     display:grid;grid-template-columns:repeat(9,1fr);aspect-ratio:1;
     background:var(--paper-raised);
     border:2px solid var(--ink);border-radius:4px;overflow:hidden;
+    /* Declared on body as well, which is what covers the pad and the chrome.
+       Kept here too because the walk up the ancestors that intersects these
+       values stops at the nearest containing scrolling element, and
+       overflow:hidden above makes this element exactly that: without it the 81
+       cells, the surface the double tap was reported on, would be relying on a
+       reading of the spec rather than on a declaration. */
+    touch-action:manipulation;
   }
   .cell{
     position:relative;border:0;background:transparent;cursor:pointer;padding:0;
@@ -618,6 +625,11 @@ function newGame(key){
   sel=values.indexOf(0);
   $('notesBtn').setAttribute('aria-pressed','false');
   showNotesHint();
+  /* The win paints the chips on a timer, and every win timer was cleared at the
+     top of this function. Starting the next puzzle during the payout animation
+     would otherwise leave both totals reading what they said before the prize
+     was banked, until something else repainted them or the page reloaded. */
+  paintWallet();
   $('diffLabel').textContent=DIFF[key].label;
   $('time').textContent='0:00';
   $('stamp').classList.remove('show');
@@ -691,12 +703,17 @@ function clearSavedGame(){
 function saveWallet(){
   try{localStorage.setItem(WALLET_KEY,JSON.stringify({v:WALLET_VERSION,fries:friesTotal,choco:chocoTotal}))}catch(e){/* as with the autosave: a wallet that cannot be written is not worth failing a win over */}
 }
+/* The bytes under the key, or null when there are none and when storage itself
+   is gone. Split out of readWallet() because the two answers it folds together,
+   "nothing is stored" and "something is stored that this build cannot read",
+   have to be told apart before anything is written back. */
+function walletRaw(){
+  try{return localStorage.getItem(WALLET_KEY)}catch(e){return null}
+}
 /* The stored totals, or null if there is nothing readable and current there.
    Separate from loadWallet() because banking a prize has to consult the key
    again rather than trust what this tab read at boot. */
-function readWallet(){
-  let raw=null;
-  try{raw=localStorage.getItem(WALLET_KEY)}catch(e){return null}
+function readWallet(raw=walletRaw()){
   if(raw===null)return null;
   let w;
   try{w=JSON.parse(raw)}catch(e){return null}
@@ -712,10 +729,18 @@ function readWallet(){
    Falling back to the in-memory totals keeps a tab whose storage has died (or
    was cleared mid-game) counting its own prizes for as long as it lives. */
 function bankPrize(fries,choco){
-  const stored=readWallet()||{fries:friesTotal,choco:chocoTotal};
-  friesTotal=stored.fries+fries;
-  chocoTotal=stored.choco+choco;
-  saveWallet();
+  const raw=walletRaw();
+  const stored=readWallet(raw);
+  const base=stored||{fries:friesTotal,choco:chocoTotal};
+  friesTotal=base.fries+fries;
+  chocoTotal=base.choco+choco;
+  /* Written only when the key is empty or this build could read it. Bytes it
+     could not read belong to another build, most likely a newer one the player
+     still has cached, and loadWallet() already refuses to zero those: saving
+     here regardless would undo that on the first win, putting this tab's total
+     plus the prize over a record it never read. The chips still count either
+     way, because a tab that cannot write is still allowed to keep score. */
+  if(stored||raw===null)saveWallet();
 }
 function paintWallet(){
   $('fries').textContent=friesTotal;
@@ -736,10 +761,9 @@ function popChip(id){
 /* Reads the wallet at boot. Anything unreadable, corrupt or from a version
    this build does not know leaves both totals at zero rather than guessing. */
 function loadWallet(){
-  let raw=null;
-  try{raw=localStorage.getItem(WALLET_KEY)}catch(e){return}
+  const raw=walletRaw();
   if(raw!==null){
-    const stored=readWallet();
+    const stored=readWallet(raw);
     /* Something is under the key. If this build cannot read it, leave it there:
        overwriting it with zeros would discard the wallet of a newer build the
        player still has cached, which is worse than showing nothing. */
@@ -747,13 +771,22 @@ function loadWallet(){
     return;
   }
   /* No wallet yet: either a new player, or one whose papas are still sitting
-     in a game save from before this key existed. Carry those across, then
-     write the key so this branch is taken once. */
+     in a game save from before this key existed. Carry those across. */
   try{
     const s=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');
-    friesTotal=Number(s&&s.friesTotal)||0;
+    /* Behind the same version gate loadGame() applies, and bounded. A save this
+       build would refuse to restore is not a record to mint papas from, and the
+       number goes straight into a total that is written back and then added to
+       forever: an Infinity, a negative or a fraction out of a corrupt save would
+       be permanent. Number()||0 alone catches none of those. */
+    const carried=s&&typeof s==='object'&&s.v===SAVE_VERSION?Math.floor(Number(s.friesTotal)):0;
+    friesTotal=Number.isFinite(carried)&&carried>0?carried:0;
   }catch(e){}
-  saveWallet();
+  /* Only when something was actually carried across. Writing a zero wallet here
+     would be a storage event in every other open tab, and their listener adopts
+     what it reads: a second tab opening after the key was evicted would take a
+     tab that still held the totals in memory down to zero with it. */
+  if(friesTotal)saveWallet();
 }
 /* Restores a saved game on boot. Returns false, leaving every global
    untouched, for: nothing saved, corrupt JSON, a getItem/localStorage
@@ -769,7 +802,13 @@ function loadGame(){
   if(!s||typeof s!=='object'||s.v!==SAVE_VERSION)return false;
   const isGrid=a=>Array.isArray(a)&&a.length===81;
   if(!isGrid(s.puzzle)||!isGrid(s.solution)||!isGrid(s.values)||!isGrid(s.fixed)||!Array.isArray(s.notes)||s.notes.length!==81)return false;
-  if(!DIFF[s.diffKey]||s.solved)return false;
+  /* hasOwn rather than a bare lookup: every name on Object.prototype answers
+     truthy to DIFF[key], so a save claiming diffKey:'constructor' restored a
+     playable board with no row of the table behind it. Winning it then read
+     DIFF[key].fries, which is undefined, multiplied it, and banked NaN, which
+     JSON writes as null and reads back as zero: every prize the player had
+     ever earned, spent on a save nobody wrote on purpose. */
+  if(!Object.hasOwn(DIFF,s.diffKey)||s.solved)return false;
   puzzle=s.puzzle.slice();
   solution=s.solution.slice();
   values=s.values.slice();
@@ -1113,8 +1152,14 @@ if('serviceWorker' in navigator){
   function checkForUpdate(){
     if(registration===null||document.hidden)return;
     if(checkedAt!==0&&Date.now()-checkedAt<CHECK_EVERY)return;
+    /* Stamped before the call so a burst of switches makes one request, and
+       given back if the request failed. A resume with no connectivity is the
+       normal way an installed app wakes up, and a check that never reached the
+       network must not spend the hour: without the reset, one offline switch
+       stopped this app noticing a deploy until the hour was up, however long
+       it had been back online. */
     checkedAt=Date.now();
-    registration.update().catch(()=>{});
+    registration.update().catch(()=>{checkedAt=0});
   }
   document.addEventListener('visibilitychange',checkForUpdate);
   /* Only a restore from the back forward cache. An ordinary load already

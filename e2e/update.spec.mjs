@@ -17,12 +17,15 @@
    3. A real swap does reload, or the document keeps markup that no longer
       matches the cache serving it.
 
-   What is simulated, and stated plainly rather than implied: Chromium gives no
-   way to background a page from a test, and no way to install a second worker
-   without changing the bytes on the server mid run. So visibilitychange and
-   controllerchange are dispatched by hand. That exercises this page's handlers
-   and its guards, which is where the logic being tested lives; it does not
-   prove Chrome fires those events when a phone is unlocked. */
+   What is simulated, and stated plainly rather than implied: neither engine
+   this file runs on gives a test a way to background a page, or to install a
+   second worker without changing the bytes on the server mid run. So
+   visibilitychange and controllerchange are dispatched by hand. That exercises
+   this page's handlers and its guards, which is where the logic being tested
+   lives; it does not prove either browser fires those events when a phone is
+   unlocked. Nothing here is gated to one project, deliberately: these are the
+   specs whose subject is an installed app, and every installed copy on iOS runs
+   on WebKit. */
 
 import { expect, test } from '@playwright/test';
 
@@ -56,9 +59,20 @@ const controlled = (page) =>
 const mark = (page) => page.evaluate(() => (window.__survived = 'yes'));
 const survived = (page) => page.evaluate(() => window.__survived ?? null);
 
-test('a first install does not reload the page under the player', async ({ page }) => {
+/* Attached before the first navigation, as every other spec here does. Nothing
+   below reads the console otherwise, so a page that threw on its way through
+   the update path would still count the checks it was asked for and pass. */
+function watch(page) {
   const problems = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') problems.push(`console error: ${message.text()}`);
+  });
   page.on('pageerror', (error) => problems.push(`uncaught: ${error.message}`));
+  return problems;
+}
+
+test('a first install does not reload the page under the player', async ({ page }) => {
+  const problems = watch(page);
   await page.goto('./');
   await expect(page.locator('#board .cell')).toHaveCount(81);
 
@@ -81,6 +95,7 @@ test('a first install does not reload the page under the player', async ({ page 
 });
 
 test('coming back to the app asks whether a newer worker exists', async ({ page }) => {
+  const problems = watch(page);
   await page.goto('./');
   await expect(page.locator('#board .cell')).toHaveCount(81);
   await controlled(page);
@@ -94,6 +109,7 @@ test('coming back to the app asks whether a newer worker exists', async ({ page 
   /* And it does not ask again on every switch: an hour has not passed. */
   for (let i = 0; i < 3; i++) await resume(page);
   expect(await updateChecks(page), 'every app switch fires a check').toBe(1);
+  expect(problems).toEqual([]);
 });
 
 /* Installed apps are exempt from idle eviction but not from eviction under
@@ -102,6 +118,7 @@ test('coming back to the app asks whether a newer worker exists', async ({ page 
    permission prompt in some engines, which is a lot to spend on a visitor who
    has not chosen to keep anything. So it is asked only once installed. */
 test('storage is only asked to persist once the app is installed', async ({ page }) => {
+  const problems = watch(page);
   await page.addInitScript(() => {
     window.__persists = 0;
     if (!navigator.storage) navigator.storage = {};
@@ -136,9 +153,11 @@ test('storage is only asked to persist once the app is installed', async ({ page
     await page.evaluate(() => window.__persists),
     'the installed app never asked to keep the save it depends on',
   ).toBe(1);
+  expect(problems).toEqual([]);
 });
 
 test('a worker that takes over an already controlled page reloads it', async ({ page }) => {
+  const problems = watch(page);
   await page.goto('./');
   await controlled(page);
 
@@ -164,4 +183,5 @@ test('a worker that takes over an already controlled page reloads it', async ({ 
 
   expect(await survived(page), 'the swap did not reload the page').toBe(null);
   await expect(page.locator('#board .cell')).toHaveCount(81);
+  expect(problems).toEqual([]);
 });

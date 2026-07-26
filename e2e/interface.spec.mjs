@@ -490,6 +490,16 @@ test('a double tap cannot zoom the page, while pinch to zoom still can', async (
     page.locator(selector).evaluate((node) => getComputedStyle(node).touchAction);
 
   expect(await touchAction('body'), 'double tap can zoom the page again').toBe('manipulation');
+  /* And on the board in its own right. The walk up the ancestors runs only "up
+     to the one that implements the gesture (in other words, the first
+     containing scrolling element)", and .board is overflow:hidden, which makes
+     it exactly that. Relying on body alone here would leave the 81 cells, the
+     surface the double tap bug was reported on, depending on a reading of the
+     spec rather than on a declaration. */
+  expect(
+    await touchAction('#board'),
+    'the board is back to inheriting a gesture the scroll container can truncate',
+  ).toBe('manipulation');
   /* Not "none": that would take pinch to zoom away from anyone who needs it. */
   for (const selector of ['body', '#board', '#pad', '.tools']) {
     expect(await touchAction(selector), `${selector} forbids pinch to zoom`).not.toBe('none');
