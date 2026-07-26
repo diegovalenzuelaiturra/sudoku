@@ -102,10 +102,9 @@ test('a flawless win pays papas fritas doubled, and chocolates', async ({ page }
     `🍟 +${NORMAL.fries * 2}`,
     `🍫 +${NORMAL.choco}`,
   ]);
-  expect(
-    await page.locator('#fryBanner i').textContent(),
-    'the doubled bonus is not marked',
-  ).toBe('×2');
+  /* The amounts are the finals, doubling included, with nothing beside them to
+     apply to the wrong number. */
+  await expect(page.locator('#fryBanner i'), 'the banner grew a badge again').toHaveCount(0);
 
   /* The words are gone from the screen, not from the page: everything visible
      in there is aria-hidden, so a screen reader gets the sentence instead. */

@@ -253,16 +253,14 @@
     100%{transform:translateY(var(--fall)) rotate(var(--spin));opacity:0}
   }
   /* The prize is two numbers. It used to be a sentence around them, which was
-     longer than the thing it described, so it is icons now. */
+     longer than the thing it described, so it is icons now. The amounts shown
+     are what was won, the flawless doubling included: a separate multiplier
+     badge only invited reading it against whichever number sat next to it. */
   .frybanner{
     margin:14px 0 16px;padding:11px 10px;border:1px dashed var(--vermilion);border-radius:9px;
     color:var(--vermilion);display:flex;gap:18px;justify-content:center;align-items:center;
   }
   .frybanner b{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:.02em}
-  .frybanner i{
-    font-style:normal;font-size:10.5px;font-weight:600;letter-spacing:.08em;
-    border:1px solid var(--vermilion);border-radius:6px;padding:2px 7px;
-  }
 
   /* ---------- responsive ---------- */
   @media (max-width:719px){
@@ -873,7 +871,6 @@ function win(){
        Nothing player-authored is interpolated, so there is no markup to inject. */
     $('fryBanner').innerHTML=`<b aria-hidden="true">🍟 +${earned}</b>`
       +(chocoEarned?`<b aria-hidden="true">🍫 +${chocoEarned}</b>`:'')
-      +(flawless?'<i aria-hidden="true">×2</i>':'')
       +`<span class="visually-hidden">Ganaste ${earned} papas fritas${chocoEarned?` y ${chocoWord(chocoEarned)}`:''}.</span>`;
     showOverlay($('winOverlay'));
   },1900*slow));
