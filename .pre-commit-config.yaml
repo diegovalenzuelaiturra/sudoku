@@ -74,10 +74,22 @@ repos:
       # Checks first. Nothing in this group writes to a file, so a failure here
       # leaves the tree exactly as it was and the repair is yours to make.
       #
-      # The 500 KB default sits far above anything legitimate: the largest
-      # tracked file today is index.html at 43 KB. This is a tripwire for a
-      # Playwright trace, a screenshot or a build artifact that .gitignore does
-      # not happen to name.
+      # This is a tripwire for a Playwright trace, a screenshot, a video or a
+      # build artifact that .gitignore does not happen to name. It is not a
+      # size budget for the site: scripts/check-budget.mjs is that, and it
+      # measures what is served rather than what is committed.
+      #
+      # 1 MB rather than the 500 KB default, and the number is chosen from both
+      # ends. Measured today, the largest tracked file is index.html at 43 KB
+      # and everything else is under 22 KB, so a megabyte is roughly twenty
+      # times the biggest thing here and nothing legitimate is near it. The
+      # thing most likely to grow into the old ceiling is package-lock.json,
+      # today 22 KB, which grows with the dependency tree and would fail the
+      # Lint job with a message about a large file rather than about
+      # dependencies. At the other end, what this exists to catch is well
+      # clear of a megabyte: Playwright traces and videos run to several, and
+      # test-results/ and playwright-report/ are gitignored anyway, so the
+      # realistic arrival is a copy of one of those saved somewhere else.
       #
       # --enforce-all is what makes it a tripwire in CI rather than only at
       # commit time. Without it the hook intersects the paths it is handed with
@@ -87,7 +99,7 @@ repos:
       # the same file fails the moment it is staged locally and passes in the
       # CI shape until this flag is set.
       - id: check-added-large-files
-        args: [--enforce-all]
+        args: [--enforce-all, --maxkb=1024]
 
       # macOS and Windows checkouts are case insensitive, so two paths that
       # differ only in case land on one file there and the working tree quietly
