@@ -62,12 +62,32 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
 
-  /* Chromium only. These specs assert on the accessibility tree Chrome builds,
-     which is read over CDP, so there is nothing here another engine could run. */
+  /* Two engines, for one reason: this app is installed on iOS more than it is
+     browsed, and every installed copy runs on WebKit. Apple builds home screen
+     web apps on WebKit even in the EU, and even when the install came from
+     Chrome or Firefox, so WebKit is not one browser among several here, it is
+     the engine of the platform the app is aimed at. Until this project existed,
+     nothing in the repository had ever executed on it.
+
+     Not everything runs on both. Half of these specs read the accessibility
+     tree Chrome exposes over CDP, which no other engine implements, and those
+     tests skip themselves on anything but chromium rather than being deleted or
+     duplicated. What WebKit does run is the game, the save, and the service
+     worker, which is where a WebKit only regression would actually hurt.
+
+     What this does not do, so nobody mistakes it for coverage it is not:
+     Playwright's WebKit is not Safari and is not iOS. It has no home screen, no
+     share sheet and no Add to Home Screen, so installing, and everything about
+     how iOS treats an installed app, remains untested by anything here. That
+     needs a device or the simulator. */
   projects: [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
     },
   ],
 

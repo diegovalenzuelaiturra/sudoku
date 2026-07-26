@@ -156,6 +156,10 @@ async function playAndSave(page) {
 
 test('a game in progress survives a reload', async ({ page, context }) => {
   const problems = await boot(page);
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
 
   await startGame(page, 'medium');
@@ -290,6 +294,10 @@ test('solving the puzzle clears the save, so the next load starts fresh', async 
   context,
 }) => {
   const problems = await boot(page);
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
 
   await startGame(page, 'medium');
@@ -370,6 +378,10 @@ for (const [name, payload] of [
 ]) {
   test(`a save that is ${name} is ignored and the start dialog opens`, async ({ page, context }) => {
     const problems = await boot(page);
+    test.skip(
+      test.info().project.name !== 'chromium',
+      'reads the accessibility tree, which only Chromium exposes over CDP',
+      );
     const cdp = await context.newCDPSession(page);
 
     /* Planted in the browser's own storage and then reloaded, so the page
