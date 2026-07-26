@@ -1,10 +1,45 @@
-# Every tracked file in this repository is text, and all of it is LF today.
-# Normalise line endings to LF both in the repository and in the working tree,
-# so a clone or a commit made on Windows cannot introduce CRLF. That matters
-# most for index.html, which GitHub Pages publishes byte for byte.
+# Every tracked file in this repository is text except the two icon PNGs, and
+# all of the text is LF today. Normalise line endings to LF both in the
+# repository and in the working tree, so a clone or a commit made on Windows
+# cannot introduce CRLF. That matters most for index.html, which GitHub Pages
+# publishes byte for byte.
 * text=auto eol=lf
 
-# index.html is the entire application - markup, styles and logic in one file -
-# so every diff lands deep inside it with no filename for context. Git's
-# built-in html driver names the enclosing tag in the hunk header instead.
-*.html diff=html
+# The rule above already leaves the icon PNGs alone, but only because git finds
+# a NUL byte early in each one and infers they are binary. Checked and true
+# today: the staged blob is byte identical to the file on disk. Say it outright
+# anyway, so the guarantee stops depending on a heuristic and a raster asset
+# whose first bytes happen to look like text cannot be line ending converted on
+# a Windows checkout and land corrupt in _site.
+*.png binary
+
+# Git's default hunk header is the nearest line starting at column 0, which in
+# SECURITY.md is a sentence from the section above the change. The built-in
+# markdown driver names the enclosing heading instead.
+*.md diff=markdown
+
+# The shipped site is index.html, 404.html and sw.js. tests/, e2e/ and scripts/
+# are the harness and the build: roughly 118 KB of tooling against 42 KB of
+# markup, enough that GitHub reports this as a three quarter JavaScript
+# project. Keep them out of the language bar only. Unlike linguist-vendored or
+# linguist-generated this does not collapse them in diffs or hide them from
+# blame, so they stay reviewable.
+e2e/** linguist-detectable=false
+scripts/** linguist-detectable=false
+tests/** linguist-detectable=false
+playwright.config.mjs linguist-detectable=false
+
+# Checked, and deliberately not here, so they do not get added back:
+#
+# *.html diff=html held this file's second rule until index.html grew a 550
+# line script block, 61% of the file. That driver only matches tags, so every
+# hunk inside the script reported the last heading above it while git's own
+# heuristic correctly named the enclosing function. A win at 200 lines of pure
+# markup, a loss now.
+#
+# There is no javascript or json driver in git 2.55, and the default heuristic
+# already names JS functions correctly, so any diff= line on .mjs is inert.
+#
+# Linguist already treats package-lock.json as generated, and .webmanifest,
+# .yml, .svg, .md and .txt as data or prose. None of them reach the language
+# bar, so a linguist-generated or linguist-language rule would change nothing.

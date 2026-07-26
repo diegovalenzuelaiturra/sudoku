@@ -11,14 +11,20 @@ project, so please treat that as best effort rather than a guarantee.
 
 ## Scope
 
-The published site is a single self-contained `index.html`, served as a static
-file by GitHub Pages. It makes no network requests, stores nothing off-device,
-handles no accounts or personal data, and has no backend.
+The published site is a handful of static files served by GitHub Pages: the
+whole app inline in `index.html`, plus a web app manifest, a service worker
+that precaches that shell, an icon, an error page and `robots.txt`. It has no
+backend, no accounts and no personal data, and it talks to no third party: the
+only requests it makes are the service worker fetching its own same-origin
+files. The game in progress (board, notes, timer, mistakes, hints) is saved to
+`localStorage` on the device and never leaves it.
 
 That narrows what a vulnerability here can realistically be. Things worth
 reporting:
 
 - anything that causes the page to execute content it should not
+- anything that lets the service worker cache or serve content it should not,
+  or that leaves a stale shell pinned after a deploy
 - a flaw in the build or deployment workflows that could let unreviewed code
   reach the published site
 - a dependency issue affecting the test tooling in `package.json`

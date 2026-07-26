@@ -18,9 +18,10 @@ updates:
         patterns:
           - "*"
 
-  # jsdom is the only dependency and is dev-only, so updates are low risk.
-  # Dependabot security updates already cover published advisories; this adds
-  # ordinary version bumps so we do not drift far behind between advisories.
+  # @playwright/test is the only dependency and is dev-only, so updates are low
+  # risk. Dependabot security updates already cover published advisories; this
+  # adds ordinary version bumps so we do not drift far behind between
+  # advisories.
   - package-ecosystem: npm
     directory: /
     schedule:

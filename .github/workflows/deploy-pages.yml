@@ -5,10 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# The floor for any job that does not say otherwise. Publishing to Pages and
+# minting an OIDC token are granted on the one job that deploys, so a job added
+# to this file later cannot inherit them by forgetting to ask.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # One deploy at a time; never cancel one midway, so a run cannot leave the
 # published site half-replaced.
@@ -22,8 +23,14 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
-    # A hung job otherwise runs to GitHub's 360-minute default.
-    timeout-minutes: 10
+    # This job only reads the repository. The Pages and OIDC permissions the
+    # workflow grants are narrowed to the one job that deploys.
+    permissions:
+      contents: read
+    # A hung job otherwise runs to GitHub's 360-minute default. 15 rather than
+    # the previous 10, because the chromium download below is a few minutes on
+    # a cold cache.
+    timeout-minutes: 15
     steps:
       # Actions are pinned to full commit SHAs. A tag like v7 is mutable, so
       # pinning by tag would let a moved tag swap the action out from under us.
@@ -41,30 +48,78 @@ jobs:
       # without them.
       - run: npm ci --ignore-scripts
 
+      # The same command the deploy job runs, so a build that fails here never
+      # gets as far as being published. The Playwright fixture serves _site and
+      # rebuilds it itself before starting, so this step is a fail fast rather
+      # than a prerequisite: a broken build is reported here, ahead of the unit
+      # suite, instead of as a wall of 404s in a browser log.
+      - name: Build site
+        env:
+          BUILD_ID: ${{ github.sha }}
+        run: npm run build
+
       - run: npm test
+
+      # --ignore-scripts also blocks Playwright's postinstall browser download,
+      # so the browser is fetched explicitly here.
+      - name: Install chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: npm run test:e2e
 
   deploy:
     name: Deploy
     needs: verify
     runs-on: ubuntu-latest
-    # A hung job otherwise runs to GitHub's 360-minute default.
-    timeout-minutes: 10
+    # pages: write publishes the artifact; id-token: write signs the OIDC token
+    # deploy-pages exchanges for it. Nothing else in the workflow needs either.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # A hung job otherwise runs to GitHub's 360-minute default. 20 rather than
+    # 10: deploy-pages waits up to 10 minutes on its own for the rollout, and
+    # the smoke test below can spend another 3 retrying a cold address. At 10
+    # the runner would kill the job at the exact moment deploy-pages was about
+    # to report the actionable timeout itself, and the smoke test would never
+    # run at all.
+    timeout-minutes: 20
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      # Exported so the Lighthouse job audits the address that was just
+      # published rather than a copy of it hardcoded here.
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # No npm install here on purpose. scripts/build.mjs imports node: builtins
+      # and nothing else, which tests/build.test.mjs asserts, so this job needs
+      # no node_modules. That keeps the entire npm dependency tree out of the
+      # one job that can publish to Pages and mint an OIDC token. Adding a
+      # dependency to the build means restoring npm ci --ignore-scripts here,
+      # and that test is what will say so.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
-      # The site is a single self-contained file. Publish only that, so tests,
-      # workflows and package metadata are not served alongside it.
-      - name: Assemble site
-        run: |
-          mkdir -p _site
-          cp index.html _site/
+      # Assembly lives in npm run build, so the site published here is the same
+      # one built and tested on every pull request. BUILD_ID is the commit SHA,
+      # and it replaces the __BUILD__ placeholder in every published text file.
+    # sw.js carries that placeholder in its cache name, so every deploy gets a
+    # distinct cache and a released change cannot sit behind a stale cached
+    # copy. tests/build.test.mjs covers the substitution, and tests/site.test.mjs
+    # asserts no __BUILD__ survives into the published output.
+      - name: Build site
+        env:
+          BUILD_ID: ${{ github.sha }}
+        run: npm run build
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -72,3 +127,141 @@ jobs:
 
       - id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+      # A green deploy only means the artifact was accepted. This asks the live
+      # address for the page and for every file the build actually published,
+      # so a deploy that serves nothing is not reported as a success.
+      - name: Smoke test the published site
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PAGE_URL:-}" ]; then
+            printf '::error::the deploy step reported no page_url\n'
+            exit 1
+          fi
+
+          base="${PAGE_URL%/}"
+
+          # Prints the status code and nothing else. || true keeps a connection
+          # failure, which curl reports as 000, from aborting the whole step
+          # before it can be retried or reported.
+          probe() {
+            curl --silent --show-error --location --max-time 30 \
+              --output /dev/null --write-out '%{http_code}' "$1" || true
+          }
+
+          # The root page is the one thing that must always be there, so it is
+          # probed unconditionally and a non 200 fails the run. Pages can take a
+          # few seconds to start serving a fresh deploy, hence the retries.
+          status=000
+          for attempt in 1 2 3 4 5; do
+            status="$(probe "$base/")"
+            if [ "$status" = "200" ]; then
+              break
+            fi
+            printf 'attempt %s: %s/ returned %s\n' "$attempt" "$base" "$status"
+            if [ "$attempt" -lt 5 ]; then
+              sleep 10
+            fi
+          done
+          if [ "$status" != "200" ]; then
+            printf '::error::%s/ returned %s, expected 200\n' "$base" "$status"
+            exit 1
+          fi
+          printf 'ok: %s/ returned 200\n' "$base"
+
+          # Assets are discovered from the artifact rather than listed here, so
+          # files added on other branches are covered the day they land and no
+          # list can go stale. Every file this loop sees was uploaded minutes
+          # ago, so a 404 is Pages failing to serve something that was
+          # definitely published, which is the whole failure this step exists to
+          # catch: it fails the run. The single exception is a custom 404.html,
+          # which Pages serves with a 404 status by design.
+          failed=0
+          while IFS= read -r -d '' file; do
+            asset="${file#_site/}"
+            if [ "$asset" = "index.html" ]; then
+              continue
+            fi
+            # Git can store a filename containing a newline, and everything
+            # below is printed on the job's stdout, where GitHub reads ::error::
+            # and ::stop-commands:: as instructions rather than as text. A
+            # crafted name could forge annotations or switch off the ones this
+            # loop exists to emit, so it is rejected rather than printed.
+            case "$asset" in
+              *[[:cntrl:]]*)
+                printf '::error::a published filename holds a control character and was not probed\n'
+                failed=1
+                continue
+                ;;
+            esac
+            status="$(probe "$base/$asset")"
+            if [ "$status" = "200" ]; then
+              printf 'ok: %s returned 200\n' "$asset"
+            elif [ "$status" = "404" ] && [ "$asset" = "404.html" ]; then
+              printf 'ok: %s returned 404, which is how Pages serves it\n' "$asset"
+            else
+              printf '::error::%s returned %s, expected 200\n' "$asset" "$status"
+              failed=1
+            fi
+          done < <(find _site -type f -print0 | sort -z)
+
+          exit "$failed"
+
+  lighthouse:
+    name: Lighthouse
+    # Runs after the deploy, so a budget regression fails the run and is visible
+    # in the checks without ever holding the deployment back or, worse, leaving
+    # the site half published.
+    needs: deploy
+    runs-on: ubuntu-latest
+    # Audits an address that is already public, so it needs no write scope.
+    permissions:
+      contents: read
+    # A hung job otherwise runs to GitHub's 360-minute default.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No cache: npm here. This job installs nothing: check-budget.mjs imports
+      # node: builtins only, and Lighthouse is fetched by npx.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      # Lighthouse is run through npx rather than an action: the repository
+      # allows GitHub owned actions only, and a run step needs no action at all.
+      # The Lighthouse version is pinned exactly, because it is the version the
+      # budget in scripts/check-budget.mjs was measured against and a Lighthouse
+      # release can change how a metric is computed without the page changing.
+      # That pin covers the top level only: Lighthouse's own dependencies are
+      # caret ranges and are resolved fresh here, with no lockfile.
+      # npm_config_ignore_scripts is what keeps that from being an arbitrary
+      # code path, since npx runs the lifecycle scripts of everything it
+      # resolves; it is the same protection npm ci --ignore-scripts gives the
+      # other jobs. Chrome is preinstalled on the runner image. --preset=desktop
+      # is what the recorded baselines were measured on; the mobile default
+      # throttles the CPU 4x and would compare against numbers nobody measured.
+      - name: Run Lighthouse against the published site
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          npm_config_ignore_scripts: 'true'
+        run: |
+          set -euo pipefail
+          npx --yes lighthouse@13.4.1 "$PAGE_URL" \
+            --preset=desktop \
+            --only-categories=performance,accessibility \
+            --output=json \
+            --output-path=./lighthouse-report.json \
+            --chrome-flags="--headless=new --no-sandbox --disable-dev-shm-usage" \
+            --quiet
+
+      # The thresholds live in the script, so tightening one is a code review
+      # rather than a workflow edit. A non zero exit fails the run and leaves
+      # the deployment that already happened alone.
+      - name: Check the performance budget
+        run: node scripts/check-budget.mjs lighthouse-report.json
