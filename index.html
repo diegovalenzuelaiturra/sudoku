@@ -245,7 +245,7 @@
       <div class="seal" aria-hidden="true">数</div>
       <div class="wordmark">
         <div class="title">SUDOKU</div>
-        <div class="sub">数独 · juego de números</div>
+        <div class="sub">数独, juego de números</div>
       </div>
     </div>
     <div class="clock">
@@ -575,7 +575,7 @@ function win(){
     $('winLede').textContent=
       flawless?'La más seca: cero errores, cero pistas.':
       finalMist===0?'Sin errores. Filete.':'Costó, pero salió igual.';
-    $('fryBanner').innerHTML=`🍟 Te ganaste +${earned} papas fritas${flawless?' — bono impecable ×2':''}`
+    $('fryBanner').innerHTML=`🍟 Te ganaste +${earned} papas fritas${flawless?', bono impecable ×2':''}`
       +`<small>llevas ${friesTotal} en esta sesión</small>`;
     showOverlay($('winOverlay'));
   },1900*slow));

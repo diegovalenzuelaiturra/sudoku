@@ -24,7 +24,7 @@ reporting:
 - a dependency issue affecting the test tooling in `package.json`
 
 Out of scope: puzzle difficulty, generator behaviour, and gameplay bugs. Those
-are ordinary issues, not security reports — please open a regular issue.
+are ordinary issues, not security reports; please open a regular issue.
 
 ## Supported versions
 
