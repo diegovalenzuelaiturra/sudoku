@@ -250,7 +250,18 @@ test('the head declares a content security policy and a theme colour', () => {
   assert.ok(/worker-src [^;]*'self'/.test(csp[1]), "worker-src must allow 'self' for sw.js");
   assert.ok(/default-src 'self'/.test(csp[1]), "default-src 'none' would block the manifest");
 
-  assert.ok(head.includes('<meta name="theme-color"'), 'no theme-color');
+  /* The manifest's theme_color and this meta tag colour the same surface: the
+     title bar when the app is installed, the browser UI when it is a tab. They
+     drifted apart once (manifest vermilion, page cream), which showed up as a
+     red title bar over a cream page, so they are pinned to each other here
+     rather than to a literal. Change both or neither. */
+  const themeColor = head.match(/<meta name="theme-color" content="([^"]+)"/);
+  assert.ok(themeColor, 'no theme-color');
+  assert.equal(
+    JSON.parse(read('manifest.webmanifest')).theme_color,
+    themeColor[1],
+    'the manifest theme_color and the page theme-color must match',
+  );
   assert.ok(head.includes('property="og:title"'), 'no Open Graph title');
   assert.ok(head.includes('name="twitter:card"'), 'no Twitter card');
   assert.ok(
