@@ -6,11 +6,14 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "icons": "node scripts/icons.mjs",
+    "lint": "prek run --all-files",
     "preview": "node scripts/build.mjs && node e2e/static-server.mjs",
     "test": "node --test --test-timeout=30000",
+    "test:coverage": "node --test --test-timeout=30000 --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=75 --test-coverage-functions=85",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@j178/prek": "^0.4.11",
     "@playwright/test": "^1.62.0",
     "html-minifier-terser": "^7.2.0",
     "terser": "^5.49.0"

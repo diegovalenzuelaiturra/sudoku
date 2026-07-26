@@ -1,0 +1,70 @@
+name: OSV-Scanner
+
+# Checks the dependency tree against the OSV database on every pull request.
+# The point is not that this repo has many dependencies, it has three direct
+# ones and all of them are dev-only. The point is the transitive tree behind
+# them, which is where a compromised release actually arrives.
+#
+# What this adds over what already runs here:
+#
+#   Dependabot alerts are enabled and cover much of the same GHSA data, but
+#   they are a notification on a page nobody opens during review. This is a red
+#   mark on the pull request that introduces the problem, when it is introduced.
+#
+#   The Dependabot cooldown in dependabot.yml is the stronger control and works
+#   the other way round: it refuses to consider any release younger than a week
+#   rather than trying to recognise a bad one. This catches what is already
+#   known; the cooldown covers the window before anything is known. Neither
+#   replaces the other. Recent npm compromises were advisory-listed a few hours
+#   after publication in one case and more than a day in another, and the
+#   cooldown is what covers that gap.
+#
+# Deliberately NOT a required status check. It reaches the OSV API, so a
+# network failure should never be able to wedge a merge. A red mark a human can
+# read and override is the right shape for a one-maintainer repo.
+#
+# Using this at all needed a policy change. The repository's Actions setting is
+# "selected", and the GitHub-owned and verified-creator checkboxes do not cover
+# a third-party REUSABLE WORKFLOW: those two apply to actions, and a reusable
+# workflow from another repository needs an explicit allowed pattern whoever
+# publishes it. "google/*" is now in that list, which is what lets the job
+# below start at all.
+#
+# One caveat, recorded rather than hidden. Every "uses:" inside the reusable
+# workflow is a full commit SHA, but it bottoms out in an action whose runtime
+# is "image: docker://ghcr.io/google/osv-scanner-action:v2.3.8", an image tag
+# rather than a digest. Pinning the reference below does not pin that image, so
+# this job is the one exception to the repository's otherwise total SHA
+# pinning. Accepted knowingly, in exchange for upstream maintenance and the
+# base-versus-head diffing described below.
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: osv-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan-pr:
+    # The PR variant rather than the full-scan one. It scans base and head and
+    # reports only what the pull request newly introduces, so a long-lived
+    # advisory in a dev-only transitive dependency does not re-flag every
+    # unrelated change. The full-scan sibling is also the worse-pinned of the
+    # two: it calls actions/download-artifact@v8, a mutable major tag, where
+    # every reference in this one is a SHA.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    # Restated rather than inherited. The workflow-level default above is no
+    # permissions at all, and a called workflow cannot be granted more than its
+    # caller holds, so leaving this out would starve it.
+    permissions:
+      # Required by codeql-action to upload the SARIF file.
+      actions: read
+      contents: read
+      # Publishes findings under Security, Code scanning. Free on public
+      # repositories. This is the widest permission granted anywhere outside
+      # the deploy job, and it goes to third-party code, which is why it is
+      # scoped to this one job.
+      security-events: write
