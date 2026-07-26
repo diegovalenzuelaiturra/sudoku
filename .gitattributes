@@ -18,6 +18,19 @@
 # markdown driver names the enclosing heading instead.
 *.md diff=markdown
 
+# package-lock.json is tracked and npm writes every line of it. Left to git it
+# gets a line by line three way merge, which fails in two ways. Loudly, it
+# leaves conflict markers inside generated JSON: npm itself survives that,
+# arborist reads the lockfile through parse-conflict-json, but the file is no
+# longer valid JSON for anything else. Quietly, when two branches re-locked
+# different regions it merges with no conflict at all into a dependency tree
+# npm never resolved, which a generated diff is not read closely enough to
+# catch. merge=binary conflicts the file as a whole instead, so the repair is
+# to take one side and re-lock: git checkout --ours package-lock.json && npm
+# install --package-lock-only && git add package-lock.json, which rebuilds the
+# lockfile from package.json without touching node_modules.
+package-lock.json merge=binary
+
 # The shipped site is index.html, 404.html and sw.js. tests/, e2e/ and scripts/
 # are the harness and the build: roughly 118 KB of tooling against 42 KB of
 # markup, enough that GitHub reports this as a three quarter JavaScript
@@ -43,3 +56,5 @@ playwright.config.mjs linguist-detectable=false
 # Linguist already treats package-lock.json as generated, and .webmanifest,
 # .yml, .svg, .md and .txt as data or prose. None of them reach the language
 # bar, so a linguist-generated or linguist-language rule would change nothing.
+# That default is about display only and says nothing about merging, which is
+# why package-lock.json still has a rule of its own above.
