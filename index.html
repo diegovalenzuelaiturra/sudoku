@@ -56,6 +56,15 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{
+    /* No double tap to zoom, anywhere on the page. Safari on iOS treats a
+       second tap inside ~300ms as a zoom gesture, so entering two digits
+       quickly, or tapping the same pad key twice, zoomed the board instead of
+       playing. The permitted behaviours are the intersection of an element's
+       value and its ancestors', so declaring it here covers the pad, the tools
+       and the chrome, not just the board it used to sit on. "manipulation"
+       disables only the double tap: pinch to zoom still works, which a
+       viewport lockout would have taken away. */
+    touch-action:manipulation;
     font-family:var(--sans);
     background:var(--paper);
     color:var(--ink);
@@ -100,6 +109,7 @@
   .status .chip{color:var(--indigo);font-weight:600;letter-spacing:.08em;text-transform:uppercase}
   .status .spacer{flex:1}
   .status .warn b{color:var(--vermilion)}
+  .toolhint{margin-top:9px;font-size:11.5px;line-height:1.45;color:var(--ink-soft);letter-spacing:.02em}
   .visually-hidden{
     position:absolute;width:1px;height:1px;margin:-1px;padding:0;
     overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;
@@ -114,7 +124,6 @@
     display:grid;grid-template-columns:repeat(9,1fr);aspect-ratio:1;
     background:var(--paper-raised);
     border:2px solid var(--ink);border-radius:4px;overflow:hidden;
-    touch-action:manipulation;
   }
   .cell{
     position:relative;border:0;background:transparent;cursor:pointer;padding:0;
@@ -243,11 +252,17 @@
     82%{opacity:1}
     100%{transform:translateY(var(--fall)) rotate(var(--spin));opacity:0}
   }
+  /* The prize is two numbers. It used to be a sentence around them, which was
+     longer than the thing it described, so it is icons now. */
   .frybanner{
-    margin:14px 0 16px;padding:10px;border:1px dashed var(--vermilion);border-radius:9px;
-    color:var(--vermilion);font-size:13px;letter-spacing:.03em;font-weight:600;
+    margin:14px 0 16px;padding:11px 10px;border:1px dashed var(--vermilion);border-radius:9px;
+    color:var(--vermilion);display:flex;gap:18px;justify-content:center;align-items:center;
   }
-  .frybanner small{display:block;font-weight:400;color:var(--ink-soft);margin-top:3px;letter-spacing:.02em}
+  .frybanner b{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:.02em}
+  .frybanner i{
+    font-style:normal;font-size:10.5px;font-weight:600;letter-spacing:.08em;
+    border:1px solid var(--vermilion);border-radius:6px;padding:2px 7px;
+  }
 
   /* ---------- responsive ---------- */
   @media (max-width:719px){
@@ -329,9 +344,14 @@
       <div class="tools">
         <button class="tool" id="undoBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-undo"/></svg>Deshacer <span class="k">Z</span></button>
         <button class="tool" id="eraseBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-ink_eraser"/></svg>Borrar <span class="k">⌫</span></button>
-        <button class="tool" id="notesBtn" aria-pressed="false"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-stylus_note"/></svg>Notas <span class="k">N</span></button>
+        <button class="tool" id="notesBtn" aria-pressed="false" aria-describedby="notesHint"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-stylus_note"/></svg>Notas <span class="k">N</span></button>
         <button class="tool" id="hintBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-lightbulb"/></svg>Pista <span class="k">H</span></button>
       </div>
+      <!-- What "Notas" does was guessable from the icon and nothing else. Kept
+           out of sight until the mode is on, so the board is not carrying an
+           instruction nobody is reading, but always in the accessibility tree
+           as the button's description, where it is read on focus either way. -->
+      <p class="toolhint visually-hidden" id="notesHint">Anota candidatos: el número queda chico. Tócalo de nuevo para borrarlo.</p>
       <button class="newgame" id="newBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg> Nueva partida</button>
     </div>
   </main>
@@ -599,6 +619,7 @@ function newGame(key){
   undoStack=[];mistakes=0;hints=0;seconds=0;solved=false;playing=true;notesMode=false;pausedByDialog=false;
   sel=values.indexOf(0);
   $('notesBtn').setAttribute('aria-pressed','false');
+  showNotesHint();
   $('diffLabel').textContent=DIFF[key].label;
   $('time').textContent='0:00';
   $('stamp').classList.remove('show');
@@ -672,9 +693,41 @@ function clearSavedGame(){
 function saveWallet(){
   try{localStorage.setItem(WALLET_KEY,JSON.stringify({v:WALLET_VERSION,fries:friesTotal,choco:chocoTotal}))}catch(e){/* as with the autosave: a wallet that cannot be written is not worth failing a win over */}
 }
+/* The stored totals, or null if there is nothing readable and current there.
+   Separate from loadWallet() because banking a prize has to consult the key
+   again rather than trust what this tab read at boot. */
+function readWallet(){
+  let raw=null;
+  try{raw=localStorage.getItem(WALLET_KEY)}catch(e){return null}
+  if(raw===null)return null;
+  let w;
+  try{w=JSON.parse(raw)}catch(e){return null}
+  if(!w||typeof w!=='object'||w.v!==WALLET_VERSION)return null;
+  return{fries:Number(w.fries)||0,choco:Number(w.choco)||0};
+}
+/* Adds a prize to the wallet, against what is stored rather than against what
+   this tab happens to hold. The player can have the game open twice: the other
+   tab read its totals at boot, and if this one wrote its own over the top, every
+   prize won over there would vanish. Measured before this existed: two flawless
+   wins in two tabs, 20 papas then 50, left 50 stored instead of 70.
+
+   Falling back to the in-memory totals keeps a tab whose storage has died (or
+   was cleared mid-game) counting its own prizes for as long as it lives. */
+function bankPrize(fries,choco){
+  const stored=readWallet()||{fries:friesTotal,choco:chocoTotal};
+  friesTotal=stored.fries+fries;
+  chocoTotal=stored.choco+choco;
+  saveWallet();
+}
 function paintWallet(){
   $('fries').textContent=friesTotal;
   $('chocos').textContent=chocoTotal;
+}
+/* On screen only while the mode is on. Not hidden with the hidden attribute:
+   aria-describedby has to keep resolving to it, and a hidden element is dropped
+   from the accessibility tree, taking the button's description with it. */
+function showNotesHint(){
+  $('notesHint').classList.toggle('visually-hidden',!notesMode);
 }
 /* Restarts the pop even if the chip is already mid-animation: removing the
    class is not enough on its own, the reflow between is what replays it. */
@@ -688,11 +741,11 @@ function loadWallet(){
   let raw=null;
   try{raw=localStorage.getItem(WALLET_KEY)}catch(e){return}
   if(raw!==null){
-    let w;
-    try{w=JSON.parse(raw)}catch(e){return}
-    if(!w||typeof w!=='object'||w.v!==WALLET_VERSION)return;
-    friesTotal=Number(w.fries)||0;
-    chocoTotal=Number(w.choco)||0;
+    const stored=readWallet();
+    /* Something is under the key. If this build cannot read it, leave it there:
+       overwriting it with zeros would discard the wallet of a newer build the
+       player still has cached, which is worse than showing nothing. */
+    if(stored){friesTotal=stored.fries;chocoTotal=stored.choco}
     return;
   }
   /* No wallet yet: either a new player, or one whose papas are still sitting
@@ -737,6 +790,7 @@ function loadGame(){
   solved=false;playing=true;notesMode=false;pausedByDialog=false;undoStack=[];
   winTimers.forEach(clearTimeout);winTimers=[];
   $('notesBtn').setAttribute('aria-pressed','false');
+  showNotesHint();
   $('diffLabel').textContent=DIFF[diffKey].label;
   $('time').textContent=fmt(seconds);
   $('stamp').classList.remove('show');
@@ -786,11 +840,9 @@ function win(){
   $('srAlert').textContent=`Ganaste. ${fmt(seconds)}, ${mistakes===1?'1 error':mistakes+' errores'}, ${hints===1?'1 pista':hints+' pistas'}.`
     +` Te llevas ${earned} papas fritas${chocoEarned?` y ${chocoWord(chocoEarned)}`:''}.`;
   const finalTime=seconds,finalMist=mistakes,finalHints=hints;
-  friesTotal+=earned;
-  chocoTotal+=chocoEarned;
   /* Banked now, not on the timers below: those are decoration, and a player
      who closes the tab during the animation has still won the prize. */
-  saveWallet();
+  bankPrize(earned,chocoEarned);
   /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow=reduceMotion.matches?0:1;
   if(!reduceMotion.matches){
@@ -812,13 +864,17 @@ function win(){
     $('winLede').textContent=
       flawless?'La más seca: cero errores, cero pistas.':
       finalMist===0?'Sin errores. Filete.':'Costó, pero salió igual.';
-    /* innerHTML, and every hole in it is a number: earned and chocoEarned come
-       from the DIFF table, and the running totals pass through Number() in
-       loadWallet() before they ever reach here. Nothing player-authored is
-       interpolated, so there is no markup to inject. */
-    $('fryBanner').innerHTML=`🍟 Te ganaste +${earned} papas fritas${flawless?', bono impecable ×2':''}`
-      +(chocoEarned?`<br>🍫 Y ${chocoWord(chocoEarned)} por partida impecable`:'')
-      +`<small>llevas ${friesTotal} papas fritas y ${chocoWord(chocoTotal)}</small>`;
+    /* What you just won, as icons. The sentence this replaced said the same
+       thing three times over, and the running totals it repeated are the chips
+       in the status bar, one dismissal away. The words survive for a screen
+       reader, which cannot see either.
+
+       innerHTML, and every hole in it is a number straight from the DIFF table.
+       Nothing player-authored is interpolated, so there is no markup to inject. */
+    $('fryBanner').innerHTML=`<b aria-hidden="true">🍟 +${earned}</b>`
+      +(chocoEarned?`<b aria-hidden="true">🍫 +${chocoEarned}</b>`:'')
+      +(flawless?'<i aria-hidden="true">×2</i>':'')
+      +`<span class="visually-hidden">Ganaste ${earned} papas fritas${chocoEarned?` y ${chocoWord(chocoEarned)}`:''}.</span>`;
     showOverlay($('winOverlay'));
   },1900*slow));
 }
@@ -942,6 +998,7 @@ $('notesBtn').addEventListener('click',e=>{
   if(!playing||paused)return;
   notesMode=!notesMode;
   e.currentTarget.setAttribute('aria-pressed',String(notesMode));
+  showNotesHint();
 });
 $('eraseBtn').addEventListener('click',erase);
 $('undoBtn').addEventListener('click',undo);
@@ -1006,6 +1063,18 @@ document.addEventListener('keydown',e=>{
   }
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden)setPaused(true)});
+/* Another tab banked a prize while this one was open. Adopt its totals: ours
+   are stale from here on, and the chips would otherwise keep showing a number
+   the wallet no longer holds. Fires only in the other tabs, never the writer's,
+   which is exactly the tab that needs telling. A clear() reports a null key and
+   is ignored: bankPrize() falls back to memory, so this tab keeps counting. */
+addEventListener('storage',e=>{
+  if(e.key!==WALLET_KEY)return;
+  const w=readWallet();
+  if(!w)return;
+  friesTotal=w.fries;chocoTotal=w.choco;
+  paintWallet();
+});
 
 /* ---- boot ---- */
 /* Before loadGame(): the prizes are the player's, not the puzzle's, so they are

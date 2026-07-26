@@ -21,6 +21,7 @@ const WALLET_KEY = 'sudoku:wallet';
    from the page, so a table edited by accident fails instead of agreeing with
    itself. */
 const NORMAL = { fries: 10, choco: 2 };
+const HARD = { fries: 15, choco: 3 };
 
 async function boot(page) {
   const problems = [];
@@ -93,16 +94,25 @@ test('a flawless win pays papas fritas doubled, and chocolates', async ({ page }
     new RegExp(`${NORMAL.fries * 2} papas fritas y ${NORMAL.choco} chocolates`),
   );
 
-  /* And on screen, where the banner is the only place the player is told what
-     the flawless bonus was worth. */
+  /* And on screen. The banner is icons and numbers, so what is asserted is the
+     pair of amounts and the bonus badge, not a sentence. */
   await expect(page.locator('#winOverlay')).toBeVisible();
-  const banner = await page.locator('#fryBanner').textContent();
-  expect(banner).toContain(`+${NORMAL.fries * 2} papas fritas`);
-  expect(banner, 'the flawless bonus is not named').toContain('bono impecable');
-  expect(banner).toContain(`${NORMAL.choco} chocolates por partida impecable`);
-  expect(banner, 'the running totals are not shown').toContain(
-    `llevas ${NORMAL.fries * 2} papas fritas y ${NORMAL.choco} chocolates`,
+  const amounts = await page.locator('#fryBanner b').allTextContents();
+  expect(amounts, 'the banner does not show both prizes').toEqual([
+    `🍟 +${NORMAL.fries * 2}`,
+    `🍫 +${NORMAL.choco}`,
+  ]);
+  expect(
+    await page.locator('#fryBanner i').textContent(),
+    'the doubled bonus is not marked',
+  ).toBe('×2');
+
+  /* The words are gone from the screen, not from the page: everything visible
+     in there is aria-hidden, so a screen reader gets the sentence instead. */
+  expect(await page.locator('#fryBanner .visually-hidden').textContent()).toBe(
+    `Ganaste ${NORMAL.fries * 2} papas fritas y ${NORMAL.choco} chocolates.`,
   );
+  await expect(page.locator('#fryBanner b').first()).toHaveAttribute('aria-hidden', 'true');
   expect(problems).toEqual([]);
 });
 
@@ -146,6 +156,129 @@ test('the totals survive the reload that used to reset them', async ({ page }) =
   await solve(page);
   await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 4));
   await expect(page.locator('#chocos')).toHaveText(String(NORMAL.choco * 2));
+  expect(problems).toEqual([]);
+});
+
+/* The other half of the flawless rule. A mutation that made the chocolate
+   depend on mistakes alone, ignoring hints, kept both suites green: no spec
+   took a hint and then won. The rule is what gives the prize its meaning, so
+   both halves need holding down. */
+test('a win after a hint pays papas fritas only, however clean the grid', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  await page.locator('#hintBtn').click();
+  await expect(page.locator('#hints')).toHaveText('1');
+  await expect(page.locator('#mistakes'), 'a hint counted as a mistake').toHaveText('0');
+  await solve(page);
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries));
+  await expect(page.locator('#chocos'), 'a hinted game paid a chocolate').toHaveText('0');
+  expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
+  expect(problems).toEqual([]);
+});
+
+/* Two tabs, which is how the wallet used to lose prizes. Each tab read its
+   totals once at boot, and a win wrote those totals back wholesale, so the
+   second tab to win erased whatever the first had banked. */
+test('a win in one tab does not overwrite what another tab banked', async ({ page, context }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  /* Opened before the first win, so its in-memory totals are zero: exactly the
+     stale state that used to be written over the top of a real total. */
+  const other = await context.newPage();
+  const otherProblems = [];
+  other.on('pageerror', (error) => otherProblems.push(`uncaught: ${error.message}`));
+  await other.goto('./');
+  await expect(other.locator('#board .cell')).toHaveCount(81);
+  /* One origin, one save, so this tab resumes the game the first one is
+     playing rather than opening the picker. What matters is when it read the
+     wallet: now, while both totals are still zero. */
+  expect(await other.evaluate(() => playing), 'the second tab did not resume').toBe(true);
+  expect(await other.evaluate(() => friesTotal), 'the second tab booted with a total').toBe(0);
+
+  await solve(page);
+  const first = { fries: NORMAL.fries * 2, choco: NORMAL.choco };
+  expect(await readWallet(page)).toMatchObject(first);
+
+  await other.locator('#newBtn').click();
+  await other.locator('#startOverlay button.diff[data-d="hard"]').click();
+  await expect(other.locator('#startOverlay')).toBeHidden();
+  await solve(other);
+
+  /* Both wins, added, not the second one alone. */
+  const both = { fries: first.fries + HARD.fries * 2, choco: first.choco + HARD.choco };
+  expect(await readWallet(other), 'the second win erased the first').toMatchObject(both);
+
+  /* And the tab that did not win notices, so its chips do not sit on a number
+     the wallet no longer holds and write it back at the next win. */
+  await expect(page.locator('#fries')).toHaveText(String(both.fries));
+  await expect(page.locator('#chocos')).toHaveText(String(both.choco));
+  expect(problems).toEqual([]);
+  expect(otherProblems).toEqual([]);
+});
+
+/* The test above passes on the storage listener alone: the second tab hears
+   about the first tab's win and adopts its totals before winning itself. The
+   other half of the fix is for the tab that never hears anything, because it
+   was frozen, discarded, or restored from the back forward cache. Banking has
+   to re-read the key rather than trust what this tab last saw. */
+test('a tab that never hears about the other one still cannot erase it', async ({
+  page,
+  context,
+}) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  const deaf = await context.newPage();
+  await deaf.addInitScript(() => {
+    const real = window.addEventListener.bind(window);
+    window.addEventListener = (type, ...rest) => {
+      if (type !== 'storage') real(type, ...rest);
+    };
+  });
+  await deaf.goto('./');
+  await expect(deaf.locator('#board .cell')).toHaveCount(81);
+
+  await solve(page);
+  const first = { fries: NORMAL.fries * 2, choco: NORMAL.choco };
+  expect(await readWallet(page)).toMatchObject(first);
+
+  /* Still on zero: it heard nothing, which is the whole point of this tab. */
+  expect(await deaf.evaluate(() => friesTotal), 'the deaf tab heard the win').toBe(0);
+
+  await deaf.locator('#newBtn').click();
+  await deaf.locator('#startOverlay button.diff[data-d="hard"]').click();
+  await solve(deaf);
+
+  /* It goes straight from zero to the combined total rather than to its own
+     winnings: banking re-reads the key, so the tab corrects itself as it pays. */
+  await expect(deaf.locator('#fries')).toHaveText(String(first.fries + HARD.fries * 2));
+  expect(await readWallet(deaf), 'a deaf tab overwrote the other one').toMatchObject({
+    fries: first.fries + HARD.fries * 2,
+    choco: first.choco + HARD.choco,
+  });
+  expect(problems).toEqual([]);
+});
+
+/* A wallet this build cannot read belongs to some other build, very likely a
+   newer one the player still has cached. Zeroing it would be worse than
+   showing nothing, so it is read as absent and left where it is. */
+test('a wallet from an unknown version is ignored, not overwritten', async ({ page }) => {
+  const planted = { v: 2, fries: 99, choco: 9 };
+  await page.addInitScript(
+    ({ key, wallet }) => localStorage.setItem(key, JSON.stringify(wallet)),
+    { key: WALLET_KEY, wallet: planted },
+  );
+
+  const problems = await boot(page);
+  await expect(page.locator('#fries')).toHaveText('0');
+  await expect(page.locator('#chocos')).toHaveText('0');
+  expect(JSON.parse(await readRaw(page, WALLET_KEY)), 'the unknown wallet was clobbered').toEqual(
+    planted,
+  );
   expect(problems).toEqual([]);
 });
 

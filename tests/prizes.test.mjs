@@ -43,12 +43,22 @@ function prizeTable() {
    function this file inspects is written flush against the left margin, so the
    first unindented brace ends it. */
 function body(name) {
-  const found = source.match(new RegExp(`function ${name}\\(\\)\\{[\\s\\S]*?\\n\\}`));
+  const found = source.match(new RegExp(`function ${name}\\([^)]*\\)\\{[\\s\\S]*?\\n\\}`));
   assert.ok(found, `${name}() is not where this test expects to find it`);
   return found[0];
 }
 
-test('every difficulty pays both prizes', () => {
+/* What each difficulty pays, pinned. The monotonic rule below says a harder
+   puzzle may not pay less; it does not notice three of the four rows being
+   wrong together, which a mutation campaign confirmed. */
+const PAYOUTS = {
+  easy: { fries: 5, choco: 1 },
+  medium: { fries: 10, choco: 2 },
+  hard: { fries: 15, choco: 3 },
+  expert: { fries: 25, choco: 5 },
+};
+
+test('every difficulty pays both prizes, in the published amounts', () => {
   const rows = prizeTable();
   assert.deepEqual([...rows.keys()], ORDER, 'the difficulties are not the four the game offers');
 
@@ -56,6 +66,7 @@ test('every difficulty pays both prizes', () => {
     assert.ok(fries !== null && fries > 0, `${key} pays no papas fritas`);
     assert.ok(choco !== null && choco > 0, `${key} pays no chocolates`);
   }
+  assert.deepEqual(Object.fromEntries(rows), PAYOUTS, 'the prize table changed');
 });
 
 test('a harder puzzle never pays less than an easier one', () => {
@@ -99,6 +110,25 @@ test('the prize totals are kept out of the game save', () => {
     body('saveGame'),
     /friesTotal|chocoTotal/,
     'saveGame() writes a prize total again, and a win deletes that save moments after paying it',
+  );
+});
+
+test('the prize is banked before the animation timers, never on one', () => {
+  const win = body('win');
+  const scheduled = win.indexOf('setTimeout');
+  assert.ok(scheduled > 0, 'win() schedules nothing, so this test no longer means anything');
+  assert.match(
+    win.slice(0, scheduled),
+    /bankPrize\(/,
+    'the prize is banked on a timer, so closing the tab during the animation loses it',
+  );
+});
+
+test('banking a prize consults the stored wallet, not just this tab', () => {
+  assert.match(
+    body('bankPrize'),
+    /readWallet\(\)/,
+    'bankPrize() writes this tab\'s totals blind, which erases a prize banked by another tab',
   );
 });
 
