@@ -19,6 +19,12 @@
 # pre-commit exits on any hook whose floor is above the installed version.
 # Leaving 3.0.0 here would promise a version this file can no longer run on,
 # and the failure would name one hook rather than the config.
+#
+# That is a statement about plain pre-commit only. prek, the runner this repo
+# installs and the one CI runs, ignores this key and every hook's own floor:
+# measured against the prek in this lockfile, "99.99.0" here still runs every
+# hook and exits 0. So this line records the floor for the other runner and
+# enforces nothing here, which is worth knowing before treating it as a guard.
 minimum_pre_commit_version: "3.2.0"
 
 repos:
@@ -72,7 +78,16 @@ repos:
       # tracked file today is index.html at 43 KB. This is a tripwire for a
       # Playwright trace, a screenshot or a build artifact that .gitignore does
       # not happen to name.
+      #
+      # --enforce-all is what makes it a tripwire in CI rather than only at
+      # commit time. Without it the hook intersects the paths it is handed with
+      # the files added to the index, and a fresh runner checkout stages
+      # nothing, so "prek run --all-files" reports Passed over a tree holding a
+      # 900 KB blob. Measured against the prek in this lockfile, not assumed:
+      # the same file fails the moment it is staged locally and passes in the
+      # CI shape until this flag is set.
       - id: check-added-large-files
+        args: [--enforce-all]
 
       # macOS and Windows checkouts are case insensitive, so two paths that
       # differ only in case land on one file there and the working tree quietly
@@ -82,33 +97,44 @@ repos:
 
       # package.json and package-lock.json are parsed by "npm ci" before any
       # test can run, so a stray comma in either turns every job into an install
-      # failure that reads nothing like a syntax error. The upstream manifest
-      # scopes this to the json file type, which comes from the .json extension.
-      - id: check-json
-
+      # failure that reads nothing like a syntax error.
+      #
       # manifest.webmanifest is JSON as well, but its extension is not .json,
       # and neither identify nor prek's port of that table maps .webmanifest to
-      # the json tag, so the entry above walks straight past it. Checked in both
-      # sources rather than inferred from the name. That file is served to every
-      # visitor and is what makes the app installable, so a parse error in it is
-      # a user facing failure rather than a build one.
+      # the json tag, so the upstream manifest's "types: [json]" walks straight
+      # past it. Checked in both sources rather than inferred from the name.
+      # That file is served to every visitor and is what makes the app
+      # installable, so a parse error in it is a user facing failure rather than
+      # a build one.
       #
-      # A second entry with the same id covers it. Setting types in this file
-      # replaces the manifest's value instead of adding to it, so [file] widens
-      # the hook to everything and the files pattern narrows it back to the one
-      # extension. The pattern matches by extension rather than by exact name so
-      # a second manifest added later is covered without another edit. The alias
-      # is what "prek run" needs to address this entry instead of the one above.
+      # One entry rather than two. Setting types in this file replaces the
+      # manifest's value instead of adding to it, so [file] widens the hook to
+      # everything and the files pattern narrows it back to the two extensions.
+      # A second entry with the same id would also work, but the id is what
+      # "prek run --skip" matches on, so "--skip check-json" would silently take
+      # both entries with it and the webmanifest would stop being parsed by a
+      # flag that reads as scoped to the other file set. Measured, not assumed.
+      # Matching by extension rather than by exact name means a second manifest
+      # added later is covered without another edit.
       - id: check-json
-        alias: check-json-webmanifest
-        name: check json (webmanifest)
         types: [file]
-        files: \.webmanifest$
+        files: \.(json|webmanifest)$
 
       # A conflict marker committed by hand survives all the way to whatever
       # loads the file, and the unit suite reads almost none of these files, so
       # nothing else here would report it.
+      #
+      # --assume-in-merge is what makes it report that case. The hook returns 0
+      # immediately unless .git/MERGE_HEAD exists, so without this flag it is
+      # inert on every ordinary commit and on every CI run, which is the whole
+      # window a marker has to arrive through. Measured: a file holding
+      # "<<<<<<< HEAD", a row of equals signs and ">>>>>>> other" passes
+      # "prek run --all-files" without the flag and fails on all three lines
+      # with it. The cost is that a genuine row of seven equals signs in prose
+      # now fails; nothing in this tree has one, and a markdown setext underline
+      # is the only shape that would.
       - id: check-merge-conflict
+        args: [--assume-in-merge]
 
       # A GitHub link that cites a line number against a branch name points
       # somewhere else the moment that branch moves. There is no such link in
@@ -190,6 +216,13 @@ repos:
       # handing it the staged paths would make it try to execute them as tests.
       # "files" keeps it from running when a commit only touches documentation.
       #
+      # .github/workflows/ is in that list because tests/build.test.mjs reads
+      # those files: it is the only place the workflow YAML is asserted on, and
+      # it holds the guard that keeps a checkout, node and npm out of the job
+      # carrying pages: write. Without the entry a commit touching nothing but a
+      # workflow, which is most of what changes here, passed the whole local run
+      # without ever executing that guard.
+      #
       # This is the one hook that needs something off the PATH. Committing from
       # an editor or a desktop git client, rather than a terminal, can mean node
       # is missing, because a version manager like nvm is set up by the shell
@@ -202,4 +235,4 @@ repos:
         entry: npm run test:coverage
         language: system
         pass_filenames: false
-        files: ^(scripts/|tests/|e2e/|index\.html|sw\.js|manifest\.webmanifest|404\.html|robots\.txt|package(-lock)?\.json|icons/)
+        files: ^(scripts/|tests/|e2e/|\.github/workflows/|index\.html|sw\.js|manifest\.webmanifest|404\.html|robots\.txt|package(-lock)?\.json|icons/)

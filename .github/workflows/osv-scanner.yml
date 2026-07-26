@@ -57,6 +57,13 @@ on:
     paths:
       - package-lock.json
       - package.json
+      # This file too, or a pull request rewriting the scan is the one pull
+      # request the scan does not run on. It buys scan-pr and nothing more:
+      # scan-full is gated on the event and still cannot be exercised by a pull
+      # request at all, so a change to that job has to be checked with a
+      # workflow_dispatch run rather than left to first execute unattended on a
+      # Monday cron against the default branch.
+      - .github/workflows/osv-scanner.yml
   # Mondays at 06:00 UTC. Weekly rather than daily because a re-scan only
   # changes its answer when OSV publishes something, and the start of the week
   # puts this beside Dependabot's weekly run rather than five days after it.

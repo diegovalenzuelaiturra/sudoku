@@ -240,15 +240,28 @@ test('the test:coverage script still asks node to enforce a coverage floor', () 
     ['branches', 75],
     ['functions', 85],
   ]) {
-    const found = script.match(new RegExp(`--test-coverage-${metric}=(\\d+(?:\\.\\d+)?)`));
+    /* Both spellings node accepts, "--flag=85" and "--flag 85", so reformatting
+       the script does not fail this test with a message claiming the flag was
+       dropped. Measured against node v24.18.0: the space form enforces the
+       threshold exactly like the = form.
+
+       Matched globally and read from the LAST occurrence, because that is the
+       one node applies. Also measured: appending "--test-coverage-lines=1" to a
+       script that already asks for 85 exits 0 on a tree at 57% coverage, so the
+       first match is the value node ignores, and reading it would let a floor
+       be lowered by adding to the script rather than by editing it. */
+    const asked = [
+      ...script.matchAll(new RegExp(`--test-coverage-${metric}[= ](\\d+(?:\\.\\d+)?)`, 'g')),
+    ];
     assert.ok(
-      found,
+      asked.length > 0,
       `the "test:coverage" script no longer passes --test-coverage-${metric}, so ${metric} ` +
         'coverage is measured and then ignored',
     );
+    const effective = asked.at(-1)[1];
     assert.ok(
-      Number(found[1]) >= floor,
-      `--test-coverage-${metric} is ${found[1]}, below the ${floor} this repository already met`,
+      Number(effective) >= floor,
+      `--test-coverage-${metric} is ${effective}, below the ${floor} this repository already met`,
     );
   }
 });

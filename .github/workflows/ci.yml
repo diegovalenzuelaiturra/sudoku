@@ -117,15 +117,24 @@ jobs:
       # Runs after npm test so a unit failure, which is cheaper to read, is not
       # buried under a browser log.
       #
-      # The one step that names a second dependency: with no browser on disk,
-      # playwright test exits on a missing executable and says nothing about
-      # this repository, so a failed download must skip this rather than turn
-      # into a second confusing red. The build step is knowingly left out of the
-      # condition, because playwright.config.mjs rebuilds _site in its own
-      # webServer command instead of reusing the earlier one, so these specs
-      # still have something to open and a build break is reported here too.
+      # Named against the download rather than the install, which it implies: a
+      # skipped or failed install leaves steps.chromium.outcome at "skipped", so
+      # the one clause covers both. With no browser on disk, playwright test
+      # exits on a missing executable and says nothing about this repository, so
+      # a failed download must skip this rather than turn into a second
+      # confusing red.
+      #
+      # The build step is left out of the condition, but not because a build
+      # break is usefully reported here. playwright.config.mjs rebuilds _site in
+      # its own webServer command, and that command is "node scripts/build.mjs
+      # && node e2e/static-server.mjs", so a broken build short circuits it, the
+      # server never starts and no spec runs. What this step reports then is a
+      # webServer failure, which names neither the build nor this repository.
+      # Left ungated anyway, so that a green build serving a broken page is
+      # still caught, at the cost of one wasted browser download per broken
+      # build.
       - name: Run Playwright tests
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.chromium.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.chromium.outcome == 'success' }}
         run: npm run test:e2e
 
   lint:
