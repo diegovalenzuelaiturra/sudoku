@@ -3,7 +3,7 @@
    The two suites answer different questions. The node suite reads what the
    build published: it never opens the page, so it can say which bytes shipped
    but not what the browser does with them. These specs open that published
-   page in Chromium and ask the browser itself.
+   page in Chromium and in WebKit and ask the browser itself.
 
    The split used to run through a DOM simulator, which booted the page without
    a browser but had no accessibility tree and no layout, so it could only

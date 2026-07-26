@@ -232,6 +232,8 @@ test('a tab that never hears about the other one still cannot erase it', async (
   await startGame(page);
 
   const deaf = await context.newPage();
+  const deafProblems = [];
+  deaf.on('pageerror', (error) => deafProblems.push(`uncaught: ${error.message}`));
   await deaf.addInitScript(() => {
     const real = window.addEventListener.bind(window);
     window.addEventListener = (type, ...rest) => {
@@ -260,6 +262,9 @@ test('a tab that never hears about the other one still cannot erase it', async (
     choco: first.choco + HARD.choco,
   });
   expect(problems).toEqual([]);
+  /* The patched addEventListener is the one thing here that could throw in the
+     page rather than fail an assertion, and it runs before anything is drawn. */
+  expect(deafProblems).toEqual([]);
 });
 
 /* A wallet this build cannot read belongs to some other build, very likely a
@@ -278,6 +283,44 @@ test('a wallet from an unknown version is ignored, not overwritten', async ({ pa
   expect(JSON.parse(await readRaw(page, WALLET_KEY)), 'the unknown wallet was clobbered').toEqual(
     planted,
   );
+
+  /* And it is still there after a win, which is the half that used to be
+     missing. Banking re-reads the key, the version check hands it back the same
+     null it hands back for dead storage, and writing on that null put this tab's
+     zero plus the prize straight over the newer record: the wallet was protected
+     for exactly as long as the player did not play. The prize still counts on
+     screen, because a tab that cannot write is still allowed to keep score. */
+  await startGame(page);
+  await solve(page);
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
+  expect(
+    JSON.parse(await readRaw(page, WALLET_KEY)),
+    'winning overwrote a wallet this build cannot read',
+  ).toEqual(planted);
+  expect(problems).toEqual([]);
+});
+
+/* The chips are painted on a win timer, and newGame() clears every win timer.
+   Between the last digit and the modal there is a window where the board is
+   still live and "Nueva partida" still works, so the player can cancel their own
+   payout animation. The prize is banked either way; what used to break is the
+   only surface that shows it. */
+test('starting the next puzzle mid animation still shows what the win paid', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+  await solve(page);
+
+  /* No wait: this has to land inside the animation, which is the whole point. */
+  await page.locator('#newBtn').click();
+  await page.locator('#startOverlay button.diff[data-d="easy"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
+  await expect(page.locator('#chocos')).toHaveText(String(NORMAL.choco));
+  expect(await readWallet(page)).toMatchObject({
+    fries: NORMAL.fries * 2,
+    choco: NORMAL.choco,
+  });
   expect(problems).toEqual([]);
 });
 

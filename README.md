@@ -28,7 +28,7 @@ PLAYWRIGHT_PORT=4174 npm run preview
 ```sh
 npm test           # unit suite, about half a second
 npm run test:coverage   # the same suite, with the coverage floor CI enforces
-npm run test:e2e        # Playwright, real Chromium
+npm run test:e2e        # Playwright, real Chromium and real WebKit
 ```
 
 The coverage floor is 85 percent of lines, 75 of branches and 85 of functions,

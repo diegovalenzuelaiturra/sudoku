@@ -41,10 +41,35 @@ function prizeTable() {
 
 /* The body of a top level function declaration, closing brace included. Every
    function this file inspects is written flush against the left margin, so the
-   first unindented brace ends it. */
+   first unindented brace ends it.
+
+   Two ways that goes wrong quietly, and both are guarded rather than trusted.
+
+   The parameter list is matched up to the opening brace, not up to the first
+   `)`. A default argument puts a `)` inside the parentheses, and the narrower
+   pattern then matched nothing at all: readWallet(raw=walletRaw()) is already
+   such a signature.
+
+   And braces are counted. Four of the assertions below are assert.doesNotMatch,
+   which pass on a fragment exactly as readily as on the whole function, so a
+   `}` reaching column 0 mid function would not fail this file, it would empty
+   it: the guards would keep passing while guarding a few lines. assert.ok on
+   the match cannot see that, because a truncated body is still a match. */
 function body(name) {
-  const found = source.match(new RegExp(`function ${name}\\([^)]*\\)\\{[\\s\\S]*?\\n\\}`));
+  const found = source.match(new RegExp(`function ${name}\\([^{]*\\)\\{[\\s\\S]*?\\n\\}`));
   assert.ok(found, `${name}() is not where this test expects to find it`);
+
+  let depth = 0;
+  for (const character of found[0]) {
+    if (character === '{') depth += 1;
+    else if (character === '}') depth -= 1;
+  }
+  assert.equal(
+    depth,
+    0,
+    `${name}() was read as far as a brace in column 0 and no further, so every ` +
+      'assert.doesNotMatch below it is now guarding a fragment',
+  );
   return found[0];
 }
 
@@ -127,8 +152,28 @@ test('the prize is banked before the animation timers, never on one', () => {
 test('banking a prize consults the stored wallet, not just this tab', () => {
   assert.match(
     body('bankPrize'),
-    /readWallet\(\)/,
-    'bankPrize() writes this tab\'s totals blind, which erases a prize banked by another tab',
+    /readWallet\(/,
+    "bankPrize() writes this tab's totals blind, which erases a prize banked by another tab",
+  );
+});
+
+/* The other half of that read. loadWallet() deliberately leaves a wallet it
+   cannot parse where it is, on the grounds that it belongs to a newer build the
+   player still has cached. That promise is only worth having if banking honours
+   it too: the version check makes readWallet() return null for a newer wallet
+   and for dead storage alike, so a bankPrize() that writes on every null wrote
+   this tab's zero plus the prize straight over the newer record. */
+test('banking refuses to overwrite a wallet this build cannot read', () => {
+  const bank = body('bankPrize');
+  assert.match(
+    bank,
+    /walletRaw\(\)/,
+    'bankPrize() cannot tell an absent wallet from an unreadable one',
+  );
+  assert.match(
+    bank,
+    /if\([^)]*\)saveWallet\(\)/,
+    'bankPrize() saves unconditionally, so the first win destroys a newer wallet',
   );
 });
 
