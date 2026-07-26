@@ -24,7 +24,6 @@ const workflow = read('.github/workflows/deploy-pages.yml');
 const PUBLISHED = [
   'index.html',
   '404.html',
-  'robots.txt',
   'manifest.webmanifest',
   'sw.js',
   'icons/icon.svg',

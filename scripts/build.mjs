@@ -52,7 +52,6 @@ export const ALLOWLIST = [
   { path: '404.html', type: 'file', required: false },
   { path: 'manifest.webmanifest', type: 'file', required: false },
   { path: 'sw.js', type: 'file', required: false },
-  { path: 'robots.txt', type: 'file', required: false },
   { path: 'icons', type: 'dir', required: false },
 ];
 

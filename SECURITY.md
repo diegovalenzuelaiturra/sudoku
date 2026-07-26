@@ -13,7 +13,7 @@ project, so please treat that as best effort rather than a guarantee.
 
 The published site is a handful of static files served by GitHub Pages: the
 whole app inline in `index.html`, plus a web app manifest, a service worker
-that precaches that shell, an icon, an error page and `robots.txt`. It has no
+that precaches that shell, an icon and an error page. It has no
 backend, no accounts and no personal data, and it talks to no third party: the
 only requests it makes are the service worker fetching its own same-origin
 files. The game in progress (board, notes, timer, mistakes, hints) is saved to
