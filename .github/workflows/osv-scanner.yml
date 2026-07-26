@@ -22,6 +22,21 @@ name: OSV-Scanner
 # Deliberately NOT a required status check. It reaches the OSV API, so a
 # network failure should never be able to wedge a merge. A red mark a human can
 # read and override is the right shape for a one-maintainer repo.
+#
+# Using this at all needed a policy change. The repository's Actions setting is
+# "selected", and the GitHub-owned and verified-creator checkboxes do not cover
+# a third-party REUSABLE WORKFLOW: those two apply to actions, and a reusable
+# workflow from another repository needs an explicit allowed pattern whoever
+# publishes it. "google/*" is now in that list, which is what lets the job
+# below start at all.
+#
+# One caveat, recorded rather than hidden. Every "uses:" inside the reusable
+# workflow is a full commit SHA, but it bottoms out in an action whose runtime
+# is "image: docker://ghcr.io/google/osv-scanner-action:v2.3.8", an image tag
+# rather than a digest. Pinning the reference below does not pin that image, so
+# this job is the one exception to the repository's otherwise total SHA
+# pinning. Accepted knowingly, in exchange for upstream maintenance and the
+# base-versus-head diffing described below.
 
 on:
   pull_request:
@@ -33,75 +48,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  scan:
-    name: OSV
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  scan-pr:
+    # The PR variant rather than the full-scan one. It scans base and head and
+    # reports only what the pull request newly introduces, so a long-lived
+    # advisory in a dev-only transitive dependency does not re-flag every
+    # unrelated change. The full-scan sibling is also the worse-pinned of the
+    # two: it calls actions/download-artifact@v8, a mutable major tag, where
+    # every reference in this one is a SHA.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    # Restated rather than inherited. The workflow-level default above is no
+    # permissions at all, and a called workflow cannot be granted more than its
+    # caller holds, so leaving this out would starve it.
     permissions:
+      # Required by codeql-action to upload the SARIF file.
+      actions: read
       contents: read
-      # Publishing SARIF so findings appear under Security, Code scanning.
-      # Free on public repositories.
+      # Publishes findings under Security, Code scanning. Free on public
+      # repositories. This is the widest permission granted anywhere outside
+      # the deploy job, and it goes to third-party code, which is why it is
+      # scoped to this one job.
       security-events: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # Upstream ships a reusable workflow that does all of this, and it is
-      # what their docs recommend. It cannot be used here. This repository's
-      # Actions policy is "selected", allowing GitHub-owned and verified-creator
-      # actions with an empty pattern list, and a third-party REUSABLE WORKFLOW
-      # is covered by neither of those checkboxes: it needs an explicit entry in
-      # the allowed patterns. Adding one would loosen the policy permanently to
-      # save the twenty lines below, so the binary is fetched directly instead.
-      #
-      # The checksum is the real pin. Downloading the published SHA256SUMS file
-      # and checking against that would prove only that the transfer was
-      # intact, since an attacker able to replace one asset can replace both.
-      # The expected hash is therefore written here, in a file that only changes
-      # through a reviewed commit. Bump both lines together when upgrading.
-      - name: Install osv-scanner
-        env:
-          OSV_VERSION: v2.4.0
-          OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
-        run: |
-          curl --fail --silent --show-error --location \
-            --output osv-scanner \
-            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
-          echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --strict -
-          chmod +x osv-scanner
-
-      # Reads package-lock.json. node_modules is deliberately absent from this
-      # job, so there is nothing for the scanner to walk into and no install
-      # step to go wrong.
-      #
-      # continue-on-error so a finding still reaches the Security tab below.
-      # The scan's verdict is reapplied as the job's verdict in the last step,
-      # so a vulnerability still turns this job red.
-      - name: Scan the dependency tree
-        id: scan
-        continue-on-error: true
-        run: ./osv-scanner scan source --recursive --format=sarif --output-file=osv.sarif .
-
-      # github/codeql-action is in the "github" organisation, which the Actions
-      # policy does allow, so this one is available where the reusable workflow
-      # above was not.
-      - name: Publish findings to code scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
-        with:
-          sarif_file: osv.sarif
-          category: osv-scanner
-
-      # Every dependency here is dev-only, so a finding is worth reading before
-      # it is worth panicking about: nothing in the tree is served to a visitor.
-      # The two minifiers do rewrite the bytes that are served, though, so a
-      # compromise there reaches production even from a dev dependency.
-      #
-      # To accept a specific advisory, add it to osv-scanner.toml as an
-      # [[IgnoredVulns]] entry with a reason rather than deleting this step.
-      - name: Fail if the scan found anything
-        if: steps.scan.outcome == 'failure'
-        run: |
-          echo "osv-scanner reported findings. See the Security tab, Code scanning." >&2
-          exit 1
