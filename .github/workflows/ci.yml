@@ -37,10 +37,10 @@ jobs:
     # image over weeks: the node, browser and system packages under this suite
     # would then change without a commit here to point at.
     runs-on: ubuntu-24.04
-    # A hung job otherwise runs to GitHub's 360-minute default. 15 rather than
-    # the previous 10, because the chromium download below is a few minutes on
-    # a cold cache.
-    timeout-minutes: 15
+    # A hung job otherwise runs to GitHub's 360-minute default. 20 rather than
+    # the previous 15, because there are two engines to download on a cold
+    # cache now, and the suite runs against both.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -107,18 +107,19 @@ jobs:
       # separately. This step is not a workaround for --ignore-scripts, whatever
       # a previous version of this comment claimed: @playwright/test 1.62
       # declares no lifecycle scripts at all, so the download would not happen
-      # with or without that flag. Only chromium, because it is the one browser
-      # the suite runs and each extra one is another download.
-      - name: Install chromium for Playwright
-        id: chromium
+      # with or without that flag. Both engines the suite declares as projects:
+      # chromium, and webkit because every copy of this app installed to an iOS
+      # home screen runs on WebKit, whichever browser installed it.
+      - name: Install browsers for Playwright
+        id: browsers
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       # Runs after npm test so a unit failure, which is cheaper to read, is not
       # buried under a browser log.
       #
       # Named against the download rather than the install, which it implies: a
-      # skipped or failed install leaves steps.chromium.outcome at "skipped", so
+      # skipped or failed install leaves steps.browsers.outcome at "skipped", so
       # the one clause covers both. With no browser on disk, playwright test
       # exits on a missing executable and says nothing about this repository, so
       # a failed download must skip this rather than turn into a second
@@ -134,7 +135,7 @@ jobs:
       # still caught, at the cost of one wasted browser download per broken
       # build.
       - name: Run Playwright tests
-        if: ${{ !cancelled() && steps.chromium.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
         run: npm run test:e2e
 
   lint:

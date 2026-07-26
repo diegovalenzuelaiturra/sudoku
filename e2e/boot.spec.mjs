@@ -116,6 +116,10 @@ test('the start dialog is a named modal and the page behind it is unreachable', 
   page,
   context,
 }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   await expect(page.locator('#startOverlay')).toBeVisible();
 
@@ -201,6 +205,10 @@ for (const preset of PRESETS) {
     page,
     context,
   }) => {
+    test.skip(
+      test.info().project.name !== 'chromium',
+      'reads the accessibility tree, which only Chromium exposes over CDP',
+      );
     const cdp = await context.newCDPSession(page);
     await page.locator(`#startOverlay button.diff[data-d="${preset.key}"]`).click();
 
@@ -284,6 +292,15 @@ test('keyboard focus is painted on the board, a pointer click is not', async ({ 
   await page.locator('#board .cell').first().click();
   expect(await ring()).toEqual({ visible: false, outline: 'none' });
 
+  /* The half above runs everywhere. The half below cannot: Safari does not move
+     Tab focus to a button unless Full Keyboard Access is switched on in the
+     system, so on WebKit this would be asserting a macOS setting rather than
+     anything about this page. */
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'Tab does not visit buttons in Safari without Full Keyboard Access',
+  );
+
   /* Reached with the keyboard instead: the ring has to be there, or the player
      cannot tell which of the 81 cells is about to take the digit. */
   await page.locator('#pauseBtn').focus();
@@ -318,7 +335,13 @@ test('the service worker registers, scoped to the directory the site ships from'
   const scope = await readyScope(page);
   expect(scope, 'no service worker took control of the page').not.toBeNull();
   expect(new URL(scope).pathname).toBe('/sudoku/');
-  expect(page.context().serviceWorkers().length).toBeGreaterThan(0);
+  /* Everything above is read from the page's own navigator, so it holds every
+     engine to the same promise, and WebKit is the one that matters here: it is
+     what every installed copy on iOS runs. Only the line below is Chromium
+     bound, because Playwright reports worker instances for Chromium alone. */
+  if (test.info().project.name === 'chromium') {
+    expect(page.context().serviceWorkers().length).toBeGreaterThan(0);
+  }
 });
 
 /* A second copy of the published site, mounted under a different prefix, the

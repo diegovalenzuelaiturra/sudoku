@@ -944,9 +944,60 @@ if(!loadGame()){
    Deferred to load, feature-guarded, and failures are swallowed: an offline
    cache that cannot register must never keep the game from starting. */
 if('serviceWorker' in navigator){
+  /* Was this document already under a worker when it loaded? Read now, before
+     anything can claim it, because it is the difference between a first ever
+     install and a swap to a newer build. */
+  const wasControlled=!!navigator.serviceWorker.controller;
+  let registration=null,checkedAt=0,reloading=false;
+
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    navigator.serviceWorker.register('./sw.js').then(r=>{registration=r}).catch(()=>{});
   });
+
+  /* The update trigger an installed app otherwise does not have. A worker is
+     only checked for updates on an in-scope navigation, or on a functional
+     event at most once a day. A home screen web app is a single page that
+     never navigates: it is resumed, not loaded. Its fetch handler serves the
+     shell from cache and asks the network nothing. So a player who installs it
+     and only ever switches back to it can sit on that build indefinitely,
+     which is the whole failure this exists to prevent.
+
+     Throttled, because switching between apps must not mean a request per
+     focus, and skipped while hidden so a background tab does not poll. */
+  const CHECK_EVERY=36e5;
+  function checkForUpdate(){
+    if(registration===null||document.hidden)return;
+    if(checkedAt!==0&&Date.now()-checkedAt<CHECK_EVERY)return;
+    checkedAt=Date.now();
+    registration.update().catch(()=>{});
+  }
+  document.addEventListener('visibilitychange',checkForUpdate);
+  /* Only a restore from the back forward cache. An ordinary load already
+     checked, in register() above, and would otherwise check twice on boot. */
+  window.addEventListener('pageshow',e=>{if(e.persisted)checkForUpdate()});
+
+  /* A newer worker has taken over. sw.js calls skipWaiting() and
+     clients.claim(), so this fires while the old document is still on screen,
+     holding markup and a cache that no longer agree. Reloading is what makes
+     them agree, and it is safe: the game autosaves on every move and restores
+     itself, which e2e/persistence.spec.mjs holds down.
+
+     Not on a first install, where nothing is stale and a reload would be an
+     unexplained flash for a new visitor, and never twice. */
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(!wasControlled||reloading)return;
+    reloading=true;
+    location.reload();
+  });
+
+  /* Installed apps are exempt from the seven day rule and from idle eviction,
+     but not from eviction under storage pressure, and the save and the prize
+     totals are both in localStorage. Asked for only when actually installed:
+     in a browser tab this is a permission prompt in some engines, which is a
+     lot to spend on a sudoku nobody has chosen to keep yet. */
+  if(matchMedia('(display-mode: standalone)').matches&&navigator.storage&&navigator.storage.persist){
+    navigator.storage.persist().catch(()=>{});
+  }
 }
 </script>
 </body>

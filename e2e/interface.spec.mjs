@@ -152,6 +152,10 @@ test('icons decorate the buttons without touching their accessible names', async
   page,
   context,
 }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   /* The difficulty dialog holds the rest of the page inert, so nothing outside
      it is in the accessibility tree until a game is running. */
@@ -191,6 +195,10 @@ test('icons decorate the buttons without touching their accessible names', async
 });
 
 test('pausing swaps the pause icon instead of wiping it out', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   await startGame(page);
 
@@ -242,6 +250,10 @@ test('pausing swaps the pause icon instead of wiping it out', async ({ page, con
 });
 
 test('both live regions exist and are empty before anything happens', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   const status = page.locator('#srStatus');
   const alert = page.locator('#srAlert');
@@ -280,6 +292,10 @@ test('mistakes and hints are announced politely, selection moves are not', async
   page,
   context,
 }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   await startGame(page);
   const status = page.locator('#srStatus');
@@ -329,6 +345,10 @@ test('mistakes and hints are announced politely, selection moves are not', async
 });
 
 test('winning is announced assertively, with the final tally', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   await startGame(page);
 
@@ -376,6 +396,10 @@ test('winning is announced assertively, with the final tally', async ({ page, co
    role="row" children; the board appends 81 buttons straight into itself, which
    made the tree invalid and cost the page its perfect accessibility audit. */
 test('the board only claims a role its own children can satisfy', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   const board = page.locator('#board');
 
