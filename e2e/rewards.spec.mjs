@@ -92,6 +92,17 @@ test('a flawless win pays papas fritas doubled, and chocolates', async ({ page }
   expect(await page.locator('#srAlert').textContent()).toMatch(
     new RegExp(`${NORMAL.fries * 2} papas fritas y ${NORMAL.choco} chocolates`),
   );
+
+  /* And on screen, where the banner is the only place the player is told what
+     the flawless bonus was worth. */
+  await expect(page.locator('#winOverlay')).toBeVisible();
+  const banner = await page.locator('#fryBanner').textContent();
+  expect(banner).toContain(`+${NORMAL.fries * 2} papas fritas`);
+  expect(banner, 'the flawless bonus is not named').toContain('bono impecable');
+  expect(banner).toContain(`${NORMAL.choco} chocolates por partida impecable`);
+  expect(banner, 'the running totals are not shown').toContain(
+    `llevas ${NORMAL.fries * 2} papas fritas y ${NORMAL.choco} chocolates`,
+  );
   expect(problems).toEqual([]);
 });
 
