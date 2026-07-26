@@ -85,6 +85,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('pausing takes all 81 cells out of the accessibility tree', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   await startGame(page);
 
@@ -164,6 +168,10 @@ test('focus moves into the pause dialog and returns to the pause button', async 
 });
 
 test('Escape resumes', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   await startGame(page);
 

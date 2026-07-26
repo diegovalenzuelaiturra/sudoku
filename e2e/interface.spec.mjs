@@ -48,6 +48,7 @@ async function accessibleNodes(cdp) {
       role: node.role?.value ?? '',
       name: node.name?.value ?? '',
       text: text(node),
+      description: node.description?.value ?? '',
       live: property(node, 'live'),
       atomic: property(node, 'atomic'),
     }));
@@ -152,6 +153,10 @@ test('icons decorate the buttons without touching their accessible names', async
   page,
   context,
 }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   /* The difficulty dialog holds the rest of the page inert, so nothing outside
      it is in the accessibility tree until a game is running. */
@@ -191,6 +196,10 @@ test('icons decorate the buttons without touching their accessible names', async
 });
 
 test('pausing swaps the pause icon instead of wiping it out', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   await startGame(page);
 
@@ -242,6 +251,10 @@ test('pausing swaps the pause icon instead of wiping it out', async ({ page, con
 });
 
 test('both live regions exist and are empty before anything happens', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   const status = page.locator('#srStatus');
   const alert = page.locator('#srAlert');
@@ -280,6 +293,10 @@ test('mistakes and hints are announced politely, selection moves are not', async
   page,
   context,
 }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   await startGame(page);
   const status = page.locator('#srStatus');
@@ -329,6 +346,10 @@ test('mistakes and hints are announced politely, selection moves are not', async
 });
 
 test('winning is announced assertively, with the final tally', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   await startGame(page);
 
@@ -376,6 +397,10 @@ test('winning is announced assertively, with the final tally', async ({ page, co
    role="row" children; the board appends 81 buttons straight into itself, which
    made the tree invalid and cost the page its perfect accessibility audit. */
 test('the board only claims a role its own children can satisfy', async ({ page, context }) => {
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
   const cdp = await context.newCDPSession(page);
   const board = page.locator('#board');
 
@@ -404,4 +429,79 @@ test('the board only claims a role its own children can satisfy', async ({ page,
   await startGame(page);
   const nodes = await accessibleNodes(cdp);
   expect(nodes.some((node) => node.role === role && node.name === label)).toBe(true);
+});
+
+/* "Notas" was a stylus icon and a five letter label, which says what the button
+   is called and nothing about what it does or how to use it. The explanation is
+   now on the button as a description, and on screen only while the mode is on,
+   so the board is not permanently carrying an instruction. */
+test('the notes button explains itself, on screen only while notes are on', async ({
+  page,
+  context,
+}) => {
+  await startGame(page);
+
+  const hint = page.locator('#notesHint');
+  const notes = page.locator('#notesBtn');
+  const text = await hint.textContent();
+  expect(text, 'the hint says nothing').toMatch(/candidat/i);
+
+  /* Clipped to a pixel rather than removed, so it stays in the tree. */
+  const clipped = async () => (await hint.boundingBox()).width;
+
+  expect(await clipped(), 'the hint is on screen before notes are on').toBeLessThan(5);
+  await notes.click();
+  await expect(notes).toHaveAttribute('aria-pressed', 'true');
+  expect(await clipped(), 'turning notes on did not reveal the hint').toBeGreaterThan(80);
+  await notes.click();
+  expect(await clipped(), 'the hint stayed on screen after notes were turned off').toBeLessThan(5);
+
+  /* Everything above is layout, and runs on both engines. What follows is the
+     description Chrome computes for the button, which is the half that carries
+     the explanation to a screen reader, and which only Chromium exposes. */
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
+  const cdp = await context.newCDPSession(page);
+  const described = () =>
+    accessibleNodes(cdp).then(
+      (nodes) => nodes.find((node) => node.role === 'button' && /Notas/.test(node.name))?.description,
+    );
+
+  expect(await described(), 'the button carries no description while notes are off').toBe(text);
+  await notes.click();
+  expect(await described(), 'the description was lost when the hint became visible').toBe(text);
+});
+
+/* Double tap to zoom on iOS: a second tap within about 300ms was read as a
+   zoom gesture, so entering two digits quickly zoomed the page instead of
+   playing. touch-action only ever sat on the board, which left the pad, the
+   tools and the chrome zooming.
+
+   What this can check in Chromium is the declaration, not the iOS gesture. It
+   is asserted on body because the permitted behaviours are the intersection of
+   an element's value with its ancestors': the pad keys keep computing "auto"
+   and still cannot zoom, and body losing this is the only way that breaks. */
+test('a double tap cannot zoom the page, while pinch to zoom still can', async ({ page }) => {
+  await startGame(page);
+
+  const touchAction = (selector) =>
+    page.locator(selector).evaluate((node) => getComputedStyle(node).touchAction);
+
+  expect(await touchAction('body'), 'double tap can zoom the page again').toBe('manipulation');
+  /* And on the board in its own right. The walk up the ancestors runs only "up
+     to the one that implements the gesture (in other words, the first
+     containing scrolling element)", and .board is overflow:hidden, which makes
+     it exactly that. Relying on body alone here would leave the 81 cells, the
+     surface the double tap bug was reported on, depending on a reading of the
+     spec rather than on a declaration. */
+  expect(
+    await touchAction('#board'),
+    'the board is back to inheriting a gesture the scroll container can truncate',
+  ).toBe('manipulation');
+  /* Not "none": that would take pinch to zoom away from anyone who needs it. */
+  for (const selector of ['body', '#board', '#pad', '.tools']) {
+    expect(await touchAction(selector), `${selector} forbids pinch to zoom`).not.toBe('none');
+  }
 });

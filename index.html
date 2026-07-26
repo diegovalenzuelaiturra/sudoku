@@ -56,6 +56,15 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{
+    /* No double tap to zoom, anywhere on the page. Safari on iOS treats a
+       second tap inside ~300ms as a zoom gesture, so entering two digits
+       quickly, or tapping the same pad key twice, zoomed the board instead of
+       playing. The permitted behaviours are the intersection of an element's
+       value and its ancestors', so declaring it here covers the pad, the tools
+       and the chrome, not just the board it used to sit on. "manipulation"
+       disables only the double tap: pinch to zoom still works, which a
+       viewport lockout would have taken away. */
+    touch-action:manipulation;
     font-family:var(--sans);
     background:var(--paper);
     color:var(--ink);
@@ -100,6 +109,7 @@
   .status .chip{color:var(--indigo);font-weight:600;letter-spacing:.08em;text-transform:uppercase}
   .status .spacer{flex:1}
   .status .warn b{color:var(--vermilion)}
+  .toolhint{margin-top:9px;font-size:11.5px;line-height:1.45;color:var(--ink-soft);letter-spacing:.02em}
   .visually-hidden{
     position:absolute;width:1px;height:1px;margin:-1px;padding:0;
     overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;
@@ -114,6 +124,12 @@
     display:grid;grid-template-columns:repeat(9,1fr);aspect-ratio:1;
     background:var(--paper-raised);
     border:2px solid var(--ink);border-radius:4px;overflow:hidden;
+    /* Declared on body as well, which is what covers the pad and the chrome.
+       Kept here too because the walk up the ancestors that intersects these
+       values stops at the nearest containing scrolling element, and
+       overflow:hidden above makes this element exactly that: without it the 81
+       cells, the surface the double tap was reported on, would be relying on a
+       reading of the spec rather than on a declaration. */
     touch-action:manipulation;
   }
   .cell{
@@ -227,11 +243,13 @@
   .modal .stat i{font-style:normal;font-size:10.5px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
   .modal .quiet{margin-top:12px;background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;text-decoration:underline}
 
-  /* ---------- fries ---------- */
-  .frychip b{display:inline-block}
-  .frychip.pop b{animation:frypop .45s ease}
+  /* ---------- prizes ---------- */
+  /* Named for the mechanic rather than the glyph: papas fritas and chocolates
+     share the chip, the pop and the rain, and differ only in what they emit. */
+  .prize b{display:inline-block}
+  .prize.pop b{animation:frypop .45s ease}
   @keyframes frypop{0%{transform:scale(1)}40%{transform:scale(1.7)}100%{transform:scale(1)}}
-  .fry{
+  .drop{
     position:absolute;top:-44px;z-index:5;pointer-events:none;line-height:1;
     animation:fryfall var(--dur) linear var(--delay) forwards;opacity:0;
   }
@@ -241,11 +259,15 @@
     82%{opacity:1}
     100%{transform:translateY(var(--fall)) rotate(var(--spin));opacity:0}
   }
+  /* The prize is two numbers. It used to be a sentence around them, which was
+     longer than the thing it described, so it is icons now. The amounts shown
+     are what was won, the flawless doubling included: a separate multiplier
+     badge only invited reading it against whichever number sat next to it. */
   .frybanner{
-    margin:14px 0 16px;padding:10px;border:1px dashed var(--vermilion);border-radius:9px;
-    color:var(--vermilion);font-size:13px;letter-spacing:.03em;font-weight:600;
+    margin:14px 0 16px;padding:11px 10px;border:1px dashed var(--vermilion);border-radius:9px;
+    color:var(--vermilion);display:flex;gap:18px;justify-content:center;align-items:center;
   }
-  .frybanner small{display:block;font-weight:400;color:var(--ink-soft);margin-top:3px;letter-spacing:.02em}
+  .frybanner b{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:.02em}
 
   /* ---------- responsive ---------- */
   @media (max-width:719px){
@@ -297,7 +319,8 @@
     <span class="chip" id="diffLabel">Normal</span>
     <span class="warn">Errores <b id="mistakes">0</b></span>
     <span>Pistas <b id="hints">0</b></span>
-    <span class="frychip" id="frychip">🍟 <b id="fries">0</b> <span class="visually-hidden">papas fritas de la sesión</span></span>
+    <span class="prize" id="frychip">🍟 <b id="fries">0</b> <span class="visually-hidden">papas fritas ganadas</span></span>
+    <span class="prize" id="chocochip">🍫 <b id="chocos">0</b> <span class="visually-hidden">chocolates ganados</span></span>
     <span class="spacer"></span>
     <span id="remaining"><b>81</b> por llenar</span>
     <span id="srStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></span>
@@ -326,9 +349,14 @@
       <div class="tools">
         <button class="tool" id="undoBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-undo"/></svg>Deshacer <span class="k">Z</span></button>
         <button class="tool" id="eraseBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-ink_eraser"/></svg>Borrar <span class="k">⌫</span></button>
-        <button class="tool" id="notesBtn" aria-pressed="false"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-stylus_note"/></svg>Notas <span class="k">N</span></button>
+        <button class="tool" id="notesBtn" aria-pressed="false" aria-describedby="notesHint"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-stylus_note"/></svg>Notas <span class="k">N</span></button>
         <button class="tool" id="hintBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-lightbulb"/></svg>Pista <span class="k">H</span></button>
       </div>
+      <!-- What "Notas" does was guessable from the icon and nothing else. Kept
+           out of sight until the mode is on, so the board is not carrying an
+           instruction nobody is reading, but always in the accessibility tree
+           as the button's description, where it is read on focus either way. -->
+      <p class="toolhint visually-hidden" id="notesHint">Anota candidatos: el número queda chico. Tócalo de nuevo para borrarlo.</p>
       <button class="newgame" id="newBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg> Nueva partida</button>
     </div>
   </main>
@@ -462,17 +490,24 @@ function dig(clues){
 /* =============== END LOGIC =============== */
 
 /* ================== UI =================== */
-const DIFF={easy:{clues:40,label:'Piola',fries:5},medium:{clues:34,label:'Normal',fries:10},hard:{clues:28,label:'Peludo',fries:15},expert:{clues:24,label:'Brígido',fries:25}};
+/* Two prizes, two rules. Papas fritas are paid for every win, doubled by the
+   flawless bonus. Chocolates are paid only for a flawless win, so they are the
+   scarce one and the count says something the fries total cannot. */
+const DIFF={easy:{clues:40,label:'Piola',fries:5,choco:1},medium:{clues:34,label:'Normal',fries:10,choco:2},hard:{clues:28,label:'Peludo',fries:15,choco:3},expert:{clues:24,label:'Brígido',fries:25,choco:5}};
 const $=id=>document.getElementById(id);
 const boardEl=$('board'),padEl=$('pad');
 
 let solution=new Array(81).fill(0),fixed=new Array(81).fill(false),values=new Array(81).fill(0),puzzle=new Array(81).fill(0);
 let notes=Array.from({length:81},()=>new Set()),sel=-1;
 let notesMode=false,mistakes=0,hints=0,seconds=0,tick=null,paused=false,solved=false,playing=false;
-let undoStack=[],diffKey='medium',friesTotal=0,winTimers=[],pausedByDialog=false;
+let undoStack=[],diffKey='medium',friesTotal=0,chocoTotal=0,winTimers=[],pausedByDialog=false;
 const reduceMotion=matchMedia('(prefers-reduced-motion:reduce)');
 /* persistence: bump SAVE_VERSION and loadGame()'s shape checks together if this payload shape ever changes */
 const SAVE_KEY='sudoku:save',SAVE_VERSION=1;
+/* The prize totals live in their own key, deliberately not in the game save:
+   winning is what pays them and winning is also what deletes the save, so a
+   total kept in there was lost on the next reload. */
+const WALLET_KEY='sudoku:wallet',WALLET_VERSION=1;
 
 /* ---- build DOM once ---- */
 const cells=[];
@@ -579,7 +614,7 @@ function setPaused(p){
 function newGame(key){
   diffKey=key;
   winTimers.forEach(clearTimeout);winTimers=[];
-  document.querySelectorAll('.fry').forEach(f=>f.remove());
+  document.querySelectorAll('.drop').forEach(f=>f.remove());
   const{puzzle:generated,solution:sol}=makePuzzle(DIFF[key].clues);
   puzzle=generated;
   solution=sol;
@@ -589,6 +624,12 @@ function newGame(key){
   undoStack=[];mistakes=0;hints=0;seconds=0;solved=false;playing=true;notesMode=false;pausedByDialog=false;
   sel=values.indexOf(0);
   $('notesBtn').setAttribute('aria-pressed','false');
+  showNotesHint();
+  /* The win paints the chips on a timer, and every win timer was cleared at the
+     top of this function. Starting the next puzzle during the payout animation
+     would otherwise leave both totals reading what they said before the prize
+     was banked, until something else repainted them or the page reloaded. */
+  paintWallet();
   $('diffLabel').textContent=DIFF[key].label;
   $('time').textContent='0:00';
   $('stamp').classList.remove('show');
@@ -629,7 +670,6 @@ function saveGame(){
       hints,
       seconds,
       diffKey,
-      friesTotal,
       solved,
     }));
   }catch(e){/* Safari private mode throws on setItem, quota can be exceeded, etc: losing the autosave is fine, losing the game isn't */}
@@ -649,6 +689,117 @@ function saveSelectionSoon(){
 function clearSavedGame(){
   try{localStorage.removeItem(SAVE_KEY)}catch(e){}
 }
+/* ---- prizes ----
+   The totals live in a key of their own rather than in the game save. That
+   save used to carry friesTotal, but win() is both what pays a prize and what
+   calls clearSavedGame(), so the total survived only as long as the tab did:
+   reloading after a win put it back to zero.
+
+   Dropping the field needs no SAVE_VERSION bump. loadGame() checks the grids,
+   the notes array and diffKey, never friesTotal, and reads every scalar
+   through Number(x)||0, so a save written before this change still restores.
+   Bumping would have been the expensive choice: an unrecognised version is
+   rejected outright, which would have thrown away every game in progress. */
+function saveWallet(){
+  try{localStorage.setItem(WALLET_KEY,JSON.stringify({v:WALLET_VERSION,fries:friesTotal,choco:chocoTotal}))}catch(e){/* as with the autosave: a wallet that cannot be written is not worth failing a win over */}
+}
+/* The bytes under the key, or null when there are none and when storage itself
+   is gone. Split out of readWallet() because the two answers it folds together,
+   "nothing is stored" and "something is stored that this build cannot read",
+   have to be told apart before anything is written back. */
+function walletRaw(){
+  try{return localStorage.getItem(WALLET_KEY)}catch(e){return null}
+}
+/* One rule for every total that arrives from outside this tab, whether from the
+   wallet key or from the save it migrates once: a whole number this build can
+   still add to, or nothing.
+
+   The ceiling is not decoration. Beyond MAX_SAFE_INTEGER addition stops being
+   exact, so a stored 1e308 makes friesTotal+fries a no-op and every win from
+   then on visibly pays nothing. Infinity is worse: it renders as "Infinity",
+   JSON.stringify writes it as null, and the next read turns that null into 0,
+   which is the whole wallet gone by the route this code exists to close. */
+function count(x){
+  const n=Math.floor(Number(x));
+  return Number.isFinite(n)&&n>0&&n<=Number.MAX_SAFE_INTEGER?n:0;
+}
+/* The stored totals, or null if there is nothing readable and current there.
+   Separate from loadWallet() because banking a prize has to consult the key
+   again rather than trust what this tab read at boot. */
+function readWallet(raw=walletRaw()){
+  if(raw===null)return null;
+  let w;
+  try{w=JSON.parse(raw)}catch(e){return null}
+  if(!w||typeof w!=='object'||w.v!==WALLET_VERSION)return null;
+  return{fries:count(w.fries),choco:count(w.choco)};
+}
+/* Adds a prize to the wallet, against what is stored rather than against what
+   this tab happens to hold. The player can have the game open twice: the other
+   tab read its totals at boot, and if this one wrote its own over the top, every
+   prize won over there would vanish. Measured before this existed: two flawless
+   wins in two tabs, 20 papas then 50, left 50 stored instead of 70.
+
+   Falling back to the in-memory totals keeps a tab whose storage has died (or
+   was cleared mid-game) counting its own prizes for as long as it lives. */
+function bankPrize(fries,choco){
+  const raw=walletRaw();
+  const stored=readWallet(raw);
+  const base=stored||{fries:friesTotal,choco:chocoTotal};
+  friesTotal=base.fries+fries;
+  chocoTotal=base.choco+choco;
+  /* Written only when the key is empty or this build could read it. Bytes it
+     could not read belong to another build, most likely a newer one the player
+     still has cached, and loadWallet() already refuses to zero those: saving
+     here regardless would undo that on the first win, putting this tab's total
+     plus the prize over a record it never read. The chips still count either
+     way, because a tab that cannot write is still allowed to keep score. */
+  if(stored||raw===null)saveWallet();
+}
+function paintWallet(){
+  $('fries').textContent=friesTotal;
+  $('chocos').textContent=chocoTotal;
+}
+/* On screen only while the mode is on. Not hidden with the hidden attribute:
+   aria-describedby has to keep resolving to it, and a hidden element is dropped
+   from the accessibility tree, taking the button's description with it. */
+function showNotesHint(){
+  $('notesHint').classList.toggle('visually-hidden',!notesMode);
+}
+/* Restarts the pop even if the chip is already mid-animation: removing the
+   class is not enough on its own, the reflow between is what replays it. */
+function popChip(id){
+  const chip=$(id);
+  chip.classList.remove('pop');void chip.offsetWidth;chip.classList.add('pop');
+}
+/* Reads the wallet at boot. Anything unreadable, corrupt or from a version
+   this build does not know leaves both totals at zero rather than guessing. */
+function loadWallet(){
+  const raw=walletRaw();
+  if(raw!==null){
+    const stored=readWallet(raw);
+    /* Something is under the key. If this build cannot read it, leave it there:
+       overwriting it with zeros would discard the wallet of a newer build the
+       player still has cached, which is worse than showing nothing. */
+    if(stored){friesTotal=stored.fries;chocoTotal=stored.choco}
+    return;
+  }
+  /* No wallet yet: either a new player, or one whose papas are still sitting
+     in a game save from before this key existed. Carry those across. */
+  try{
+    const s=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');
+    /* Behind the same version gate loadGame() applies: a save this build would
+       refuse to restore is not a record to mint papas from. count() then applies
+       the same rule the stored wallet gets, rather than a second one written
+       here, because both feed the total that is written back and added to
+       forever. */
+    friesTotal=count(s&&typeof s==='object'&&s.v===SAVE_VERSION?s.friesTotal:0);
+  }catch(e){}
+  /* Only when something was actually carried across. Writing a zero wallet here
+     would be a storage event in every other open tab, and their listener adopts
+     what it reads: a second tab opening after the key was evicted would take a
+     tab that still held the totals in memory down to zero with it. */
+  if(friesTotal)saveWallet();
+}
 /* Restores a saved game on boot. Returns false, leaving every global
    untouched, for: nothing saved, corrupt JSON, a getItem/localStorage
    failure, an unrecognised schema version, a malformed grid, an unknown
@@ -663,7 +814,21 @@ function loadGame(){
   if(!s||typeof s!=='object'||s.v!==SAVE_VERSION)return false;
   const isGrid=a=>Array.isArray(a)&&a.length===81;
   if(!isGrid(s.puzzle)||!isGrid(s.solution)||!isGrid(s.values)||!isGrid(s.fixed)||!Array.isArray(s.notes)||s.notes.length!==81)return false;
-  if(!DIFF[s.diffKey]||s.solved)return false;
+  /* hasOwn rather than a bare lookup: every name on Object.prototype answers
+     truthy to DIFF[key], so a save claiming diffKey:'constructor' restored a
+     playable board with no row of the table behind it. Winning it then read
+     DIFF[key].fries, which is undefined, multiplied it, and banked NaN, which
+     JSON writes as null and reads back as zero: every prize the player had
+     ever earned, spent on a save nobody wrote on purpose.
+
+     hasOwnProperty.call rather than Object.hasOwn, which is Safari 15.4 and
+     newer. This runs on the boot path with nothing around it to catch a throw,
+     so on an older engine the whole page would die here, and only for players
+     who already have a save: the first visit takes the early return above, the
+     first move writes one, and the second launch is a dead board. The rest of
+     this file degrades quietly on old engines rather than throwing, and there
+     is no stated support floor to check a hard requirement against. */
+  if(!Object.prototype.hasOwnProperty.call(DIFF,s.diffKey)||s.solved)return false;
   puzzle=s.puzzle.slice();
   solution=s.solution.slice();
   values=s.values.slice();
@@ -679,13 +844,12 @@ function loadGame(){
   hints=Number(s.hints)||0;
   seconds=Number(s.seconds)||0;
   diffKey=s.diffKey;
-  friesTotal=Number(s.friesTotal)||0;
   solved=false;playing=true;notesMode=false;pausedByDialog=false;undoStack=[];
   winTimers.forEach(clearTimeout);winTimers=[];
   $('notesBtn').setAttribute('aria-pressed','false');
+  showNotesHint();
   $('diffLabel').textContent=DIFF[diffKey].label;
   $('time').textContent=fmt(seconds);
-  $('fries').textContent=friesTotal;
   $('stamp').classList.remove('show');
   /* seed the announcement tracker with the restored counters, so resuming a
      game with mistakes on the board does not announce them as fresh ones */
@@ -695,12 +859,14 @@ function loadGame(){
   return true;
 }
 
-function fryRain(n){
+/* Falls whatever glyph it is handed: the animation is the prize mechanic, and
+   papas and chocolates differ only in what rains and how much of it. */
+function rain(n,glyph){
   const wrap=document.querySelector('.board-wrap');
   const w=wrap.clientWidth,h=wrap.clientHeight;
   for(let k=0;k<n;k++){
     const f=document.createElement('span');
-    f.className='fry';f.textContent='🍟';
+    f.className='drop';f.textContent=glyph;
     const dur=1.1+Math.random()*1.2,delay=Math.random()*.9;
     f.style.left=(Math.random()*(w-34))+'px';
     f.style.fontSize=(20+Math.random()*15)+'px';
@@ -720,20 +886,33 @@ function win(){
   clearInterval(tick);
   sel=-1;render();
   $('stamp').classList.add('show');
-  /* assertive: the win is the one event worth interrupting for, and the modal
-     it belongs to only appears after ~2s of animation */
-  $('srAlert').textContent=`Ganaste. ${fmt(seconds)}, ${mistakes===1?'1 error':mistakes+' errores'}, ${hints===1?'1 pista':hints+' pistas'}.`;
   const flawless=mistakes===0&&hints===0;
   const earned=DIFF[diffKey].fries*(flawless?2:1);
+  const chocoEarned=flawless?DIFF[diffKey].choco:0;
+  const chocoWord=n=>n===1?'1 chocolate':n+' chocolates';
+  /* assertive: the win is the one event worth interrupting for, and the modal
+     it belongs to only appears after ~2s of animation. The prize goes in here
+     too: showOverlay() focuses the dialog's button, not the banner, so this is
+     the only announcement that reliably carries it. */
+  $('srAlert').textContent=`Ganaste. ${fmt(seconds)}, ${mistakes===1?'1 error':mistakes+' errores'}, ${hints===1?'1 pista':hints+' pistas'}.`
+    +` Te llevas ${earned} papas fritas${chocoEarned?` y ${chocoWord(chocoEarned)}`:''}.`;
   const finalTime=seconds,finalMist=mistakes,finalHints=hints;
-  friesTotal+=earned;
-  /* reduced motion: no fry rain, and don't make the player wait out the animation */
+  /* Banked now, not on the timers below: those are decoration, and a player
+     who closes the tab during the animation has still won the prize. */
+  bankPrize(earned,chocoEarned);
+  /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow=reduceMotion.matches?0:1;
-  if(!reduceMotion.matches)winTimers.push(setTimeout(()=>fryRain(Math.min(earned,30)),450));
+  if(!reduceMotion.matches){
+    winTimers.push(setTimeout(()=>rain(Math.min(earned,30),'🍟'),450));
+    /* staggered: the chocolates are meant to read as a second, rarer shower
+       rather than get lost among the papas. No cap, unlike the papas above:
+       the most the table pays is five. */
+    if(chocoEarned)winTimers.push(setTimeout(()=>rain(chocoEarned,'🍫'),700));
+  }
   winTimers.push(setTimeout(()=>{
-    $('fries').textContent=friesTotal;
-    const chip=$('frychip');
-    chip.classList.remove('pop');void chip.offsetWidth;chip.classList.add('pop');
+    paintWallet();
+    popChip('frychip');
+    if(chocoEarned)popChip('chocochip');
   },950*slow));
   winTimers.push(setTimeout(()=>{
     $('wTime').textContent=fmt(finalTime);
@@ -742,8 +921,16 @@ function win(){
     $('winLede').textContent=
       flawless?'La más seca: cero errores, cero pistas.':
       finalMist===0?'Sin errores. Filete.':'Costó, pero salió igual.';
-    $('fryBanner').innerHTML=`🍟 Te ganaste +${earned} papas fritas${flawless?', bono impecable ×2':''}`
-      +`<small>llevas ${friesTotal} en esta sesión</small>`;
+    /* What you just won, as icons. The sentence this replaced said the same
+       thing three times over, and the running totals it repeated are the chips
+       in the status bar, one dismissal away. The words survive for a screen
+       reader, which cannot see either.
+
+       innerHTML, and every hole in it is a number straight from the DIFF table.
+       Nothing player-authored is interpolated, so there is no markup to inject. */
+    $('fryBanner').innerHTML=`<b aria-hidden="true">🍟 +${earned}</b>`
+      +(chocoEarned?`<b aria-hidden="true">🍫 +${chocoEarned}</b>`:'')
+      +`<span class="visually-hidden">Ganaste ${earned} papas fritas${chocoEarned?` y ${chocoWord(chocoEarned)}`:''}.</span>`;
     showOverlay($('winOverlay'));
   },1900*slow));
 }
@@ -867,6 +1054,7 @@ $('notesBtn').addEventListener('click',e=>{
   if(!playing||paused)return;
   notesMode=!notesMode;
   e.currentTarget.setAttribute('aria-pressed',String(notesMode));
+  showNotesHint();
 });
 $('eraseBtn').addEventListener('click',erase);
 $('undoBtn').addEventListener('click',undo);
@@ -931,8 +1119,24 @@ document.addEventListener('keydown',e=>{
   }
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden)setPaused(true)});
+/* Another tab banked a prize while this one was open. Adopt its totals: ours
+   are stale from here on, and the chips would otherwise keep showing a number
+   the wallet no longer holds. Fires only in the other tabs, never the writer's,
+   which is exactly the tab that needs telling. A clear() reports a null key and
+   is ignored: bankPrize() falls back to memory, so this tab keeps counting. */
+addEventListener('storage',e=>{
+  if(e.key!==WALLET_KEY)return;
+  const w=readWallet();
+  if(!w)return;
+  friesTotal=w.fries;chocoTotal=w.choco;
+  paintWallet();
+});
 
 /* ---- boot ---- */
+/* Before loadGame(): the prizes are the player's, not the puzzle's, so they are
+   painted on both paths, the resumed game and the difficulty picker alike. */
+loadWallet();
+paintWallet();
 /* loadGame() renders and unpauses itself when it restores something; only the
    no-save (or rejected-save) path falls through to the difficulty picker. */
 if(!loadGame()){
@@ -944,9 +1148,79 @@ if(!loadGame()){
    Deferred to load, feature-guarded, and failures are swallowed: an offline
    cache that cannot register must never keep the game from starting. */
 if('serviceWorker' in navigator){
+  /* Was this document already under a worker when it loaded? Read now, before
+     anything can claim it, because it is the difference between a first ever
+     install and a swap to a newer build. */
+  const wasControlled=!!navigator.serviceWorker.controller;
+  let registration=null,nextCheckAt=0,checking=false,reloading=false;
+
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    navigator.serviceWorker.register('./sw.js').then(r=>{registration=r}).catch(()=>{});
   });
+
+  /* The update trigger an installed app otherwise does not have. A worker is
+     only checked for updates on an in-scope navigation, or on a functional
+     event at most once a day. A home screen web app is a single page that
+     never navigates: it is resumed, not loaded. Its fetch handler serves the
+     shell from cache and asks the network nothing. So a player who installs it
+     and only ever switches back to it can sit on that build indefinitely,
+     which is the whole failure this exists to prevent.
+
+     Throttled, because switching between apps must not mean a request per
+     focus, and skipped while hidden so a background tab does not poll. */
+  const CHECK_EVERY=36e5,RETRY_AFTER=6e4;
+  function checkForUpdate(){
+    if(registration===null||document.hidden||checking)return;
+    /* A resume with no connectivity is the ordinary way an installed app wakes
+       up, and it must not spend the hour on a check that cannot reach the
+       network. Refused here, before anything is spent, because reacting to the
+       failure afterwards cannot work: the two engines do not agree on what a
+       failure is. Measured on the built page, offline: WebKit rejects,
+       Chromium resolves without having asked the network. So catching the
+       rejection fixed nothing on Chromium and, on WebKit, handed back the
+       throttle on every resume. onLine is false only when the device knows it
+       has no connectivity, which is the case worth skipping and the one this
+       is named for. */
+    if(navigator.onLine===false)return;
+    if(Date.now()<nextCheckAt)return;
+    checking=true;
+    /* The short gap is taken first and the hour granted only once a request
+       has actually come back. An sw.js that 404s, times out or fails to parse
+       rejects every time, and without this that is a fetch on every single app
+       switch, forever, from every installed copy. */
+    nextCheckAt=Date.now()+RETRY_AFTER;
+    registration.update()
+      .then(()=>{nextCheckAt=Date.now()+CHECK_EVERY})
+      .catch(()=>{})
+      .finally(()=>{checking=false});
+  }
+  document.addEventListener('visibilitychange',checkForUpdate);
+  /* Only a restore from the back forward cache. An ordinary load already
+     checked, in register() above, and would otherwise check twice on boot. */
+  window.addEventListener('pageshow',e=>{if(e.persisted)checkForUpdate()});
+
+  /* A newer worker has taken over. sw.js calls skipWaiting() and
+     clients.claim(), so this fires while the old document is still on screen,
+     holding markup and a cache that no longer agree. Reloading is what makes
+     them agree, and it is safe: the game autosaves on every move and restores
+     itself, which e2e/persistence.spec.mjs holds down.
+
+     Not on a first install, where nothing is stale and a reload would be an
+     unexplained flash for a new visitor, and never twice. */
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(!wasControlled||reloading)return;
+    reloading=true;
+    location.reload();
+  });
+
+  /* Installed apps are exempt from the seven day rule and from idle eviction,
+     but not from eviction under storage pressure, and the save and the prize
+     totals are both in localStorage. Asked for only when actually installed:
+     in a browser tab this is a permission prompt in some engines, which is a
+     lot to spend on a sudoku nobody has chosen to keep yet. */
+  if(matchMedia('(display-mode: standalone)').matches&&navigator.storage&&navigator.storage.persist){
+    navigator.storage.persist().catch(()=>{});
+  }
 }
 </script>
 </body>
