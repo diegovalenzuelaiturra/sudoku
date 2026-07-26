@@ -15,6 +15,9 @@ import { expect, test } from '@playwright/test';
 
 const SAVE_KEY = 'sudoku:save';
 const WALLET_KEY = 'sudoku:wallet';
+/* The schema the wallet is written in today. Version 1 was the same two totals
+   with no ledger and is still read, so that a player who had one keeps it. */
+const WALLET_VERSION = 2;
 
 /* What the table pays on Normal: ten papas fritas, doubled when flawless, and
    two chocolates for the flawless win only. Written out here rather than read
@@ -82,7 +85,7 @@ test('a flawless win pays papas fritas doubled, and chocolates', async ({ page }
   await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
   await expect(page.locator('#chocos')).toHaveText(String(NORMAL.choco));
   expect(await readWallet(page)).toMatchObject({
-    v: 1,
+    v: WALLET_VERSION,
     fries: NORMAL.fries * 2,
     choco: NORMAL.choco,
   });
@@ -251,7 +254,10 @@ test('a tab that never hears about the other one still cannot erase it', async (
   expect(await deaf.evaluate(() => friesTotal), 'the deaf tab heard the win').toBe(0);
 
   await deaf.locator('#newBtn').click();
-  await deaf.locator('#startOverlay button.diff[data-d="hard"]').click();
+  /* Through the helper, which waits for the dialog to go: generation runs in a
+     worker now, so the click starts a board rather than finishing one, and
+     solving before it arrives solves the board that is still on screen. */
+  await startGame(deaf, 'hard');
   await solve(deaf);
 
   /* It goes straight from zero to the combined total rather than to its own
@@ -300,7 +306,11 @@ test('a stored total too large to add to is refused, not carried', async ({ page
    newer one the player still has cached. Zeroing it would be worse than
    showing nothing, so it is read as absent and left where it is. */
 test('a wallet from an unknown version is ignored, not overwritten', async ({ page }) => {
-  const planted = { v: 2, fries: 99, choco: 9 };
+  /* One past what this build writes, so it stands for the newer build the
+     player still has cached. It has to keep moving with WALLET_VERSION: pinned
+     at a literal, this test quietly stopped meaning anything the moment the
+     wallet gained a ledger and version 2 became readable. */
+  const planted = { v: WALLET_VERSION + 1, fries: 99, choco: 9 };
   await page.addInitScript(
     ({ key, wallet }) => localStorage.setItem(key, JSON.stringify(wallet)),
     { key: WALLET_KEY, wallet: planted },

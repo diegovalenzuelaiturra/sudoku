@@ -36,12 +36,17 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
-/* Kept in sync with the DIFF map in index.html. */
+/* Kept in sync with the DIFF map in index.html. The clue count each difficulty
+   used to advertise is deliberately not here: difficulty is the technique a
+   board needs now, and the generator moves the clue count to reach one, so
+   there is no fixed number left to assert. tests/generator.test.mjs owns what
+   the grades mean; what is left for a browser is that the word on the button is
+   the word the game deals. */
 const PRESETS = [
-  { key: 'easy', label: 'Piola', clues: 40 },
-  { key: 'medium', label: 'Normal', clues: 34 },
-  { key: 'hard', label: 'Peludo', clues: 28 },
-  { key: 'expert', label: 'Brígido', clues: 24 },
+  { key: 'easy', label: 'Piola', word: 'directas' },
+  { key: 'medium', label: 'Normal', word: 'bloques' },
+  { key: 'hard', label: 'Peludo', word: 'pares' },
+  { key: 'expert', label: 'Brígido', word: 'avanzado' },
 ];
 
 /* The name render() gives every cell: "Fila 3, columna 7, 4, dada". */
@@ -189,19 +194,19 @@ test('the board is 81 named cells laid out as a nine by nine grid', async ({ pag
   await expect(page.locator('#hints')).toHaveText('0');
 });
 
-test('every difficulty button announces its label and the clues it deals', async ({ page }) => {
+test('every difficulty button announces its label and the technique it deals', async ({ page }) => {
   for (const preset of PRESETS) {
     const button = page.locator(`#startOverlay button.diff[data-d="${preset.key}"]`);
     /* The whole name, tied to the key that deals the puzzle: the sentence a
        screen reader reads out, rather than a substring of innerHTML that
        happens to contain the label somewhere. */
-    await expect(button).toHaveAccessibleName(`${preset.label} ${preset.clues} números`);
+    await expect(button).toHaveAccessibleName(`${preset.label} ${preset.word}`);
     await expect(button).toBeVisible();
   }
 });
 
 for (const preset of PRESETS) {
-  test(`starting ${preset.label} deals ${preset.clues} clues and dismisses the dialog`, async ({
+  test(`starting ${preset.label} deals a board and dismisses the dialog`, async ({
     page,
     context,
   }) => {
@@ -212,18 +217,25 @@ for (const preset of PRESETS) {
     const cdp = await context.newCDPSession(page);
     await page.locator(`#startOverlay button.diff[data-d="${preset.key}"]`).click();
 
-    /* Really gone from the page, not merely missing a class name. */
+    /* Really gone from the page, not merely missing a class name. Generation
+       runs in a worker now, so this is also the wait: the dialog stays up, with
+       its buttons disabled, until a board comes back. */
     await expect(page.locator('#startOverlay')).toBeHidden();
 
     /* .app.inert going back to false, asserted by its effect: the board is
        handed back to assistive tech. */
     await expectExposedCells(cdp, CELL_NAME, 81, 'board cells');
-    /* The clues as announced, "dada" being how a given cell introduces
-       itself, next to the class that paints it as one. */
-    await expectExposedCells(cdp, GIVEN_NAME, preset.clues, 'given cells');
-    await expect(page.locator('#board .cell.given')).toHaveCount(preset.clues);
 
-    await expect(page.locator('#remaining')).toHaveText(`${81 - preset.clues} por llenar`);
+    /* The clue count is no longer a fixed number per difficulty, so what is
+       worth pinning is that everything on the page agrees about it: the cells
+       painted as givens, the cells that announce themselves as "dada", and the
+       count of what is left to fill. A board that disagreed with itself is the
+       failure this used to catch by asserting the number directly. */
+    const givens = await page.locator('#board .cell.given').count();
+    expect(givens).toBeGreaterThanOrEqual(17);
+    expect(givens).toBeLessThan(81);
+    await expectExposedCells(cdp, GIVEN_NAME, givens, 'given cells');
+    await expect(page.locator('#remaining')).toHaveText(`${81 - givens} por llenar`);
     await expect(page.locator('#diffLabel')).toHaveText(preset.label);
   });
 }

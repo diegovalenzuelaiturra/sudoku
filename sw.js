@@ -21,6 +21,12 @@ const CACHE_PREFIX = 'sudoku-';
 const APP_SHELL = [
   './',
   './index.html',
+  /* The generator runs in a worker, and a worker script is fetched separately
+     from the document that spawns it. Left out of here, an installed app that
+     has been offline since it was added would load, show the difficulty picker,
+     and fail on the first tap: the page is cached and the thing that builds the
+     board is not. */
+  './generator.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
