@@ -97,15 +97,28 @@ jobs:
         with:
           persist-credentials: false
 
-      # No npm install here on purpose. scripts/build.mjs imports node: builtins
-      # and nothing else, which tests/build.test.mjs asserts, so this job needs
-      # no node_modules. That keeps the entire npm dependency tree out of the
-      # one job that can publish to Pages and mint an OIDC token. Adding a
-      # dependency to the build means restoring npm ci --ignore-scripts here,
-      # and that test is what will say so.
+      # This job used to install nothing, because scripts/build.mjs imported
+      # node: builtins only. That is no longer true: the build minifies the
+      # published page, which needs html-minifier-terser and terser, and
+      # tests/build.test.mjs is what said so when the imports landed.
+      #
+      # It is a real cost, so it is written down rather than glossed. The npm
+      # dependency tree is now present in the one job that holds pages: write
+      # and id-token: write. --ignore-scripts is doing more work here than in
+      # the other jobs for exactly that reason: no dependency lifecycle script
+      # runs next to those credentials. Both minifiers are plain JavaScript
+      # with no install hooks, so nothing is lost by refusing them.
+      #
+      # The narrower fix is to build the artifact in the Verify job above and
+      # have this one only deploy it, which would take node and npm out of the
+      # privileged job entirely. That is a larger change than adding
+      # minification and is deliberately not bundled with it.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
+          cache: npm
+
+      - run: npm ci --ignore-scripts
 
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 

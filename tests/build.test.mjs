@@ -8,17 +8,21 @@
       broken substitution would look exactly like the current, correct build.
       The day a service worker lands, a silent failure there pins every
       returning visitor to the cache they already have, with a green build.
-   2. What scripts/build.mjs is allowed to import. The deploy job runs no
-      npm install, because the build needs none; the moment it takes a
-      dependency, that job breaks at the point where the only thing left to do
-      is publish. This says so first, on a pull request.
+   2. Whether the deploy job installs what the build imports. This used to be
+      the mirror of that question: the build imported node: builtins only, so
+      the deploy job installed nothing. Minification ended that, because
+      html-minifier-terser and terser cannot be had from builtins, and the
+      assertion was inverted rather than deleted. The failure it guards is
+      unchanged in shape and still silent on a pull request: the build resolves
+      its imports from a node_modules that only the local checkout has, and the
+      deploy breaks at the point where the only thing left to do is publish.
 
    The substitution tests build a fixture tree rather than the repository, so
    they exercise the code path that has no input in this tree yet. */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -102,16 +106,48 @@ test('a build id that could break out of a string literal is refused', (t) => {
   assert.equal(BUILD_ID_PATTERN.test('0123456789abcdef0123456789abcdef01234567'), true);
 });
 
-test('the build imports node builtins only, because the deploy job installs nothing', () => {
+test('every job that builds the site installs what the build imports', () => {
   const source = readFileSync(join(root, 'scripts', 'build.mjs'), 'utf8');
   const specifiers = [...source.matchAll(/\bfrom\s+'([^']+)'/g)].map((m) => m[1]);
 
   assert.ok(specifiers.length > 0, 'found no imports at all, so this check read the wrong file');
   const external = specifiers.filter((s) => !s.startsWith('node:'));
+
+  /* Every external import has to be a declared devDependency. A package that
+     resolves locally because something else happened to hoist it into
+     node_modules is not installed by npm ci on a clean runner. */
+  const { devDependencies = {} } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const undeclared = external.filter((name) => !Object.hasOwn(devDependencies, name));
   assert.deepEqual(
-    external,
+    undeclared,
     [],
-    'the Deploy job runs no npm install, so an import from node_modules crashes the publish ' +
-      `step. Restore npm ci --ignore-scripts in .github/workflows/deploy-pages.yml first:\n  ${external.join('\n  ')}`,
+    'scripts/build.mjs imports packages that package.json does not declare, so npm ci will ' +
+      `not install them:\n  ${undeclared.join('\n  ')}`,
   );
+
+  /* And if the build needs node_modules at all, every workflow job that runs
+     it has to install them first. The Deploy job deliberately installed
+     nothing until minification landed; this is what stops it silently
+     regressing to that while the build still imports a minifier. */
+  if (external.length === 0) return;
+
+  const workflows = join(root, '.github', 'workflows');
+  for (const name of readdirSync(workflows)) {
+    const yaml = readFileSync(join(workflows, name), 'utf8');
+    for (const [, job] of yaml.matchAll(/^ {2}([\w-]+):$/gm)) {
+      /* Crude on purpose: the job's text is everything from its key to the
+         next one at the same indentation. Enough to ask whether the job that
+         runs the build also runs the install. */
+      const start = yaml.indexOf(`\n  ${job}:`);
+      const next = yaml.slice(start + 1).search(/\n {2}[\w-]+:$/m);
+      const body = next === -1 ? yaml.slice(start) : yaml.slice(start, start + 1 + next);
+      if (!/run:\s*npm run build/.test(body)) continue;
+      assert.match(
+        body,
+        /run:\s*npm ci/,
+        `${name}: the "${job}" job runs npm run build but never installs, and the build now ` +
+          `imports ${external.join(', ')} from node_modules, so the publish step crashes`,
+      );
+    }
+  }
 });

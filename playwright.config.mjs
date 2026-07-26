@@ -13,7 +13,7 @@
    stayed in the accessibility tree and in the tab order. It was found by hand
    in Chrome. Everything in e2e/ is there because only a real browser can
    answer it, and the simulator has been removed: the tests it ran live here
-   now, and @playwright/test is the one dependency this repository has left. */
+   now, and @playwright/test is the only dependency they need. */
 
 import { defineConfig, devices } from '@playwright/test';
 

@@ -26,6 +26,21 @@ import {
 } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
+
+/* The only two imports here that are not node builtins, and they cost the
+   deploy job an npm ci. That job used to install nothing, which kept the whole
+   dependency tree out of the one place that can publish to Pages and mint an
+   OIDC token, so this is a real trade and not a free one. It is made because
+   minifying the page is worth about a third of what it costs on the wire and
+   there is no way to do that with builtins alone.
+
+   Both are devDependencies and neither is ever served: they run here, at build
+   time, over bytes that have already been written, and nothing they produce
+   imports them back. Both are plain JavaScript with no lifecycle scripts and
+   no native build, so npm ci --ignore-scripts installs them completely. */
+import { minify as minifyHtml } from 'html-minifier-terser';
+import { minify as minifyJs } from 'terser';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -189,8 +204,107 @@ export function build({ root = REPO_ROOT, outDir, buildId } = {}) {
   return { buildId: id, idSource, outDir: target, files: published, skipped };
 }
 
-function main() {
+/* Conservative on purpose, and the numbers are why rather than an instinct.
+   Measured on this page, against gzip, which is what GitHub Pages actually
+   serves and therefore the only size a visitor pays. Each line switches on one
+   more option than the line above it:
+
+     unminified                       15276 gzipped
+     removeComments                   14531
+     + collapseWhitespace below       14457
+     + minifyCSS and minifyJS         10457
+     + removeAttributeQuotes          10426
+     + collapseBooleanAttributes      10426
+
+   So the entire win is the two sub-minifiers: the document is 25 percent CSS
+   and 52 percent JS, and everything a markup only pass can do is worth 819 of
+   the 4819 bytes. The last two lines are the reason the aggressive options are
+   off. Thirty one gzipped bytes, three tenths of one percent of what is
+   served, in exchange for rewriting every attribute in an inline SVG sprite,
+   and the boolean attributes on this page are worth exactly nothing. That is
+   not a trade, it is a dare.
+
+   Dropping comments applies to the published copy only. index.html keeps every
+   one of its own: several exist specifically to stop a fixed bug being put
+   back, so deleting them from the file people edit would be the regression
+   this is supposed to be an optimisation for. */
+const HTML_MINIFY_OPTIONS = {
+  removeComments: true,
+  /* conservativeCollapse squeezes a run of whitespace down to a single space
+     instead of deleting it at element boundaries. The toolbar buttons are
+     inline elements whose spacing is that whitespace, so the full collapse can
+     move the layout; it is worth 9 more gzipped bytes than this one. */
+  collapseWhitespace: true,
+  conservativeCollapse: true,
+  minifyCSS: true,
+  minifyJS: true,
+};
+
+/* Left at terser's defaults, which do not mangle top level names. sw.js is
+   read by the browser as a script and not a module, and its cache name is
+   spliced in before this runs, so there is nothing here worth the risk of
+   renaming. Comments go; the placeholder is already a build id by now. */
+const JS_MINIFY_OPTIONS = { format: { comments: false } };
+
+const MINIFIERS = new Map([
+  ['.html', (source) => minifyHtml(source, HTML_MINIFY_OPTIONS)],
+  ['.js', async (source) => (await minifyJs(source, JS_MINIFY_OPTIONS)).code],
+]);
+
+/* Rewrites published files in place, after the placeholder substitution rather
+   than before it: the minifiers then only ever see a finished build id, and
+   cannot fold or reorder a string that still had __BUILD__ in it.
+
+   Driven by the list build() returned, never by walking the output directory,
+   so it can only touch bytes the allowlist put there. A file type with no
+   entry in MINIFIERS is left exactly as it was published, which is what keeps
+   this away from the icon PNGs and the manifest.
+
+   Anything that throws here fails the build. There is deliberately no fall
+   back to the unminified bytes: a deploy that quietly shipped the large copy
+   whenever the minifier tripped would be indistinguishable from a working one
+   until somebody measured it. */
+export async function minifySite({ outDir, files }) {
+  const minified = [];
+
+  for (const file of files) {
+    const minify = MINIFIERS.get(extname(file.path).toLowerCase());
+    if (!minify) continue;
+
+    const dest = join(outDir, file.path);
+    const before = readFileSync(dest, 'utf8');
+    const after = await minify(before);
+
+    /* A minifier that returns nothing at all has not made the file smaller,
+       it has deleted it, and an empty index.html is a blank page that serves
+       a 200. */
+    if (typeof after !== 'string' || after === '') {
+      throw new Error(`minifying ${file.path} produced no output`);
+    }
+
+    writeFileSync(dest, after, 'utf8');
+    file.bytes = Buffer.byteLength(after, 'utf8');
+
+    minified.push({
+      path: file.path,
+      before: Buffer.byteLength(before, 'utf8'),
+      after: Buffer.byteLength(after, 'utf8'),
+      /* Reported next to the raw numbers because they disagree, and the
+         gzipped pair is the honest one: comments and indentation are the most
+         compressible bytes in the file, so a large raw saving routinely turns
+         into a much smaller saving on the wire. */
+      beforeGzip: gzipSync(Buffer.from(before, 'utf8'), { level: 9 }).byteLength,
+      afterGzip: gzipSync(Buffer.from(after, 'utf8'), { level: 9 }).byteLength,
+    });
+  }
+
+  return minified;
+}
+
+async function main() {
   const result = build();
+  const minified = await minifySite(result);
+  const savings = new Map(minified.map((file) => [file.path, file]));
   const where = relative(process.cwd(), result.outDir) || result.outDir;
 
   console.log(`published ${result.files.length} file(s) to ${where}/`);
@@ -198,17 +312,35 @@ function main() {
     const subs = file.substitutions
       ? `, ${file.substitutions} ${PLACEHOLDER} substitution(s)`
       : '';
-    console.log(`  ${file.path} (${file.bytes} bytes${subs})`);
+    const saved = savings.get(file.path);
+    const shrunk = saved
+      ? `, minified from ${saved.before} (gzipped ${saved.beforeGzip} -> ${saved.afterGzip})`
+      : '';
+    console.log(`  ${file.path} (${file.bytes} bytes${subs}${shrunk})`);
   }
   if (result.skipped.length > 0) {
     console.log(`not present, skipped: ${result.skipped.join(', ')}`);
   }
+
+  /* Totalled over the files that were minified, and stated in both units. The
+     gzipped column is the one to watch: it is what the server sends. */
+  if (minified.length > 0) {
+    const sum = (key) => minified.reduce((total, file) => total + file[key], 0);
+    const percent = (from, to) => `${(((from - to) / from) * 100).toFixed(1)}%`;
+    console.log(
+      `minified ${minified.length} file(s): ` +
+        `${sum('before')} -> ${sum('after')} bytes (-${percent(sum('before'), sum('after'))}), ` +
+        `gzipped ${sum('beforeGzip')} -> ${sum('afterGzip')} ` +
+        `(-${percent(sum('beforeGzip'), sum('afterGzip'))})`,
+    );
+  }
+
   console.log(`build id: ${result.buildId} (${result.idSource})`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    main();
+    await main();
   } catch (error) {
     console.error(`build failed: ${error.message}`);
     process.exitCode = 1;

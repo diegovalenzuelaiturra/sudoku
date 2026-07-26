@@ -11,6 +11,8 @@
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.0"
+    "@playwright/test": "^1.62.0",
+    "html-minifier-terser": "^7.2.0",
+    "terser": "^5.49.0"
   }
 }
