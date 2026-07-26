@@ -138,6 +138,31 @@ test('the totals survive the reload that used to reset them', async ({ page }) =
   expect(problems).toEqual([]);
 });
 
+/* The win path rewrites the wallet immediately after clearing the save, so it
+   would survive a clearSavedGame() that took the wallet with it. Starting the
+   next puzzle clears the save too, and nothing rewrites the wallet afterwards:
+   this is the path where that mistake actually costs the player their prizes,
+   and it takes a reload before the next win to see it. */
+test('starting the next puzzle does not spend the prizes already won', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+  await solve(page);
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
+
+  /* "Otra al tiro" reopens the difficulty picker rather than dealing straight
+     away, so the new puzzle starts on the pick. */
+  await page.locator('#againBtn').click();
+  await expect(page.locator('#winOverlay')).toBeHidden();
+  await startGame(page);
+  expect(await page.evaluate(() => playing), 'the next puzzle did not start').toBe(true);
+
+  await page.reload();
+  await expect(page.locator('#board .cell')).toHaveCount(81);
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
+  await expect(page.locator('#chocos')).toHaveText(String(NORMAL.choco));
+  expect(problems).toEqual([]);
+});
+
 test('a game in progress keeps no prize total of its own', async ({ page }) => {
   const problems = await boot(page);
   await startGame(page);
