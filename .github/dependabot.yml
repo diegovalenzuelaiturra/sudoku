@@ -1,5 +1,16 @@
 version: 2
 
+# A note that applies to both entries below, because it is the whole reason the
+# cooldowns are safe to set: cooldown affects VERSION updates only. GitHub does
+# not apply it to Dependabot SECURITY updates, so a published advisory still
+# produces a pull request immediately. The delay costs nothing on the axis that
+# matters and buys the one thing a version number cannot tell you, which is
+# whether a release was compromised. The npm attacks of recent years followed
+# the same shape: a maintainer account is taken over, a malicious version ships,
+# and it is yanked within a day or two once someone notices. A week of soak time
+# means this repo never sees those versions at all, while a genuine CVE fix
+# still arrives the day it is published.
+
 updates:
   # Actions are pinned to commit SHAs, which never move on their own. Without
   # this, a security fix in an action would never reach us: pinning trades a
@@ -13,6 +24,10 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: ci
+    # An action is arbitrary code running with this repo's token, so a freshly
+    # published tag is exactly what should not be adopted on the day it appears.
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns:
@@ -34,3 +49,13 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: chore
+    # Seven days for everything, and a fortnight before a major. A compromised
+    # npm release almost always ships as a patch or a minor, because that is
+    # what dependents pick up without thinking, so the patch case deliberately
+    # inherits the full seven days rather than being waved through quickly.
+    # Majors get longer for a duller reason: they need a human to read the
+    # changelog, and there is no value in the pull request sitting open while
+    # nobody does.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
