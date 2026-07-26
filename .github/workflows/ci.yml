@@ -19,8 +19,10 @@ jobs:
     # match, so change both together or not at all.
     name: Test
     runs-on: ubuntu-latest
-    # A hung job otherwise runs to GitHub's 360-minute default.
-    timeout-minutes: 10
+    # A hung job otherwise runs to GitHub's 360-minute default. 15 rather than
+    # the previous 10, because the chromium download below is a few minutes on
+    # a cold cache.
+    timeout-minutes: 15
     steps:
       # Actions are pinned to full commit SHAs. A tag like v7 is mutable, so
       # pinning by tag would let a moved tag swap the action out from under us.
@@ -38,4 +40,24 @@ jobs:
       # without them.
       - run: npm ci --ignore-scripts
 
+      # Assembly runs on every pull request, not only on the way to production,
+      # so a build that no longer produces a publishable site fails here rather
+      # than on main. BUILD_ID is passed in the same shape the deploy workflow
+      # uses, so both workflows exercise one code path.
+      - name: Build site
+        env:
+          BUILD_ID: ${{ github.sha }}
+        run: npm run build
+
       - run: npm test
+
+      # --ignore-scripts also blocks Playwright's postinstall browser download,
+      # so the browser is fetched explicitly here. Only chromium: it is the one
+      # browser the suite runs, and each extra one is another download.
+      - name: Install chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      # Runs after npm test so a unit failure, which is cheaper to read, is not
+      # buried under a browser log.
+      - name: Run Playwright tests
+        run: npm run test:e2e

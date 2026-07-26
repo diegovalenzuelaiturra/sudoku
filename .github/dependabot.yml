@@ -18,9 +18,15 @@ updates:
         patterns:
           - "*"
 
-  # jsdom is the only dependency and is dev-only, so updates are low risk.
-  # Dependabot security updates already cover published advisories; this adds
-  # ordinary version bumps so we do not drift far behind between advisories.
+  # Every dependency here is dev-only: @playwright/test runs the browser suite,
+  # html-minifier-terser and terser minify the published page at build time.
+  # Nothing is served to a visitor, but the two minifiers do rewrite the bytes
+  # that are, so a bad release is a broken page rather than a broken test. The
+  # Verify job builds the site and runs the browser suite over that output on
+  # every pull request, Dependabot's included, which is where such a release
+  # would surface. Dependabot security updates already cover published
+  # advisories; this adds ordinary version bumps so we do not drift far behind
+  # between advisories.
   - package-ecosystem: npm
     directory: /
     schedule:
