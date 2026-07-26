@@ -1,0 +1,30 @@
+version: 2
+
+updates:
+  # Actions are pinned to commit SHAs, which never move on their own. Without
+  # this, a security fix in an action would never reach us: pinning trades a
+  # moved-tag risk for a frozen-version risk, and this closes the second half.
+  # Dependabot understands SHA pins and updates both the SHA and its version
+  # comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # jsdom is the only dependency and is dev-only, so updates are low risk.
+  # Dependabot security updates already cover published advisories; this adds
+  # ordinary version bumps so we do not drift far behind between advisories.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
