@@ -4,6 +4,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Lets the suite be re-run on demand without an empty commit, which matters
+  # when a failure was the runner or the network rather than the code. Pick the
+  # branch in the Actions tab; main is what the ruleset requires a green Test
+  # on, so that is the usual choice. This needs no extra permission: the job
+  # below still runs read-only, and the deploy workflow is a separate file.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -49,7 +55,18 @@ jobs:
           BUILD_ID: ${{ github.sha }}
         run: npm run build
 
-      - run: npm test
+      # Runs the unit suite with a coverage floor rather than a bare "npm test".
+      # The thresholds sit a few points under what the suite measures today
+      # (88.65 line, 77.19 branch, 89.47 function), so they catch a real
+      # regression without failing on a rounding wobble.
+      #
+      # Worth knowing what this does not do: V8 only reports files that were
+      # actually loaded, so a brand new script that no test imports stays
+      # invisible to the percentage instead of dragging it to zero. The floor
+      # protects code that is already tested. It is not a guarantee that every
+      # file is tested. scripts/check-budget.mjs is exactly that case today.
+      - name: Test with coverage floor
+        run: npm run test:coverage
 
       # --ignore-scripts also blocks Playwright's postinstall browser download,
       # so the browser is fetched explicitly here. Only chromium: it is the one
@@ -61,3 +78,51 @@ jobs:
       # buried under a browser log.
       - name: Run Playwright tests
         run: npm run test:e2e
+
+  lint:
+    # Runs the git hooks from .pre-commit-config.yaml. A hook is only a
+    # courtesy: "git commit --no-verify" skips every one of them, and a
+    # contributor who never installs prek never runs them at all. This job is
+    # what makes them mean something, and it reads the same config file rather
+    # than a second copy of the rules, so the two cannot drift.
+    #
+    # Note for whoever wires up branch protection: only "Test" is a required
+    # check today, so a failure here is visible but not blocking until this job
+    # is added to the ruleset as well.
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      # prek arrives as an ordinary devDependency rather than through its own
+      # GitHub Action or a hand-pinned pipx install. Three reasons, in order of
+      # weight. This repo's Actions policy admits GitHub-owned and
+      # verified-creator actions only, with an empty pattern allowlist, so
+      # j178/prek-action would be refused at run time. package-lock.json pins
+      # the exact build for both this runner and a maintainer's laptop. And
+      # Dependabot already watches npm here, so the version stays current on
+      # its own, which a version number typed into a run step would not.
+      #
+      # The package declares no lifecycle scripts and ships its binary through
+      # platform-gated optionalDependencies, so --ignore-scripts installs it
+      # intact. That was checked rather than assumed.
+      - run: npm ci --ignore-scripts
+
+      # --skip unit-tests-coverage: that hook runs "npm run test:coverage",
+      # which the Test job already does. Running it twice per pull request buys
+      # nothing.
+      #
+      # First run on a cold runner builds actionlint with the preinstalled Go
+      # and creates a Python env for zizmor, which was about 20 seconds when
+      # measured locally. Nothing is cached yet; caching ~/.cache/prek is the
+      # next move if this job starts to drag.
+      - name: Run the git hooks
+        run: npm run lint -- --show-diff-on-failure --skip unit-tests-coverage

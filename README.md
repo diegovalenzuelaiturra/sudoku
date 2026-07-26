@@ -22,3 +22,46 @@ run the browser suite at the same time:
 ```sh
 PLAYWRIGHT_PORT=4174 npm run preview
 ```
+
+## Testing
+
+```sh
+npm test           # unit suite, about half a second
+npm run test:coverage   # the same suite, with the coverage floor CI enforces
+npm run test:e2e        # Playwright, real Chromium
+```
+
+The coverage floor is 85 percent of lines, 75 of branches and 85 of functions,
+set a few points below what the suite measures today so it catches a regression
+rather than rounding noise. It only sees files a test actually loads, so it will
+not notice a brand new script that nothing imports.
+
+## Git hooks
+
+Optional but recommended. The hooks lint the workflow files and run the unit
+suite before a commit lands, which is faster than finding out from CI.
+
+```sh
+npm ci --ignore-scripts
+npx prek install         # writes .git/hooks/pre-commit
+```
+
+No separate install: prek is a devDependency, so `npm ci` already put it in
+`node_modules/.bin`. Then commits run
+[actionlint](https://github.com/rhysd/actionlint) for workflow validity,
+[zizmor](https://docs.zizmor.sh) for workflow security, and the unit suite. To
+run everything once without committing:
+
+```sh
+npm run lint
+```
+
+The first run downloads a Go toolchain to build actionlint, which takes about
+twenty seconds and is cached in `~/.cache/prek` afterwards.
+[prek](https://github.com/j178/prek) is a Rust reimplementation of
+`pre-commit` and reads the same `.pre-commit-config.yaml`, so plain
+`pre-commit` works just as well if that is what you already have.
+`npx prek update` bumps the hook revisions.
+
+None of this is load bearing: `git commit --no-verify` skips it, and the `Lint`
+job in CI runs the same hooks over every file on every pull request.
