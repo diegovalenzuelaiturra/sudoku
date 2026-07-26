@@ -27,6 +27,9 @@ jobs:
     # workflow grants are narrowed to the one job that deploys.
     permissions:
       contents: read
+    outputs:
+      # Handed to the deploy job, which has no checkout to enumerate from.
+      assets: ${{ steps.assets.outputs.list }}
     # A hung job otherwise runs to GitHub's 360-minute default. 15 rather than
     # the previous 10, because the chromium download below is a few minutes on
     # a cold cache.
@@ -68,6 +71,45 @@ jobs:
       - name: Run Playwright tests
         run: npm run test:e2e
 
+      # Rebuilt here, after the browser suite, and deliberately not before it.
+      # The Playwright fixture rebuilds _site itself with no BUILD_ID, so the
+      # tree left behind by the previous step carries the fallback content hash
+      # in the service worker cache name rather than the commit SHA. This is the
+      # build that becomes the artifact, so it has to be the one with the SHA.
+      - name: Build the artifact
+        env:
+          BUILD_ID: ${{ github.sha }}
+        run: npm run build
+
+      # The deploy job probes every published file, but it no longer has a
+      # checkout to enumerate them from, so the list is produced here and handed
+      # over as a job output.
+      #
+      # Control characters are rejected at this end rather than in the probe
+      # loop. Everything downstream is printed on a job's stdout, where GitHub
+      # reads ::error:: and ::stop-commands:: as instructions rather than text,
+      # so a crafted filename could forge annotations or switch off the ones the
+      # smoke test exists to emit. Failing here also means the bad name never
+      # reaches a job holding pages: write.
+      - name: List the published files
+        id: assets
+        run: |
+          set -euo pipefail
+          if find _site -type f -print0 | LC_ALL=C grep -qzP '[\x01-\x1f]'; then
+            printf '::error::a published filename holds a control character\n'
+            exit 1
+          fi
+          {
+            printf 'list<<PUBLISHED_EOF\n'
+            find _site -type f | sed 's|^_site/||' | sort
+            printf 'PUBLISHED_EOF\n'
+          } >> "$GITHUB_OUTPUT"
+          printf 'listed %s file(s)\n' "$(find _site -type f | wc -l | tr -d ' ')"
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
   deploy:
     name: Deploy
     needs: verify
@@ -93,50 +135,13 @@ jobs:
       # published rather than a copy of it hardcoded here.
       page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # This job used to install nothing, because scripts/build.mjs imported
-      # node: builtins only. That is no longer true: the build minifies the
-      # published page, which needs html-minifier-terser and terser, and
-      # tests/build.test.mjs is what said so when the imports landed.
-      #
-      # It is a real cost, so it is written down rather than glossed. The npm
-      # dependency tree is now present in the one job that holds pages: write
-      # and id-token: write. --ignore-scripts is doing more work here than in
-      # the other jobs for exactly that reason: no dependency lifecycle script
-      # runs next to those credentials. Both minifiers are plain JavaScript
-      # with no install hooks, so nothing is lost by refusing them.
-      #
-      # The narrower fix is to build the artifact in the Verify job above and
-      # have this one only deploy it, which would take node and npm out of the
-      # privileged job entirely. That is a larger change than adding
-      # minification and is deliberately not bundled with it.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24'
-          cache: npm
-
-      - run: npm ci --ignore-scripts
-
+      # This job holds the only pages: write and id-token: write in the
+      # workflow, so it deliberately contains no checkout, no node, no npm and
+      # no third party code. The artifact was built and tested by Verify, which
+      # can read the repository and nothing else. Adding a build step back here
+      # would put the whole npm dependency tree next to the publish credentials,
+      # which is exactly what this shape exists to prevent.
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-
-      # Assembly lives in npm run build, so the site published here is the same
-      # one built and tested on every pull request. BUILD_ID is the commit SHA,
-      # and it replaces the __BUILD__ placeholder in every published text file.
-    # sw.js carries that placeholder in its cache name, so every deploy gets a
-    # distinct cache and a released change cannot sit behind a stale cached
-    # copy. tests/build.test.mjs covers the substitution, and tests/site.test.mjs
-    # asserts no __BUILD__ survives into the published output.
-      - name: Build site
-        env:
-          BUILD_ID: ${{ github.sha }}
-        run: npm run build
-
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: _site
 
       - id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
@@ -147,6 +152,10 @@ jobs:
       - name: Smoke test the published site
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          # Via env rather than inlined into the script: a job output
+          # interpolated straight into a run block is the classic workflow
+          # injection shape, and keeping the habit costs nothing here.
+          PUBLISHED: ${{ needs.verify.outputs.assets }}
         run: |
           set -euo pipefail
 
@@ -185,31 +194,19 @@ jobs:
           fi
           printf 'ok: %s/ returned 200\n' "$base"
 
-          # Assets are discovered from the artifact rather than listed here, so
-          # files added on other branches are covered the day they land and no
-          # list can go stale. Every file this loop sees was uploaded minutes
-          # ago, so a 404 is Pages failing to serve something that was
-          # definitely published, which is the whole failure this step exists to
-          # catch: it fails the run. The single exception is a custom 404.html,
-          # which Pages serves with a 404 status by design.
+          # The list comes from the Verify job, which built the artifact and
+          # could see the files. Every name in it was uploaded minutes ago, so a
+          # 404 means Pages is failing to serve something that was definitely
+          # published, which is the failure this step exists to catch. The one
+          # exception is a custom 404.html, which Pages serves with a 404 by
+          # design. Control characters were already rejected at the producing
+          # end, so nothing unprintable can reach these printf calls.
           failed=0
-          while IFS= read -r -d '' file; do
-            asset="${file#_site/}"
+          while IFS= read -r asset; do
+            [ -n "$asset" ] || continue
             if [ "$asset" = "index.html" ]; then
               continue
             fi
-            # Git can store a filename containing a newline, and everything
-            # below is printed on the job's stdout, where GitHub reads ::error::
-            # and ::stop-commands:: as instructions rather than as text. A
-            # crafted name could forge annotations or switch off the ones this
-            # loop exists to emit, so it is rejected rather than printed.
-            case "$asset" in
-              *[[:cntrl:]]*)
-                printf '::error::a published filename holds a control character and was not probed\n'
-                failed=1
-                continue
-                ;;
-            esac
             status="$(probe "$base/$asset")"
             if [ "$status" = "200" ]; then
               printf 'ok: %s returned 200\n' "$asset"
@@ -219,7 +216,7 @@ jobs:
               printf '::error::%s returned %s, expected 200\n' "$asset" "$status"
               failed=1
             fi
-          done < <(find _site -type f -print0 | sort -z)
+          done <<< "$PUBLISHED"
 
           exit "$failed"
 

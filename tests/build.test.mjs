@@ -151,3 +151,45 @@ test('every job that builds the site installs what the build imports', () => {
     }
   }
 });
+
+test('the job holding the publish credentials runs no third party code', () => {
+  /* The deploy job is the only one granted pages: write and id-token: write.
+     It once grew a checkout, node and npm because minification needed a
+     dependency, which put the entire npm tree next to the publish credentials.
+     The artifact is now built and tested by the unprivileged Verify job and
+     deploy only publishes it.
+
+     This is the guard for that shape. It is deliberately about the job that
+     holds the credentials rather than about a named job, so renaming Deploy
+     does not silently switch the check off. */
+  const workflow = readFileSync(join(root, '.github/workflows/deploy-pages.yml'), 'utf8');
+
+  const jobs = [...workflow.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|\Z)/gm)]
+    .map(([, name, body]) => ({ name, body }))
+    .filter(({ body }) => /^ {6}pages:\s*write/m.test(body));
+
+  assert.equal(jobs.length, 1, 'exactly one job should hold pages: write');
+
+  const { name, body } = jobs[0];
+  for (const [pattern, what] of [
+    [/uses:\s*actions\/checkout/, 'checks out the repository'],
+    [/uses:\s*actions\/setup-node/, 'installs node'],
+    [/run:\s*npm /, 'runs npm'],
+  ]) {
+    assert.ok(
+      !pattern.test(body),
+      `the "${name}" job holds pages: write and ${what}. Build the artifact in ` +
+        'Verify and let this job only deploy it, so the dependency tree never sits ' +
+        'beside the publish credentials.',
+    );
+  }
+
+  /* Every action it does use must be GitHub owned, since anything else would be
+     third party code running with those credentials. */
+  for (const [, action] of body.matchAll(/uses:\s*([^@\s]+)@/g)) {
+    assert.ok(
+      action.startsWith('actions/'),
+      `the "${name}" job uses ${action}, which is not a GitHub owned action`,
+    );
+  }
+});
