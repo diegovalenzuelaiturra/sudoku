@@ -710,6 +710,19 @@ function saveWallet(){
 function walletRaw(){
   try{return localStorage.getItem(WALLET_KEY)}catch(e){return null}
 }
+/* One rule for every total that arrives from outside this tab, whether from the
+   wallet key or from the save it migrates once: a whole number this build can
+   still add to, or nothing.
+
+   The ceiling is not decoration. Beyond MAX_SAFE_INTEGER addition stops being
+   exact, so a stored 1e308 makes friesTotal+fries a no-op and every win from
+   then on visibly pays nothing. Infinity is worse: it renders as "Infinity",
+   JSON.stringify writes it as null, and the next read turns that null into 0,
+   which is the whole wallet gone by the route this code exists to close. */
+function count(x){
+  const n=Math.floor(Number(x));
+  return Number.isFinite(n)&&n>0&&n<=Number.MAX_SAFE_INTEGER?n:0;
+}
 /* The stored totals, or null if there is nothing readable and current there.
    Separate from loadWallet() because banking a prize has to consult the key
    again rather than trust what this tab read at boot. */
@@ -718,7 +731,7 @@ function readWallet(raw=walletRaw()){
   let w;
   try{w=JSON.parse(raw)}catch(e){return null}
   if(!w||typeof w!=='object'||w.v!==WALLET_VERSION)return null;
-  return{fries:Number(w.fries)||0,choco:Number(w.choco)||0};
+  return{fries:count(w.fries),choco:count(w.choco)};
 }
 /* Adds a prize to the wallet, against what is stored rather than against what
    this tab happens to hold. The player can have the game open twice: the other
@@ -774,13 +787,12 @@ function loadWallet(){
      in a game save from before this key existed. Carry those across. */
   try{
     const s=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');
-    /* Behind the same version gate loadGame() applies, and bounded. A save this
-       build would refuse to restore is not a record to mint papas from, and the
-       number goes straight into a total that is written back and then added to
-       forever: an Infinity, a negative or a fraction out of a corrupt save would
-       be permanent. Number()||0 alone catches none of those. */
-    const carried=s&&typeof s==='object'&&s.v===SAVE_VERSION?Math.floor(Number(s.friesTotal)):0;
-    friesTotal=Number.isFinite(carried)&&carried>0?carried:0;
+    /* Behind the same version gate loadGame() applies: a save this build would
+       refuse to restore is not a record to mint papas from. count() then applies
+       the same rule the stored wallet gets, rather than a second one written
+       here, because both feed the total that is written back and added to
+       forever. */
+    friesTotal=count(s&&typeof s==='object'&&s.v===SAVE_VERSION?s.friesTotal:0);
   }catch(e){}
   /* Only when something was actually carried across. Writing a zero wallet here
      would be a storage event in every other open tab, and their listener adopts
@@ -807,8 +819,16 @@ function loadGame(){
      playable board with no row of the table behind it. Winning it then read
      DIFF[key].fries, which is undefined, multiplied it, and banked NaN, which
      JSON writes as null and reads back as zero: every prize the player had
-     ever earned, spent on a save nobody wrote on purpose. */
-  if(!Object.hasOwn(DIFF,s.diffKey)||s.solved)return false;
+     ever earned, spent on a save nobody wrote on purpose.
+
+     hasOwnProperty.call rather than Object.hasOwn, which is Safari 15.4 and
+     newer. This runs on the boot path with nothing around it to catch a throw,
+     so on an older engine the whole page would die here, and only for players
+     who already have a save: the first visit takes the early return above, the
+     first move writes one, and the second launch is a dead board. The rest of
+     this file degrades quietly on old engines rather than throwing, and there
+     is no stated support floor to check a hard requirement against. */
+  if(!Object.prototype.hasOwnProperty.call(DIFF,s.diffKey)||s.solved)return false;
   puzzle=s.puzzle.slice();
   solution=s.solution.slice();
   values=s.values.slice();
@@ -1132,7 +1152,7 @@ if('serviceWorker' in navigator){
      anything can claim it, because it is the difference between a first ever
      install and a swap to a newer build. */
   const wasControlled=!!navigator.serviceWorker.controller;
-  let registration=null,checkedAt=0,reloading=false;
+  let registration=null,nextCheckAt=0,checking=false,reloading=false;
 
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('./sw.js').then(r=>{registration=r}).catch(()=>{});
@@ -1148,18 +1168,31 @@ if('serviceWorker' in navigator){
 
      Throttled, because switching between apps must not mean a request per
      focus, and skipped while hidden so a background tab does not poll. */
-  const CHECK_EVERY=36e5;
+  const CHECK_EVERY=36e5,RETRY_AFTER=6e4;
   function checkForUpdate(){
-    if(registration===null||document.hidden)return;
-    if(checkedAt!==0&&Date.now()-checkedAt<CHECK_EVERY)return;
-    /* Stamped before the call so a burst of switches makes one request, and
-       given back if the request failed. A resume with no connectivity is the
-       normal way an installed app wakes up, and a check that never reached the
-       network must not spend the hour: without the reset, one offline switch
-       stopped this app noticing a deploy until the hour was up, however long
-       it had been back online. */
-    checkedAt=Date.now();
-    registration.update().catch(()=>{checkedAt=0});
+    if(registration===null||document.hidden||checking)return;
+    /* A resume with no connectivity is the ordinary way an installed app wakes
+       up, and it must not spend the hour on a check that cannot reach the
+       network. Refused here, before anything is spent, because reacting to the
+       failure afterwards cannot work: the two engines do not agree on what a
+       failure is. Measured on the built page, offline: WebKit rejects,
+       Chromium resolves without having asked the network. So catching the
+       rejection fixed nothing on Chromium and, on WebKit, handed back the
+       throttle on every resume. onLine is false only when the device knows it
+       has no connectivity, which is the case worth skipping and the one this
+       is named for. */
+    if(navigator.onLine===false)return;
+    if(Date.now()<nextCheckAt)return;
+    checking=true;
+    /* The short gap is taken first and the hour granted only once a request
+       has actually come back. An sw.js that 404s, times out or fails to parse
+       rejects every time, and without this that is a fetch on every single app
+       switch, forever, from every installed copy. */
+    nextCheckAt=Date.now()+RETRY_AFTER;
+    registration.update()
+      .then(()=>{nextCheckAt=Date.now()+CHECK_EVERY})
+      .catch(()=>{})
+      .finally(()=>{checking=false});
   }
   document.addEventListener('visibilitychange',checkForUpdate);
   /* Only a restore from the back forward cache. An ordinary load already
