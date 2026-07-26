@@ -48,6 +48,7 @@ async function accessibleNodes(cdp) {
       role: node.role?.value ?? '',
       name: node.name?.value ?? '',
       text: text(node),
+      description: node.description?.value ?? '',
       live: property(node, 'live'),
       atomic: property(node, 'atomic'),
     }));
@@ -428,4 +429,60 @@ test('the board only claims a role its own children can satisfy', async ({ page,
   await startGame(page);
   const nodes = await accessibleNodes(cdp);
   expect(nodes.some((node) => node.role === role && node.name === label)).toBe(true);
+});
+
+/* "Notas" was a stylus icon and a five letter label, which says what the button
+   is called and nothing about what it does or how to use it. The explanation is
+   now on the button as a description, and on screen only while the mode is on,
+   so the board is not permanently carrying an instruction. */
+test('the notes button explains itself, on screen only while notes are on', async ({
+  page,
+  context,
+}) => {
+  const cdp = await context.newCDPSession(page);
+  await startGame(page);
+
+  const hint = page.locator('#notesHint');
+  const text = await hint.textContent();
+  expect(text, 'the hint says nothing').toMatch(/candidat/i);
+
+  /* Clipped to a pixel rather than removed, so it stays in the tree. */
+  const clipped = async () => (await hint.boundingBox()).width;
+  expect(await clipped(), 'the hint is on screen before notes are on').toBeLessThan(5);
+
+  const described = () =>
+    accessibleNodes(cdp).then(
+      (nodes) => nodes.find((node) => node.role === 'button' && /Notas/.test(node.name))?.description,
+    );
+  expect(await described(), 'the button carries no description while notes are off').toBe(text);
+
+  await page.locator('#notesBtn').click();
+  await expect(page.locator('#notesBtn')).toHaveAttribute('aria-pressed', 'true');
+  expect(await clipped(), 'turning notes on did not reveal the hint').toBeGreaterThan(80);
+  expect(await described(), 'the description was lost when the hint became visible').toBe(text);
+
+  await page.locator('#notesBtn').click();
+  expect(await clipped(), 'the hint stayed on screen after notes were turned off').toBeLessThan(5);
+});
+
+/* Double tap to zoom on iOS: a second tap within about 300ms was read as a
+   zoom gesture, so entering two digits quickly zoomed the page instead of
+   playing. touch-action only ever sat on the board, which left the pad, the
+   tools and the chrome zooming.
+
+   What this can check in Chromium is the declaration, not the iOS gesture. It
+   is asserted on body because the permitted behaviours are the intersection of
+   an element's value with its ancestors': the pad keys keep computing "auto"
+   and still cannot zoom, and body losing this is the only way that breaks. */
+test('a double tap cannot zoom the page, while pinch to zoom still can', async ({ page }) => {
+  await startGame(page);
+
+  const touchAction = (selector) =>
+    page.locator(selector).evaluate((node) => getComputedStyle(node).touchAction);
+
+  expect(await touchAction('body'), 'double tap can zoom the page again').toBe('manipulation');
+  /* Not "none": that would take pinch to zoom away from anyone who needs it. */
+  for (const selector of ['body', '#board', '#pad', '.tools']) {
+    expect(await touchAction(selector), `${selector} forbids pinch to zoom`).not.toBe('none');
+  }
 });
