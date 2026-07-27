@@ -263,7 +263,14 @@
      which takes it out, so text written before unhiding is text no screen
      reader ever hears. Empty it is zero height and costs nothing. */
   .genstatus:empty{margin-top:0}
-  .modal .code{margin-top:14px;font-size:11px;color:var(--ink-soft);letter-spacing:.04em}
+  /* The bottom margin is not spacing, it is clearance. This line sits directly
+     above the dialog's button, which is focused the moment the dialog opens, and
+     button:focus-visible draws a 2px outline at a 2px offset: 4px outside the
+     button's own box, over whatever is flush against it. With margin-top alone
+     the two boxes met exactly, measured at 0px, and the ring was painted through
+     the descenders of "Técnica" and "Código". 8px leaves the ring its 4px and
+     4px of air. */
+  .modal .code{margin:14px 0 8px;font-size:11px;color:var(--ink-soft);letter-spacing:.04em}
   .modal .code b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
 
   /* ---------- the record ---------- */
