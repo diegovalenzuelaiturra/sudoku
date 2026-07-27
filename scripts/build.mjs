@@ -91,7 +91,7 @@ const isText = (relPath) => TEXT_EXTENSIONS.has(extname(relPath).toLowerCase());
    error rather than something to follow quietly. */
 function inspect(root, relPath) {
   const stat = lstatSync(join(root, relPath), { throwIfNoEntry: false });
-  if (stat && stat.isSymbolicLink()) {
+  if (stat?.isSymbolicLink()) {
     throw new Error(`refusing to publish a symlink: ${relPath}`);
   }
   return stat;
@@ -144,6 +144,40 @@ function collect(root) {
   return { paths, skipped };
 }
 
+/* Scripts folded into the page that asks for them rather than published on
+   their own. app.js is the game, kept in its own file so the linters read it as
+   JavaScript instead of as text inside markup.
+
+   This runs before contentHash below, and has to: the hash covers what is
+   published, so an app.js left out of it would change the game without changing
+   the build id, and every returning visitor would be served the previous
+   version out of the service worker cache. */
+const INLINED_SCRIPTS = new Set(['app.js']);
+
+const SCRIPT_TAG = /[ \t]*<script\s+src="([^"]+)"\s*>\s*<\/script>/g;
+
+function inlineScripts(root, files) {
+  for (const file of files) {
+    if (extname(file.path).toLowerCase() !== '.html') continue;
+    const html = file.source.toString('utf8');
+    let touched = false;
+
+    const next = html.replace(SCRIPT_TAG, (whole, src) => {
+      if (!INLINED_SCRIPTS.has(src)) return whole;
+      const from = join(root, src);
+      if (!inspect(root, src)?.isFile()) {
+        throw new Error(`${file.path} inlines ${src}, which does not exist`);
+      }
+      touched = true;
+      const indent = whole.slice(0, whole.length - whole.trimStart().length);
+      return `${indent}<script>\n${readFileSync(from, 'utf8').trimEnd()}\n${indent}</script>`;
+    });
+
+    if (touched) file.source = Buffer.from(next, 'utf8');
+  }
+  return files;
+}
+
 /* Deterministic: ALLOWLIST order plus sorted directory entries, hashed over
    path and content, so the same tree yields the same id on any machine. Taken
    before substitution, because the substituted text contains the id itself. */
@@ -173,7 +207,10 @@ export function build({ root = REPO_ROOT, outDir, buildId } = {}) {
   const target = resolve(outDir ?? join(root, '_site'));
   const { paths, skipped } = collect(root);
 
-  const files = paths.map((path) => ({ path, source: readFileSync(join(root, path)) }));
+  const files = inlineScripts(
+    root,
+    paths.map((path) => ({ path, source: readFileSync(join(root, path)) })),
+  );
 
   const envId = (buildId ?? process.env.BUILD_ID ?? '').trim();
   if (envId !== '' && !BUILD_ID_PATTERN.test(envId)) {
@@ -241,12 +278,16 @@ const HTML_MINIFY_OPTIONS = {
      is not in the allowlist. Kept by pattern rather than by rewriting the
      comment as <!--! ... -->, so the source stays readable prose. */
   ignoreCustomComments: [/Material Symbols/],
-  /* conservativeCollapse squeezes a run of whitespace down to a single space
-     instead of deleting it at element boundaries. The toolbar buttons are
-     inline elements whose spacing is that whitespace, so the full collapse can
-     move the layout; it is worth 9 more gzipped bytes than this one. */
+  /* conservativeCollapse would squeeze each run of whitespace down to a single
+     space rather than deleting it, on the theory that a toolbar button is an
+     inline element whose spacing is that whitespace. It is off because that was
+     measured and does not hold here: the toolbar and the tools are flex
+     containers, which do not render whitespace between their items, and the
+     remaining runs sit where a line box trims them. Both builds were rendered
+     in Chromium at 420 and 1280 wide and compared over the bounding box of all
+     1189 elements and the visible text. Nothing moved, and it saves 181 bytes
+     of the ones the formatter's line breaks put there. */
   collapseWhitespace: true,
-  conservativeCollapse: true,
   minifyCSS: true,
   minifyJS: true,
 };

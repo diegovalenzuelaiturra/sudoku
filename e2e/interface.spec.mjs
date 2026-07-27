@@ -315,7 +315,7 @@ test('mistakes and hints are announced politely, selection moves are not', async
   /* A wrong digit is worth one announcement. Entered the way a player enters
      it: click the cell, press the key. */
   const { index, wrong } = await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     return { index: i, wrong: (solution[i] % 9) + 1 };
   });
   await page.locator('#board .cell').nth(index).click();

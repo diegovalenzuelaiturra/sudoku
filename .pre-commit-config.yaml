@@ -132,10 +132,9 @@ repos:
       # Matching by extension rather than by exact name means a second manifest
       # added later is covered without another edit.
       #
-      # .oxlintrc.json is in scope like any other .json. oxlint would accept
-      # comments in it, and it deliberately carries none: a config file every
-      # JSON tool can parse is worth more than the comments, and the reasons
-      # those comments would have held are in eslint.config.mjs and README.md.
+      # .oxlintrc.json and biome.json are in scope like any other .json. Both
+      # would accept comments and carry none, so that every JSON tool can read
+      # them; the reasons live in eslint.config.mjs and README.md.
       - id: check-json
         types: [file]
         files: \.(json|webmanifest)$
@@ -227,27 +226,15 @@ repos:
 
   - repo: local
     hooks:
-      # oxlint and ESLint. Two hooks rather than one entry running both, because
-      # prek runs them independently: a failure in the first still leaves the
-      # second's findings on screen, which one shell line joined by && would not.
-      # oxlint goes first because it finishes this tree in milliseconds against
-      # ESLint's couple of seconds.
+      # Three linters, one hook each, so a failure in the first still leaves the
+      # others' findings on screen. Fastest first.
       #
-      # They are configured never to report the same problem twice.
-      # eslint.config.mjs hands .oxlintrc.json to eslint-plugin-oxlint, which
-      # switches off the 68 ESLint rules oxlint already covers and turns that
-      # file's ignorePatterns into ESLint's ignores. So the two tools share one
-      # ignore list, and the place to change what either of them reads is
-      # .oxlintrc.json.
+      # pass_filenames is false because each tool discovers its own inputs, and
+      # because a hook handed only the staged paths would lint less than the CI
+      # job running the same config over the whole tree. "files" decides whether
+      # the hook runs, not what it reads.
       #
-      # pass_filenames is false because both tools discover their own inputs
-      # from that shared list. Handing them the staged paths instead would let a
-      # commit that touches one file lint only that file, which is not what the
-      # CI job running the same hooks over the whole tree does, and the two
-      # disagreeing is how a lint failure reaches main. "files" therefore only
-      # decides whether the hook runs at all, not what it reads.
-      #
-      # Both need node on the PATH, with the same consequence for desktop git
+      # All three need node on the PATH, with the consequence for desktop git
       # clients described on the unit test hook below.
       - id: oxlint
         name: oxlint
@@ -262,6 +249,15 @@ repos:
         language: system
         pass_filenames: false
         files: \.(m?js|html)$|^\.oxlintrc\.json$
+
+      # The only one of the three that reads the JavaScript and CSS inside
+      # index.html. It overlaps the other two on purpose.
+      - id: biome
+        name: biome
+        entry: npm run --silent lint:biome
+        language: system
+        pass_filenames: false
+        files: \.(m?js|html|css)$|^biome\.json$
 
       # The unit suite plus a coverage floor, the same command CI runs. It takes
       # roughly a second and a half, which is cheap enough to pay per commit and

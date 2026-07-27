@@ -18,6 +18,9 @@ const read = (rel) => readFileSync(join(root, rel), 'utf8');
 const readBytes = (rel) => readFileSync(join(root, rel));
 
 const html = read('index.html');
+/* The game moved out of the page into app.js, which the build inlines back in.
+   Markup questions are asked of the page, script questions of app.js. */
+const app = read('app.js');
 const workflow = read('.github/workflows/deploy-pages.yml');
 
 /* Everything that must reach the published site. */
@@ -202,19 +205,29 @@ test('index.html links the manifest and registers the worker relatively', () => 
   assert.ok(manifestLink, 'index.html does not link a manifest');
   assert.equal(manifestLink[1], 'manifest.webmanifest');
 
-  const register = html.match(/serviceWorker\.register\('([^']+)'\)/);
-  assert.ok(register, 'index.html never registers the service worker');
+  const register = app.match(/serviceWorker\.register\('([^']+)'\)/);
+  assert.ok(register, 'app.js never registers the service worker');
   assert.equal(register[1], './sw.js');
+  assert.ok(app.includes("'serviceWorker' in navigator"), 'the registration is not feature-guarded');
+});
+
+/* The page is published as one file, so a script tag the build does not fold in
+   would ship as a request for a file that is never published, and the game
+   would simply not load. */
+test('index.html asks for app.js and the build inlines it', async () => {
+  assert.match(html, /<script src="app\.js"><\/script>/, 'index.html no longer loads app.js');
+
+  const { ALLOWLIST } = await import('../scripts/build.mjs');
   assert.ok(
-    html.includes("'serviceWorker' in navigator"),
-    'the registration is not feature-guarded',
+    !ALLOWLIST.some((entry) => entry.path === 'app.js'),
+    'app.js is inlined into the page, so publishing it as well ships the game twice',
   );
 });
 
 test('no shipped file points at an absolute path or hardcodes the subdirectory', () => {
   const offences = [];
 
-  for (const rel of ['index.html', '404.html', 'sw.js', 'manifest.webmanifest', 'icons/icon.svg']) {
+  for (const rel of ['index.html', '404.html', 'app.js', 'sw.js', 'manifest.webmanifest', 'icons/icon.svg']) {
     read(rel)
       .split('\n')
       .forEach((line, i) => {
@@ -290,5 +303,5 @@ test('the Apache-2.0 icon sprite carries its attribution', () => {
   assert.match(notice, /Material Symbols/);
   assert.match(notice, /Apache License, Version 2\.0/);
 
-  assert.match(html, /Material Symbols[^]{0,200}Apache/, 'index.html ships icons unattributed');
+  assert.match(html, /Material Symbols[\s\S]{0,200}Apache/, 'index.html ships icons unattributed');
 });

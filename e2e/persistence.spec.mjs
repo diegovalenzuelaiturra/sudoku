@@ -122,8 +122,8 @@ async function exposedBoard(page, cdp) {
    the path from a real event to a written save. */
 async function playAndSave(page) {
   const plan = await page.evaluate(() => {
-    const a = values.findIndex((v, i) => !fixed[i]);
-    const b = values.findIndex((v, i) => !fixed[i] && i !== a);
+    const a = values.findIndex((_v, i) => !fixed[i]);
+    const b = values.findIndex((_v, i) => !fixed[i] && i !== a);
     /* a digit that is not the one about to be placed at b, so filling b does
        not sweep the pencil mark off a as a now-impossible candidate */
     return { a, b, note: (solution[b] % 9) + 1, digit: solution[b] };
@@ -456,7 +456,7 @@ test('a localStorage that throws costs the save, not the game', async ({ page })
 
   await startGame(page, 'medium');
   const plan = await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     return { index: i, digit: solution[i] };
   });
   await page.locator('#board .cell').nth(plan.index).click();

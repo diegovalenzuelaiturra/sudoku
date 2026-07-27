@@ -111,7 +111,7 @@ function decodeEntities(value) {
 /* Every start tag in the document, named in lower case, with its attributes.
    A repeated attribute keeps the first value, the way a browser does. */
 function* startTags(source) {
-  const markup = source.replace(COMMENT, '').replace(RAW_TEXT, (whole, open) => open);
+  const markup = source.replace(COMMENT, '').replace(RAW_TEXT, (_whole, open) => open);
   for (const [, name, written] of markup.matchAll(START_TAG)) {
     const attrs = new Map();
     for (const [, key, quoted, single, bare] of written.matchAll(ATTRIBUTE)) {
@@ -460,7 +460,7 @@ test('the published page still carries the Apache-2.0 sprite attribution', (t) =
      visitor. */
   assert.match(
     published,
-    /Material Symbols[^]{0,200}Apache/,
+    /Material Symbols[\s\S]{0,200}Apache/,
     '_site/index.html ships the Apache-2.0 icon sprite with no attribution, which the ' +
       'licence requires to travel with the work. Add the comment to ' +
       'HTML_MINIFY_OPTIONS.ignoreCustomComments in scripts/build.mjs.',

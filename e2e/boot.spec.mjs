@@ -295,7 +295,7 @@ test('a hint still works on the cell left selected by a correct entry', async ({
   await expect(page.locator('#startOverlay')).toBeHidden();
 
   await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     sel = i;
     inputDigit(solution[i]);
   });
@@ -364,7 +364,7 @@ test('undo says so without silencing the count it moved', async ({ page }) => {
   await expect(page.locator('#remaining')).toHaveText('20 por llenar');
 
   await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k] && values[k] !== solution[k]);
+    const i = values.findIndex((_v, k) => !fixed[k] && values[k] !== solution[k]);
     sel = i;
     inputDigit(solution[i]);
   });

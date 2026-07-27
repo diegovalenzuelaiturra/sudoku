@@ -1,44 +1,25 @@
-/* ESLint runs second, after oxlint, and deliberately overlaps with it as little
-   as possible. The last entry below hands .oxlintrc.json to eslint-plugin-oxlint,
-   which switches off the 68 ESLint rules oxlint already reports and turns that
-   file's ignorePatterns into ESLint's global ignores, so the two tools share one
-   ignore list and never print the same problem twice.
+/* Three linters run over this tree: oxlint, ESLint and Biome. ESLint owns the
+   markup and the scope analysis, which needs to know which of four environments
+   a file runs in. The last entry hands .oxlintrc.json to eslint-plugin-oxlint,
+   which switches off the 68 rules oxlint already reports and reuses its ignore
+   list.
 
-   .oxlintrc.json is plain JSON, with no comments, so that every tool which
-   reads JSON can read it. The three things a reader would otherwise ask it are
-   recorded here instead.
+   .oxlintrc.json is plain JSON so every JSON tool can read it, which leaves it
+   nowhere to record two things:
 
-   Why only the correctness category. It is the one oxlint reserves for code
-   that is simply wrong. The others were run over this tree before being left
-   out rather than dismissed: suspicious adds 33 findings, perf 22, pedantic
-   202, restriction 341 and style 1403, and the ones that are not pure opinion
-   are false positives here. Two worth naming so they are not rediscovered and
-   mistaken for bugs: no-unmodified-loop-condition flags the "while (left > 0)"
-   search in generator.js, where left is decremented by a helper the rule cannot
-   see through, and require-post-message-target-origin flags that file's worker
-   replies, where no target origin exists to pass.
+   Only the correctness category is on. The others were run over this tree
+   first: suspicious 33 findings, perf 22, pedantic 202, restriction 341, style
+   1403, and what is not opinion is a false positive here. Two that look like
+   bugs and are not: no-unmodified-loop-condition on the "while (left > 0)"
+   search in generator.js, where left is decremented by a helper it cannot see
+   through, and require-post-message-target-origin on that file's worker
+   replies, which have no target origin to pass.
 
-   Why unicorn/no-new-array is off. All 33 sites it fired on are
-   new Array(n).fill(x), where the ambiguity it exists to catch, whether the
-   argument is a length or a lone element, is answered by the very next call.
+   unicorn/no-new-array is off because all 33 sites are new Array(n).fill(x).
 
-   Why .claude is in ignorePatterns. It holds git worktrees, so from the main
-   checkout a linter that descends into it reads a full second copy of this
-   repository for every branch anyone has open, and reports on files belonging
-   to another branch. tests/typography.test.mjs skips it for the same reason.
-
-   What ESLint is here for, then, is the part oxlint does not do: HTML, through
-   @html-eslint, and the scope and globals analysis that needs to know which of
-   the four environments in this repository a file runs in. There are four, and
-   getting one wrong is not cosmetic: no-undef reports every global of an
-   environment it was not told about, which is a wall of noise that gets the rule
-   switched off.
-
-   One thing this does not cover, which is worth knowing before trusting a green
-   run: the game itself. index.html carries the whole application in an inline
-   script, and @html-eslint lints the markup around that script rather than the
-   JavaScript inside it, so those lines are checked by the unit and e2e suites
-   and by nothing here. */
+   .claude is ignored because it holds git worktrees, so from the main checkout
+   a linter descending into it reads a second copy of the repository for every
+   open branch. tests/typography.test.mjs skips it for the same reason. */
 
 import { defineConfig } from 'eslint/config';
 import js from '@eslint/js';
@@ -47,48 +28,55 @@ import oxlint from 'eslint-plugin-oxlint';
 import globals from 'globals';
 
 export default defineConfig([
-  /* Everything with an .mjs extension is node, and is not published: the build
-     scripts, the unit tests, the Playwright specs and their config. */
+  /* Every .mjs is node and none of it is published. */
   {
     files: ['**/*.mjs'],
     extends: [js.configs.recommended],
     languageOptions: { sourceType: 'module', globals: globals.node },
   },
 
-  /* A Playwright spec holds two languages. Outside page.evaluate it is node;
-     inside it, the callback is serialised and run in the browser, where the
-     app's own globals exist and nothing in this process does. ESLint resolves
-     both against the same scope, so it reports the second kind as undefined.
-
-     Measured rather than assumed before switching the rule off: all 109 hits sit
-     inside an evaluate, waitForFunction or addInitScript callback, and every
-     name is one the page defines (values, solution, sel, saveGame, GRADE_WORDS).
-     None is a typo in node code. Declaring those names as globals here was the
-     alternative and was rejected: the list would be a copy of the app's internals
-     that nothing keeps honest, so renaming one in index.html would leave a stale
-     entry here and no failure anywhere. What is given up is catching a misspelt
-     identifier in the node half of these files, which throws on the first run
-     instead. */
+  /* A Playwright spec holds two languages: node outside page.evaluate, and page
+     code inside it, which ESLint resolves against the same scope and reports as
+     undefined. All 109 hits were inside an evaluate, waitForFunction or
+     addInitScript callback, naming globals app.js defines. Declaring those here
+     would be a copy of the app's internals that nothing keeps honest. */
   {
     files: ['e2e/**/*.mjs'],
     rules: { 'no-undef': 'off' },
   },
 
-  /* generator.js is a classic script, not a module, and that is load bearing:
-     it normally runs as a worker and index.html injects it as a plain <script>
-     when constructing one throws. Parsed as a module it would be given module
-     scope and strict mode, which is not how either of those runs it. Both
-     environments are declared for the same reason. */
+  /* A classic script, not a module: it runs as a worker, and index.html injects
+     it as a plain script when constructing one throws.
+
+     no-implicit-globals is the "exactly one global" rule. On the fallback path
+     this file shares global scope with app.js, so a second top level binding of
+     a name they both use is a SyntaxError, and only on that path. */
   {
     files: ['generator.js'],
     extends: [js.configs.recommended],
     languageOptions: { sourceType: 'script', globals: { ...globals.browser, ...globals.worker } },
+    rules: { 'no-implicit-globals': ['error', { lexicalBindings: true }] },
   },
 
+  /* No no-implicit-globals here: a service worker has a global scope of its own
+     with no other script in it. */
   {
     files: ['sw.js'],
     extends: [js.configs.recommended],
     languageOptions: { sourceType: 'script', globals: globals.serviceworker },
+  },
+
+  /* The game. The build inlines it into index.html as a classic script.
+     localStorage throws in private modes, and every one of those reads is best
+     effort, so an empty catch is the handling rather than a missing one. */
+  {
+    files: ['app.js'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      sourceType: 'script',
+      globals: { ...globals.browser, SudokuGenerator: 'readonly' },
+    },
+    rules: { 'no-empty': ['error', { allowEmptyCatch: true }] },
   },
 
   {
@@ -97,14 +85,34 @@ export default defineConfig([
     extends: ['html/recommended'],
     language: 'html/html',
     rules: {
-      /* Four, which is the plugin's own default and is written out anyway so
-         that this file and .editorconfig say the same number in the same words.
-         HTML is the one exception to the two spaces the rest of the tree uses,
-         because markup nests far deeper than the code does: the board sits
-         eight levels in, and at two spaces the indentation stops being a cue
-         about depth. .editorconfig carries the matching [*.html] block, and the
-         two have to be changed together or an editor and this rule will take
-         turns reformatting the file. */
+      /* Pages serves this repository under /sudoku/, so a rooted path resolves
+         against a different site and 404s in production only.
+         tests/assets.test.mjs checks the same thing over five named files; this
+         checks every HTML file. */
+      'html/no-restricted-attr-values': [
+        'error',
+        {
+          attrPatterns: ['href', 'src'],
+          attrValuePatterns: ['^/[^/]*'],
+          message: 'absolute path: Pages serves this repository under /sudoku/, use a relative one',
+        },
+      ],
+
+      'html/require-input-label': 'error',
+      'html/no-positive-tabindex': 'error',
+      'html/no-aria-hidden-on-focusable': 'error',
+      'html/no-aria-hidden-body': 'error',
+      'html/no-abstract-roles': 'error',
+      'html/no-invalid-role': 'error',
+      'html/no-nested-interactive': 'error',
+      'html/require-frame-title': 'error',
+      'html/require-meta-description': 'error',
+      'html/no-duplicate-class': 'error',
+
+      /* Markup nests deeper than the code, so HTML is the one place this tree is
+         not on two spaces. .editorconfig carries the matching [*.html] block and
+         has to keep saying the same number, or an editor and this rule take
+         turns rewriting the file. */
       'html/indent': ['error', 4],
     },
   },

@@ -640,7 +640,7 @@
         self.postMessage({
           id: request.id,
           ok: false,
-          error: String((error && error.message) || error),
+          error: String((error?.message) || error),
         });
       }
     });

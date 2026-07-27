@@ -48,7 +48,7 @@ const solve = (page) =>
 
 const spoil = (page) =>
   page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     sel = i;
     inputDigit((solution[i] % 9) + 1);
   });
@@ -186,7 +186,7 @@ test('a save with a negative clock cannot poison the best time', async ({ page }
   /* A real save with one field edited, so a rejection for something unrelated
      cannot pass this test by never restoring at all. */
   await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     sel = i;
     inputDigit(solution[i]);
   });

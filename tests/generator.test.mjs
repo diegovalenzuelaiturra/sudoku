@@ -21,7 +21,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const html = readFileSync(join(root, 'index.html'), 'utf8');
+/* The game is app.js, which the build inlines into the published page. */
+const app = readFileSync(join(root, 'app.js'), 'utf8');
 
 /* Required rather than evaluated from a string, because the coverage report is
    the point. `new Function` compiles an anonymous script that V8 attributes to
@@ -187,23 +188,23 @@ test('a board is graded by technique, not by how many clues it shows', () => {
   );
 });
 
-test('the grade words index.html shows come from the generator', () => {
+test('the grade words the game shows come from the generator', () => {
   /* index.html is inline and generator.js has to run in a worker, so the table
      is written twice. This is what stops the two drifting: a tier renamed in
      one and not the other would put a word on the difficulty buttons that no
      board is ever graded with. */
-  const literal = html.match(/const GRADE_WORDS=\{([^}]*)\}/);
+  const literal = app.match(/const GRADE_WORDS=\{([^}]*)\}/);
   assert.ok(literal, 'GRADE_WORDS is not where this test expects to find it');
 
   const shown = {};
   for (const [, key, word] of literal[1].matchAll(/(\d+):'([^']+)'/g)) shown[key] = word;
 
-  assert.deepEqual(shown, GRADE_NAMES, 'the grade words in index.html and generator.js disagree');
+  assert.deepEqual(shown, GRADE_NAMES, 'the grade words in app.js and generator.js disagree');
   assert.equal(Object.keys(shown).length, 4, 'there are not four tiers any more');
 });
 
 test('every difficulty asks for a grade, and harder ones ask for more', () => {
-  const literal = html.match(/const DIFF=\{(.+)\};/);
+  const literal = app.match(/const DIFF=\{(.+)\};/);
   assert.ok(literal, 'the DIFF table is not where this test expects to find it');
 
   const rows = new Map();

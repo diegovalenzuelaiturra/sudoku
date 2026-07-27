@@ -15,7 +15,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const source = readFileSync(join(root, 'index.html'), 'utf8');
+/* The game is app.js, which the build inlines into the published page. The
+   markup it drives is still index.html, and the chip test below reads that. */
+const source = readFileSync(join(root, 'app.js'), 'utf8');
+const html = readFileSync(join(root, 'index.html'), 'utf8');
 
 /* The difficulties in the order the start dialog offers them, which is also
    the order the payouts have to be non-decreasing in. */
@@ -119,7 +122,7 @@ test('each prize has a chip, and the chip has an accessible name', () => {
   ];
 
   for (const { chip, count, name } of chips) {
-    const line = source.split('\n').find((text) => text.includes(`id="${chip}"`));
+    const line = html.split('\n').find((text) => text.includes(`id="${chip}"`));
     assert.ok(line, `the status bar has no ${chip}`);
     assert.match(line, new RegExp(`<b id="${count}">`), `${chip} has no counter to paint`);
     assert.match(

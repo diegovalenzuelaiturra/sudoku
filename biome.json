@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "formatter": {
+    "enabled": false
+  },
+  "assist": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "suspicious": {
+        "noPrototypeBuiltins": "off"
+      },
+      "complexity": {
+        "useArrowFunction": "off",
+        "noImportantStyles": "off"
+      },
+      "a11y": {
+        "useSemanticElements": "off"
+      }
+    }
+  },
+  "html": {
+    "experimentalFullSupportEnabled": true
+  },
+  "files": {
+    "includes": [
+      "app.js",
+      "generator.js",
+      "sw.js",
+      "index.html",
+      "404.html",
+      "scripts/**/*.mjs",
+      "tests/**/*.mjs",
+      "e2e/**/*.mjs"
+    ]
+  }
+}

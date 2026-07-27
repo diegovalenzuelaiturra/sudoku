@@ -69,7 +69,7 @@ const solve = (page) =>
    one. */
 const spoil = (page) =>
   page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     sel = i;
     inputDigit((solution[i] % 9) + 1);
     return i;
@@ -246,7 +246,7 @@ test('a save that starts the mistake counter below zero cannot buy the bonus', a
      written blob that might be rejected for an unrelated reason and pass this
      test by never restoring at all. */
   await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     sel = i;
     inputDigit(solution[i]);
   });
@@ -305,7 +305,7 @@ test('a second tab cannot reset the counters the bonus is gated on', async ({ pa
   /* The second tab, still holding 0 in memory, writes. This is the keystroke
      that used to erase the mistake from storage entirely. */
   await other.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k] && values[k] === 0);
+    const i = values.findIndex((_v, k) => !fixed[k] && values[k] === 0);
     sel = i;
     inputDigit(solution[i]);
   });

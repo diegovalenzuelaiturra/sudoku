@@ -7,8 +7,16 @@ enforced by a test or exists because breaking it shipped a bug.
 ## What ships
 
 Four things reach the browser: `index.html`, `generator.js`, `sw.js` and
-`icons/`. `index.html` is the whole interface, styles and script inline.
-`generator.js` is the only other script.
+`icons/`. `index.html` is the whole interface, with its styles inline.
+
+The game itself is `app.js`, which is not published. `index.html` loads it with
+`<script src="app.js">` and `scripts/build.mjs` folds it back into the page, so
+what ships is still one file. It lives apart so the linters read it as
+JavaScript rather than as text inside markup, which is where it used to be and
+where nothing checked it. Add another such file to `INLINED_SCRIPTS` in
+`scripts/build.mjs`, not to the allowlist: inlining runs before the content
+hash, so a script left out of it would change the game without changing the
+build id and every returning visitor would keep the cached copy.
 
 Adding a published file means adding it in three places, and a test fails if you
 miss one:
@@ -34,10 +42,11 @@ repository root at `/` hides the whole class of bug above, serves source rather
 than built output, and puts `.git` and `node_modules` on the wire.
 
 **`generator.js` exports exactly one global, `SudokuGenerator`.** It runs as a
-worker normally, but `index.html` injects it as a plain `<script>` when
-constructing a worker throws. Two classic scripts declaring the same top level
-`const` is a SyntaxError, and `index.html` has its own `boxOf` and `PEERS`, so
-anything else leaking out of that file breaks the fallback silently.
+worker normally, but `app.js` injects it as a plain `<script>` when constructing
+a worker throws. Two classic scripts declaring the same top level `const` is a
+SyntaxError, and `app.js` has its own `boxOf` and `PEERS`, so anything else
+leaking out of that file breaks the fallback silently. `no-implicit-globals` in
+`eslint.config.mjs` now enforces this rather than leaving it to memory.
 
 **Comments are load bearing.** Several exist specifically to stop a fixed bug
 being reintroduced, and they record measurements that were expensive to take.
@@ -71,23 +80,17 @@ npm test                # unit, a few seconds
 npm run test:coverage   # the same, with the floor CI enforces
 npm run test:e2e        # Playwright, real Chromium and real WebKit
 npm run lint            # the git hooks, over every file
-npm run lint:fix        # oxlint and ESLint, applying what they can fix
+npm run lint:fix        # all three linters, applying what they can fix
 ```
 
-Two linters, configured not to overlap: oxlint runs its `correctness` rules, and
-`eslint.config.mjs` reads `.oxlintrc.json` to switch off the ESLint rules oxlint
-already covers. Both share the ignore list in `.oxlintrc.json`.
+Three linters, wired into the hooks and CI. oxlint runs its `correctness`
+rules; `eslint.config.mjs` reads `.oxlintrc.json` and switches off the ESLint
+rules oxlint already covers; Biome is the only one that reads the JavaScript and
+CSS inside `index.html`, and overlaps the other two on purpose.
 
-ESLint owns the HTML, through html-eslint, and reformats `index.html` and
+ESLint owns the markup, through html-eslint, and reformats `index.html` and
 `404.html` to a four space indent, the one place this tree is not on two, which
-`.editorconfig` records as well. It does not touch what is inside `<style>` or
-`<script>`: the body of those elements is opaque text to it, so the game's own
-JavaScript and CSS are linted by nothing and carried entirely by the suites
-above. Editing the markup means running `npm run lint:fix` or watching CI fail
-on indentation.
-
-Unit tests read the shipped files and evaluate them, rather than importing a
-copy, so they exercise what players actually run. The coverage floor only sees
-files a test imports, so it will not notice a new script that nothing loads.
+`.editorconfig` records as well. Editing the markup means running
+`npm run lint:fix` or watching CI fail on indentation.
 
 Two worktrees can run at once by setting `PLAYWRIGHT_PORT`.

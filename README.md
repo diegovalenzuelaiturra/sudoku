@@ -57,33 +57,44 @@ not notice a brand new script that nothing imports.
 
 ```sh
 npm run lint:oxlint     # oxlint, the whole tree in milliseconds
-npm run lint:eslint     # ESLint, which is also what lints the HTML
-npm run lint:fix        # both, applying every fix they can make themselves
+npm run lint:eslint     # ESLint, which is also what lints the markup
+npm run lint:biome      # Biome, which is what reads inside index.html
+npm run lint:fix        # all three, applying every fix they can make themselves
 ```
 
-Two linters that are configured not to overlap. [oxlint](https://oxc.rs) runs
-its `correctness` rules, the category it reserves for code that is simply wrong.
-[ESLint](https://eslint.org) takes what oxlint does not: the markup of
-`index.html` and `404.html`, through
-[html-eslint](https://html-eslint.org), and the scope analysis that has to know
-whether a file is a node module, a classic worker script or a service worker.
+[oxlint](https://oxc.rs) runs its `correctness` rules, the category it reserves
+for code that is simply wrong. [ESLint](https://eslint.org) takes the markup of
+`index.html` and `404.html` through [html-eslint](https://html-eslint.org), and
+the scope analysis that has to know whether a file is a node module, a classic
+worker script or a service worker. [Biome](https://biomejs.dev) is the only one
+of the three that reads the JavaScript and the CSS inside `index.html`, and it
+overlaps the other two on purpose: it is fast enough that the overlap is cheaper
+than deciding which tool owns which rule.
 
 `eslint.config.mjs` reads `.oxlintrc.json` and switches off the 68 ESLint rules
-oxlint already covers, so nothing is reported twice and both tools share one
-ignore list. Change what either reads in `.oxlintrc.json`. That file is plain
-JSON with no comments, so anything that reads JSON can read it; why a rule is on
-or off is recorded at the top of `eslint.config.mjs` instead.
+oxlint already covers, so those two share one ignore list. Both `.oxlintrc.json`
+and `biome.json` are plain JSON with no comments, so anything that reads JSON
+can read them; why a rule is on or off is recorded at the top of
+`eslint.config.mjs`, except for Biome's four, which are here:
+
+- `noPrototypeBuiltins` and `useArrowFunction` are off because their automatic
+  fixes are wrong for this tree. The first rewrites
+  `Object.prototype.hasOwnProperty.call` to `Object.hasOwn`, which the comment
+  beside that call in `app.js` forbids: it is Safari 15.4 and newer, it runs on
+  the boot path with nothing to catch a throw, and the players who would hit it
+  are exactly those who already have a save. The second rewrites the IIFE in
+  `generator.js`, which exists to keep that file to one global.
+- `noImportantStyles` and `useSemanticElements` are off because the `!important`
+  rules and the `role="group"` board are deliberate.
 
 `npm run lint:fix` reformats the two HTML files, at the four space indent
-`.editorconfig` asks for. It does not touch the CSS or the JavaScript inside
-`index.html`: html-eslint treats the body of a `<style>` or `<script>` element
-as opaque text, and lints the markup around it. Nothing in this repository lints
-the game's own JavaScript, which is why the unit and e2e suites carry it.
+`.editorconfig` asks for. Biome is configured as a linter only, so nothing here
+formats JavaScript.
 
 ## Git hooks
 
-Optional but recommended. The hooks lint the workflow files, run both linters
-and run the unit suite before a commit lands, which is faster than finding out
+Optional but recommended. The hooks lint the workflow files, run all three
+linters and run the unit suite before a commit lands, which is faster than finding out
 from CI.
 
 ```sh
@@ -94,8 +105,8 @@ npx prek install         # writes .git/hooks/pre-commit
 No separate install: prek is a devDependency, so `npm ci` already put it in
 `node_modules/.bin`. Then commits run
 [actionlint](https://github.com/rhysd/actionlint) for workflow validity,
-[zizmor](https://docs.zizmor.sh) for workflow security, oxlint, ESLint and the
-unit suite. To run everything once without committing:
+[zizmor](https://docs.zizmor.sh) for workflow security, the three linters and
+the unit suite. To run everything once without committing:
 
 ```sh
 npm run lint
