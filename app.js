@@ -917,7 +917,16 @@ function readStats() {
   const rows = s.d && typeof s.d === 'object' ? s.d : {};
   for (const key of Object.keys(blank.d)) {
     const row = rows[key] && typeof rows[key] === 'object' ? rows[key] : {};
-    blank.d[key] = { played: count(row.played), won: count(row.won), best: count(row.best) };
+    const won = count(row.won);
+    /* Never fewer games played than won, the same way bestStreak below is never
+       less than the streak. Games played are only counted by startGame, which
+       the previous build did not do at all, so every record carried over from it
+       reads zero played beside real wins, and one that says you won more than
+       you played is arithmetic nobody believes: it costs the best times beside
+       it their credibility too. Raising played to won cannot overstate
+       anything, since a win is a game played by definition, and a row this
+       build wrote is already past it. */
+    blank.d[key] = { played: Math.max(count(row.played), won), won, best: count(row.best) };
   }
   blank.streak = count(s.streak);
   blank.bestStreak = Math.max(count(s.bestStreak), blank.streak);

@@ -271,6 +271,12 @@
   .modal .stat b{font-family:var(--serif);font-size:18px;display:block}
   .modal .stat i{font-style:normal;font-size:10.5px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
   .modal .quiet{margin-top:12px;background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;text-decoration:underline}
+  /* Only the two that carry an icon. The Canjear buttons share .quiet and have
+     bare text, so moving the underline onto a label outright would take theirs
+     away. Underlining the button would draw a line under the glyph as well,
+     which reads as an underlined icon rather than a link. */
+  .modal .quiet:has(.ico){display:inline-flex;align-items:center;gap:5px;text-decoration:none}
+  .modal .quiet .label{text-decoration:underline}
   /* A disabled difficulty button is not broken, it is busy: keep it legible
      rather than greying it into something that looks unavailable for good. */
   .diff[disabled],.modal .quiet[disabled]{opacity:.5;cursor:default}
@@ -395,6 +401,9 @@
             </symbol>
             <symbol id="i-stylus_note" viewBox="0 -960 960 960">
                 <path d="m499-259 364-363-81-80-363 363 80 80Zm-280 48q-88-6-133.5-40.5T40-349q0-60 51-98t142-46q44-4 65.5-16t21.5-33q0-29-29-44.5T194-609l5-60q89 9 135 41t46 86q0 46-37.5 75T238-433q-69 5-103.5 26T100-349q0 35 30.5 54.5T222-271l-3 60Zm299 18L353-358l398-397q14-14 31.5-13.5T814-755l102 101q14 14 14 32t-14 32L518-193Zm-159 33q-17 4-30-9t-9-30l33-159 165 165-159 33Z"/>
+            </symbol>
+            <symbol id="i-leaderboard" viewBox="0 -960 960 960">
+                <path d="M160-200h160v-320H160v320Zm240 0h160v-560H400v560Zm240 0h160v-240H640v240ZM80-120v-480h240v-240h320v320h240v400H80Z"/>
             </symbol>
             <symbol id="i-local_fire_department" viewBox="0 -960 960 960">
                 <path d="M240-400q0 52 21 98.5t60 81.5q-1-5-1-9v-9q0-32 12-60t35-51l113-111 113 111q23 23 35 51t12 60v9q0 4-1 9 39-35 60-81.5t21-98.5q0-50-18.5-94.5T648-574q-20 13-42 19.5t-45 6.5q-62 0-107.5-41T401-690q-39 33-69 68.5t-50.5 72Q261-513 250.5-475T240-400Zm240 52-57 56q-11 11-17 25t-6 29q0 32 23.5 55t56.5 23q33 0 56.5-23t23.5-55q0-16-6-29.5T537-292l-57-56Zm0-492v132q0 34 23.5 57t57.5 23q18 0 33.5-7.5T622-658l18-22q74 42 117 117t43 163q0 134-93 227T480-80q-134 0-227-93t-93-227q0-129 86.5-245T480-840Z"/>
@@ -642,13 +651,31 @@
                     type="button"
                     class="quiet"
                     id="recordBtn"
-                >Ver mi registro</button>
+                >
+                    <svg
+                        class="ico"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <use href="#i-leaderboard"/>
+                    </svg>
+                    <span class="label">Ver mi registro</span>
+                </button>
                 <button
                     type="button"
                     class="quiet"
                     id="cancelNew"
                     hidden
-                >Seguir jugando</button>
+                >
+                    <svg
+                        class="ico"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <use href="#i-play_arrow"/>
+                    </svg>
+                    <span class="label">Seguir jugando</span>
+                </button>
             </div>
         </div>
 
