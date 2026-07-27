@@ -38,9 +38,7 @@ self.addEventListener('install', (event) => {
      paired with clients.claim() below so a fresh deploy is not stuck
      behind an already-open tab running the old script. */
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
 });
 
 self.addEventListener('activate', (event) => {
@@ -56,10 +54,10 @@ self.addEventListener('activate', (event) => {
         Promise.all(
           names
             .filter((name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
-            .map((name) => caches.delete(name))
-        )
+            .map((name) => caches.delete(name)),
+        ),
       )
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -75,6 +73,6 @@ self.addEventListener('fetch', (event) => {
     caches
       .open(CACHE_NAME)
       .then((cache) => cache.match(event.request, { ignoreSearch: true }))
-      .then((cached) => cached || fetch(event.request))
+      .then((cached) => cached || fetch(event.request)),
   );
 });

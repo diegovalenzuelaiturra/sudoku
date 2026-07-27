@@ -7,8 +7,16 @@ enforced by a test or exists because breaking it shipped a bug.
 ## What ships
 
 Four things reach the browser: `index.html`, `generator.js`, `sw.js` and
-`icons/`. `index.html` is the whole interface, styles and script inline.
-`generator.js` is the only other script.
+`icons/`. `index.html` is the whole interface, with its styles inline.
+
+The game itself is `app.js`, which is not published. `index.html` loads it with
+`<script src="app.js">` and `scripts/build.mjs` folds it back into the page, so
+what ships is still one file. It lives apart so the linters read it as
+JavaScript rather than as text inside markup, which is where it used to be and
+where nothing checked it. Add another such file to `INLINED_SCRIPTS` in
+`scripts/build.mjs`, not to the allowlist: inlining runs before the content
+hash, so a script left out of it would change the game without changing the
+build id and every returning visitor would keep the cached copy.
 
 Adding a published file means adding it in three places, and a test fails if you
 miss one:
@@ -34,10 +42,11 @@ repository root at `/` hides the whole class of bug above, serves source rather
 than built output, and puts `.git` and `node_modules` on the wire.
 
 **`generator.js` exports exactly one global, `SudokuGenerator`.** It runs as a
-worker normally, but `index.html` injects it as a plain `<script>` when
-constructing a worker throws. Two classic scripts declaring the same top level
-`const` is a SyntaxError, and `index.html` has its own `boxOf` and `PEERS`, so
-anything else leaking out of that file breaks the fallback silently.
+worker normally, but `app.js` injects it as a plain `<script>` when constructing
+a worker throws. Two classic scripts declaring the same top level `const` is a
+SyntaxError, and `app.js` has its own `boxOf` and `PEERS`, so anything else
+leaking out of that file breaks the fallback silently. `no-implicit-globals` in
+`eslint.config.mjs` now enforces this rather than leaving it to memory.
 
 **Comments are load bearing.** Several exist specifically to stop a fixed bug
 being reintroduced, and they record measurements that were expensive to take.
@@ -71,10 +80,19 @@ npm test                # unit, a few seconds
 npm run test:coverage   # the same, with the floor CI enforces
 npm run test:e2e        # Playwright, real Chromium and real WebKit
 npm run lint            # the git hooks, over every file
+npm run lint:fix        # all three linters, applying what they can fix
 ```
 
-Unit tests read the shipped files and evaluate them, rather than importing a
-copy, so they exercise what players actually run. The coverage floor only sees
-files a test imports, so it will not notice a new script that nothing loads.
+Three linters, wired into the hooks and CI. oxlint runs its `correctness` rules;
+`eslint.config.mjs` reads `.oxlintrc.json` and switches off the rules oxlint
+already covers; Biome lints and formats the JavaScript, which the other two only
+see as text when it is inside `index.html`.
+
+HTML indents four, the one place this tree is not on two. `.editorconfig`,
+`biome.json` and `eslint.config.mjs` all say so and have to keep agreeing. Run
+`npm run lint:fix` after editing anything, or watch CI fail on formatting.
+
+The browser floor is Safari 15.4, so `Object.hasOwn` and optional chaining are
+fine.
 
 Two worktrees can run at once by setting `PLAYWRIGHT_PORT`.

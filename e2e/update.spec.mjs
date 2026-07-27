@@ -46,8 +46,7 @@ const countUpdateChecks = (page) =>
   });
 
 const updateChecks = (page) => page.evaluate(() => window.__updates);
-const resume = (page) =>
-  page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+const resume = (page) => page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
 
 /* Resolves once this document is under a worker, which is when clients.claim()
    has run and controllerchange has already fired. */
@@ -241,9 +240,7 @@ test('a worker that takes over an already controlled page reloads it', async ({ 
      The load is awaited from a promise created before the dispatch, because the
      reload destroys the execution context the assertion would otherwise run in. */
   const reloaded = page.waitForEvent('load');
-  await page.evaluate(() =>
-    navigator.serviceWorker.dispatchEvent(new Event('controllerchange')),
-  );
+  await page.evaluate(() => navigator.serviceWorker.dispatchEvent(new Event('controllerchange')));
   await reloaded;
 
   expect(await survived(page), 'the swap did not reload the page').toBe(null);

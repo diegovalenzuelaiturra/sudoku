@@ -349,7 +349,8 @@
               const triple = pair | cand[open[c]];
               if (bitCount(triple) !== 3) continue;
               for (const i of open) {
-                if (i === open[a] || i === open[b] || i === open[c] || !(cand[i] & triple)) continue;
+                if (i === open[a] || i === open[b] || i === open[c] || !(cand[i] & triple))
+                  continue;
                 cand[i] &= ~triple;
                 did = true;
               }
@@ -587,7 +588,8 @@
        115ms. Off the main thread that is invisible, and it is the difference
        between a tier that means something and one that misses one board in five. */
     const attempts = request.attempts || 16;
-    const baseSeed = (request.seed === undefined ? (Math.random() * 4294967296) >>> 0 : request.seed) >>> 0;
+    const baseSeed =
+      (request.seed === undefined ? (Math.random() * 4294967296) >>> 0 : request.seed) >>> 0;
 
     let best = null;
     for (let t = 0; t < attempts; t++) {
@@ -640,11 +642,11 @@
         self.postMessage({
           id: request.id,
           ok: false,
-          error: String((error && error.message) || error),
+          error: String(error?.message || error),
         });
       }
     });
   }
 
   root.SudokuGenerator = { makePuzzle, gradePuzzle, countSolutions, rngFrom, GRADE_NAMES };
-})(typeof self !== "undefined" ? self : globalThis);
+})(typeof self !== 'undefined' ? self : globalThis);

@@ -50,8 +50,8 @@ const PRESETS = [
 ];
 
 /* The name render() gives every cell: "Fila 3, columna 7, 4, dada". */
-const CELL_NAME = /^Fila \d, columna \d/;
-const GIVEN_NAME = /^Fila \d, columna \d, [1-9], dada$/;
+const CELL_NAME = /^Fila \d, columna \d/u;
+const GIVEN_NAME = /^Fila \d, columna \d, [1-9], dada$/u;
 
 /* Everything Chrome would hand to assistive tech: ignored nodes are dropped,
    and an inert subtree is ignored wholesale. */
@@ -170,7 +170,7 @@ test('the board is 81 named cells laid out as a nine by nine grid', async ({ pag
   /* Matched on the name Chrome computes, not on the aria-label attribute:
      render() aborting mid-loop leaves cells unnamed, and a cell a screen
      reader cannot name is the failure worth catching. */
-  await expect(page.getByRole('button', { name: /^Fila \d, columna \d, vacía$/ })).toHaveCount(81);
+  await expect(page.getByRole('button', { name: /^Fila \d, columna \d, vacía$/u })).toHaveCount(81);
 
   /* A simulated DOM has no layout, so the old suite could not tell a rendered
      board from 81 elements stacked at 0 by 0. */
@@ -258,16 +258,16 @@ test('undo restores the board but never the counters', async ({ page }) => {
      the key at all. */
   await page.keyboard.press('h');
   await expect(page.locator('#hints')).toHaveText('1');
-  await expect(cell).toHaveClass(/given/);
-  await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, [1-9], dada$/);
+  await expect(cell).toHaveClass(/given/u);
+  await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, [1-9], dada$/u);
   const hinted = (await cell.locator('.v').innerText()).trim();
-  expect(hinted).toMatch(/^[1-9]$/);
+  expect(hinted).toMatch(/^[1-9]$/u);
 
   await page.keyboard.press('z');
-  await expect(cell).not.toHaveClass(/given/);
+  await expect(cell).not.toHaveClass(/given/u);
   /* The undone cell announces itself as empty and editable again, which is the
      player-visible meaning of the class check above. */
-  await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, vacía$/);
+  await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, vacía$/u);
   await expect(cell.locator('.v')).toBeEmpty();
   /* The board rolled back and the record did not. The answer was on the screen,
      and pressing Z cannot un-see it. */
@@ -295,7 +295,7 @@ test('a hint still works on the cell left selected by a correct entry', async ({
   await expect(page.locator('#startOverlay')).toBeHidden();
 
   await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     sel = i;
     inputDigit(solution[i]);
   });
@@ -321,7 +321,7 @@ test('a hint asked of a given does nothing, and says so', async ({ page }) => {
   await expect(page.locator('#remaining')).toHaveText(before);
   /* Said out loud, because a key that does nothing and says nothing reads as one
      that never registered. */
-  await expect(page.locator('#srStatus')).toHaveText(/Esa casilla ya viene dada\./);
+  await expect(page.locator('#srStatus')).toHaveText(/Esa casilla ya viene dada\./u);
 });
 
 test('a hint undone and asked for again is charged once', async ({ page }) => {
@@ -331,16 +331,16 @@ test('a hint undone and asked for again is charged once', async ({ page }) => {
   await page.keyboard.press('h');
   await expect(page.locator('#hints')).toHaveText('1');
   const cell = page.locator('#board .cell').nth(await page.evaluate(() => sel));
-  await expect(cell).toHaveClass(/given/);
+  await expect(cell).toHaveClass(/given/u);
 
   await page.keyboard.press('z');
-  await expect(cell).not.toHaveClass(/given/);
+  await expect(cell).not.toHaveClass(/given/u);
 
   /* hint() leaves sel on the cell it filled and undo() does not restore sel, so
      this press finds that same cell empty and editable, which is the shape that
      charged twice for one answer. */
   await page.keyboard.press('h');
-  await expect(cell).toHaveClass(/given/);
+  await expect(cell).toHaveClass(/given/u);
   await expect(page.locator('#hints')).toHaveText('1');
 });
 
@@ -364,18 +364,17 @@ test('undo says so without silencing the count it moved', async ({ page }) => {
   await expect(page.locator('#remaining')).toHaveText('20 por llenar');
 
   await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k] && values[k] !== solution[k]);
+    const i = values.findIndex((_v, k) => !fixed[k] && values[k] !== solution[k]);
     sel = i;
     inputDigit(solution[i]);
   });
-  await expect(page.locator('#srStatus')).toHaveText(/19 celdas por llenar/);
+  await expect(page.locator('#srStatus')).toHaveText(/19 celdas por llenar/u);
 
   await page.keyboard.press('z');
-  await expect(page.locator('#srStatus')).toHaveText(/Deshecho\./);
-  await expect(
-    page.locator('#srStatus'),
-    'the undo ate the count it had just moved',
-  ).toHaveText(/20 celdas por llenar/);
+  await expect(page.locator('#srStatus')).toHaveText(/Deshecho\./u);
+  await expect(page.locator('#srStatus'), 'the undo ate the count it had just moved').toHaveText(
+    /20 celdas por llenar/u,
+  );
 });
 
 test('keyboard focus is painted on the board, a pointer click is not', async ({ page }) => {
@@ -487,7 +486,7 @@ async function serveAt(prefix) {
       };
       child.stdout.on('data', (chunk) => {
         printed += chunk;
-        const address = printed.match(/http:\/\/\S+/);
+        const address = printed.match(/http:\/\/\S+/u);
         if (address) settle(null, address[0]);
       });
       child.stderr.on('data', (chunk) => {

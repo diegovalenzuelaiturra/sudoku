@@ -1,14 +1,19 @@
 <!DOCTYPE html>
 <html lang="es-CL">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>404, Sudoku 数独</title>
-<meta name="description" content="Esta página no existe. Vuelve al sudoku.">
-<meta name="theme-color" content="#EDEFE7">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C43A20'/%3E%3Cg stroke='%23F7F1E6' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 13h20M6 19h20M13 6v20M19 6v20'/%3E%3C/g%3E%3C/svg%3E">
-<style>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>404, Sudoku 数独</title>
+        <meta name="description" content="Esta página no existe. Vuelve al sudoku.">
+        <!-- Baseline calls theme-color limited, because desktop Firefox ignores it.
+            That is a reason to expect nothing from it there, not a reason to drop it:
+            where it is honoured it colours the browser UI, and this page has to match
+            the one it sends people back to. index.html carries the same pair. -->
+        <!-- eslint-disable-next-line html/use-baseline -->
+        <meta name="theme-color" content="#EDEFE7">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+        <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C43A20'/%3E%3Cg stroke='%23F7F1E6' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 13h20M6 19h20M13 6v20M19 6v20'/%3E%3C/g%3E%3C/svg%3E">
+        <style>
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{
@@ -33,14 +38,14 @@
   }
   a:hover{background:#22241E;color:#F7F8F3}
   a:focus-visible{outline:2px solid #31507E;outline-offset:2px}
-</style>
-</head>
-<body>
-  <div class="card">
-    <div class="seal" aria-hidden="true">数</div>
-    <h1>404</h1>
-    <p>Esta página no existe, o se perdió como un número mal anotado.</p>
-    <a href="./">Volver al sudoku</a>
-  </div>
-</body>
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="seal" aria-hidden="true">数</div>
+            <h1>404</h1>
+            <p>Esta página no existe, o se perdió como un número mal anotado.</p>
+            <a href="./">Volver al sudoku</a>
+        </div>
+    </body>
 </html>
