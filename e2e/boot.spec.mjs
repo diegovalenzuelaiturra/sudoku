@@ -306,22 +306,52 @@ test('a hint still works on the cell left selected by a correct entry', async ({
   await expect(page.locator('#remaining'), 'the hint revealed nothing').not.toHaveText(before);
 });
 
-test('a hint asked of a given does nothing, and says so', async ({ page }) => {
+test('a hint asked of a given lands on another cell, and says so', async ({ page }) => {
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
   await expect(page.locator('#startOverlay')).toBeHidden();
 
   /* Givens are selectable on purpose: that is what drives the row, column and
-     box highlighting, so this is a press a player makes by accident. It used to
-     reveal a random cell elsewhere and spend the bonus on it. */
+     box highlighting, so this is a press a player makes by accident. Refusing it
+     outright was worse than it sounds: the refusal was announced through
+     #srStatus alone, which is visually-hidden, so a sighted player pressed Pista
+     and saw nothing happen at all. Reported as exactly that. The hint moves to a
+     cell that can take one instead, and the selection follows it, so the board
+     shows where it went rather than leaving the player to find it. */
   const before = await page.locator('#remaining').textContent();
+  const given = await page.evaluate(() => {
+    const i = fixed.findIndex((f) => f);
+    sel = i;
+    return i;
+  });
   await page.locator('#board .cell.given').first().click();
   await page.keyboard.press('h');
 
-  await expect(page.locator('#hints')).toHaveText('0');
-  await expect(page.locator('#remaining')).toHaveText(before);
-  /* Said out loud, because a key that does nothing and says nothing reads as one
-     that never registered. */
-  await expect(page.locator('#srStatus')).toHaveText(/Esa casilla ya viene dada\./u);
+  await expect(page.locator('#hints')).toHaveText('1');
+  await expect(page.locator('#remaining'), 'the hint revealed nothing').not.toHaveText(before);
+  await expect(page.locator('#srStatus')).toHaveText(/pista en otra/iu);
+  expect(await page.evaluate(() => sel), 'the selection stayed on the given').not.toBe(given);
+});
+
+test('a hint picks the cell with the fewest candidates, not one at random', async ({ page }) => {
+  await page.locator('#startOverlay button.diff[data-d="medium"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  /* A random pick was as likely to hand over the hardest cell on the board as
+     the obvious one, and a hint that skips the reasoning teaches nothing. */
+  const verdict = await page.evaluate(() => {
+    const candidates = (i) => {
+      const taken = new Set();
+      for (const p of PEERS[i]) if (values[p]) taken.add(values[p]);
+      return 9 - taken.size;
+    };
+    const open = [];
+    for (let i = 0; i < 81; i++) if (values[i] !== solution[i]) open.push(candidates(i));
+    const fewest = Math.min(...open);
+    sel = -1;
+    hint();
+    return { chosen: candidates(sel), fewest };
+  });
+  expect(verdict.chosen).toBe(verdict.fewest);
 });
 
 test('a hint undone and asked for again is charged once', async ({ page }) => {
