@@ -115,7 +115,7 @@ test('every icon reference resolves to a symbol the browser can paint', async ({
   expect(uses.length, `only ${uses.length} icons are wired up`).toBeGreaterThanOrEqual(7);
 
   for (const use of uses) {
-    expect(use.href, `icon reference is not a sprite id: ${use.href}`).toMatch(/^#/);
+    expect(use.href, `icon reference is not a sprite id: ${use.href}`).toMatch(/^#/u);
     expect(use.tag, `icon ${use.href} has no matching <symbol> in the sprite`).toBe('symbol');
     expect(use.draws, `symbol ${use.href} draws nothing`).toBe(true);
     /* The old suite stopped at "a <symbol> with a <path> exists somewhere in
@@ -134,7 +134,7 @@ test('every icon reference resolves to a symbol the browser can paint', async ({
      allowlist may never publish. */
   const source = await (await page.request.get('./')).text();
   expect(source, 'the play icon is never used').toMatch(
-    /<use href="#i-play_arrow"|'#i-play_arrow'/,
+    /<use href="#i-play_arrow"|'#i-play_arrow'/u,
   );
 });
 
@@ -184,7 +184,7 @@ test('icons decorate the buttons without touching their accessible names', async
   /* aria-hidden on the <svg> is only a claim in the markup. This is the effect:
      Chrome exposes no image or graphics node anywhere, so the icons are not
      merely unnamed, they are absent from what assistive tech walks. */
-  const graphics = nodes.filter((node) => /image|graphic|svg/i.test(node.role));
+  const graphics = nodes.filter((node) => /image|graphic|svg/iu.test(node.role));
   expect(graphics, 'an icon reached the accessibility tree').toEqual([]);
 
   /* The sixth labelled button lives in the win modal, which is display:none
@@ -287,7 +287,7 @@ test('both live regions exist and are empty before anything happens', async ({ p
   const nodes = await accessibleNodes(cdp);
 
   expect(liveRegion(nodes, 'status')).toMatchObject({ live: 'polite', atomic: true });
-  expect(liveRegion(nodes, 'status').text).toMatch(/^\d+ celdas por llenar\.$/);
+  expect(liveRegion(nodes, 'status').text).toMatch(/^\d+ celdas por llenar\.$/u);
   expect(liveRegion(nodes, 'alert')).toMatchObject({ live: 'assertive', atomic: true, text: '' });
 });
 
@@ -304,7 +304,7 @@ test('mistakes and hints are announced politely, selection moves are not', async
   const status = page.locator('#srStatus');
 
   /* Starting a game announces the size of the job once, and nothing else. */
-  await expect(status).toHaveText(/^\d+ celdas por llenar\.$/);
+  await expect(status).toHaveText(/^\d+ celdas por llenar\.$/u);
   const opening = await status.textContent();
 
   const before = await selectedCell(page);
@@ -322,7 +322,7 @@ test('mistakes and hints are announced politely, selection moves are not', async
   });
   await page.locator('#board .cell').nth(index).click();
   await page.keyboard.press(String(wrong));
-  await expect(status).toHaveText(/1 error/);
+  await expect(status).toHaveText(/1 error/u);
 
   /* "Announced" is a claim about the region, not only about its text. Read at
      the moment the text lands, from the tree Chrome exposes: written into a
@@ -334,16 +334,16 @@ test('mistakes and hints are announced politely, selection moves are not', async
     live: 'polite',
     atomic: true,
   });
-  expect(liveRegion(nodes, 'status').text).toMatch(/1 error/);
+  expect(liveRegion(nodes, 'status').text).toMatch(/1 error/u);
   expect(liveRegion(nodes, 'alert'), 'a mistake interrupted the player').toMatchObject({
     live: 'assertive',
     text: '',
   });
 
   await page.keyboard.press('h');
-  await expect(status).toHaveText(/1 pista usada/);
+  await expect(status).toHaveText(/1 pista usada/u);
   expect((await accessibleNodes(cdp)).find((node) => node.role === 'status').text).toMatch(
-    /1 pista usada/,
+    /1 pista usada/u,
   );
 });
 
@@ -366,10 +366,10 @@ test('winning is announced assertively, with the final tally', async ({ page, co
   });
 
   const announced = await page.locator('#srAlert').textContent();
-  expect(announced).toMatch(/^Ganaste\./);
-  expect(announced, `win time not announced: ${announced}`).toMatch(/1:0[5-9]/);
-  expect(announced).toMatch(/0 errores/);
-  expect(announced).toMatch(/0 pistas/);
+  expect(announced).toMatch(/^Ganaste\./u);
+  expect(announced, `win time not announced: ${announced}`).toMatch(/1:0[5-9]/u);
+  expect(announced).toMatch(/0 errores/u);
+  expect(announced).toMatch(/0 pistas/u);
 
   /* Assertively, which is the word in the title: the win interrupts whatever
      the polite region was saying. Read from Chrome's tree rather than from the
@@ -380,7 +380,7 @@ test('winning is announced assertively, with the final tally', async ({ page, co
     live: 'assertive',
     atomic: true,
   });
-  expect(liveRegion(winNodes, 'alert').text).toMatch(/^Ganaste\./);
+  expect(liveRegion(winNodes, 'alert').text).toMatch(/^Ganaste\./u);
 
   /* The win modal animates in about two seconds after the last digit. It is the
      only moment the sixth labelled button and the seventh sprite icon are on
@@ -446,7 +446,7 @@ test('the notes button explains itself, on screen only while notes are on', asyn
   const hint = page.locator('#notesHint');
   const notes = page.locator('#notesBtn');
   const text = await hint.textContent();
-  expect(text, 'the hint says nothing').toMatch(/candidat/i);
+  expect(text, 'the hint says nothing').toMatch(/candidat/iu);
 
   /* Clipped to a pixel rather than removed, so it stays in the tree. */
   const clipped = async () => (await hint.boundingBox()).width;
@@ -469,7 +469,7 @@ test('the notes button explains itself, on screen only while notes are on', asyn
   const described = () =>
     accessibleNodes(cdp).then(
       (nodes) =>
-        nodes.find((node) => node.role === 'button' && /Notas/.test(node.name))?.description,
+        nodes.find((node) => node.role === 'button' && /Notas/u.test(node.name))?.description,
     );
 
   expect(await described(), 'the button carries no description while notes are off').toBe(text);

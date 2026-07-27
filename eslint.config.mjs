@@ -4,11 +4,25 @@
 
    .oxlintrc.json is plain JSON, so its three decisions are recorded here.
 
-   Only oxlint's correctness category is on. The rest were run over this tree
-   first: suspicious 33 findings, perf 22, pedantic 202, restriction 341, style
-   1403, and what is not opinion is a false positive here.
+   oxlint runs its correctness category plus seven rules enabled one at a time.
+   Four rules from those categories stay off, each because it is wrong here
+   rather than because it is inconvenient:
 
-   unicorn/no-new-array is off because all 33 sites are new Array(n).fill(x).
+   consistent-function-scoping wants functions hoisted out of their parent, and
+   cannot see that four of the six it flags sit inside a page.evaluate or
+   addInitScript callback, which is serialised and run in the browser. Hoisting
+   those breaks the test.
+
+   require-post-message-target-origin wants a target origin on a worker's
+   postMessage, which has none to give.
+
+   no-array-reverse wants toReversed, which is Safari 16.4 and the floor here is
+   15.4. The one site already copies with slice first.
+
+   no-unmodified-loop-condition flags the "while (left > 0)" search in
+   generator.js, where left is decremented by a helper it cannot see through.
+
+   unicorn/no-new-array is off because all 38 sites are new Array(n).fill(x).
 
    .claude is ignored because it holds git worktrees, so from the main checkout
    a linter descending into it reads a second copy of the repository for every

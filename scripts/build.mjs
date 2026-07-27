@@ -18,7 +18,6 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 /* The only two imports here that are not node builtins, and they cost the
@@ -35,7 +34,7 @@ import { gzipSync } from 'node:zlib';
 import { minify as minifyHtml } from 'html-minifier-terser';
 import { minify as minifyJs } from 'terser';
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = resolve(import.meta.dirname, '..');
 
 /* The complete set of things that may be published, in publication order.
    type 'dir' is copied recursively; dotfiles are dropped at every level.
@@ -62,7 +61,7 @@ export const PLACEHOLDER = '__BUILD__';
    no path separators. A commit SHA passes. A value that could close a string
    literal and keep going, which is a script injection into a file the browser
    runs with origin scope, does not. */
-export const BUILD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+export const BUILD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 
 /* Only these are decoded as text for placeholder substitution. Anything else,
    an icon PNG for instance, is copied byte for byte and never re-encoded. */
@@ -92,7 +91,7 @@ function inspect(root, relPath) {
 
 function walkDir(root, relDir) {
   const found = [];
-  for (const name of readdirSync(join(root, relDir)).sort()) {
+  for (const name of readdirSync(join(root, relDir)).toSorted()) {
     if (name.startsWith('.')) continue;
     const relPath = `${relDir}/${name}`;
     const stat = inspect(root, relPath);
@@ -147,7 +146,7 @@ function collect(root) {
    version out of the service worker cache. */
 const INLINED_SCRIPTS = new Set(['app.js']);
 
-const SCRIPT_TAG = /[ \t]*<script\s+src="([^"]+)"\s*>\s*<\/script>/g;
+const SCRIPT_TAG = /[ \t]*<script\s+src="([^"]+)"\s*>\s*<\/script>/gu;
 
 function inlineScripts(root, files) {
   for (const file of files) {
@@ -270,7 +269,7 @@ const HTML_MINIFY_OPTIONS = {
      was deleting the only notice it carried: NOTICE is repository metadata and
      is not in the allowlist. Kept by pattern rather than by rewriting the
      comment as <!--! ... -->, so the source stays readable prose. */
-  ignoreCustomComments: [/Material Symbols/],
+  ignoreCustomComments: [/Material Symbols/u],
   /* conservativeCollapse would squeeze each run of whitespace down to a single
      space rather than deleting it, on the theory that a toolbar button is an
      inline element whose spacing is that whitespace. It is off because that was
@@ -381,7 +380,7 @@ async function main() {
   console.log(`build id: ${result.buildId} (${result.idSource})`);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   try {
     await main();
   } catch (error) {

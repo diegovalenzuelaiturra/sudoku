@@ -30,7 +30,7 @@ export default defineConfig({
      browser specs are named *.spec.mjs and live outside tests/ so the two
      runners never load each other's files. */
   testDir: './e2e',
-  testMatch: /.*\.spec\.mjs$/,
+  testMatch: /.*\.spec\.mjs$/u,
 
   /* Artifacts land inside node_modules on purpose. tests/typography.test.mjs
      walks every file under the repository root and reads it as utf8; a binary

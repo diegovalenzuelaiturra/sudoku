@@ -17,10 +17,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = join(import.meta.dirname, '..');
 /* The game is app.js, which the build inlines into the published page. */
 const app = readFileSync(join(root, 'app.js'), 'utf8');
 
@@ -193,24 +192,24 @@ test('the grade words the game shows come from the generator', () => {
      the table is written twice. This is what stops the two drifting: a tier renamed in
      one and not the other would put a word on the difficulty buttons that no
      board is ever graded with. */
-  const literal = app.match(/const GRADE_WORDS\s*=\s*\{([^}]*)\}/);
+  const literal = app.match(/const GRADE_WORDS\s*=\s*\{([^}]*)\}/u);
   assert.ok(literal, 'GRADE_WORDS is not where this test expects to find it');
 
   const shown = {};
-  for (const [, key, word] of literal[1].matchAll(/(\d+):\s*'([^']+)'/g)) shown[key] = word;
+  for (const [, key, word] of literal[1].matchAll(/(\d+):\s*'([^']+)'/gu)) shown[key] = word;
 
   assert.deepEqual(shown, GRADE_NAMES, 'the grade words in app.js and generator.js disagree');
   assert.equal(Object.keys(shown).length, 4, 'there are not four tiers any more');
 });
 
 test('every difficulty asks for a grade, and harder ones ask for more', () => {
-  const literal = app.match(/const DIFF\s*=\s*\{([\s\S]*?)\n\};/);
+  const literal = app.match(/const DIFF\s*=\s*\{([\s\S]*?)\n\};/u);
   assert.ok(literal, 'the DIFF table is not where this test expects to find it');
 
   const rows = new Map();
-  for (const [, key, body] of literal[1].matchAll(/(\w+):\s*\{([^}]*)\}/g)) {
-    const grade = body.match(/grade:\s*(\d+)/);
-    const clues = body.match(/clues:\s*(\d+)/);
+  for (const [, key, body] of literal[1].matchAll(/(\w+):\s*\{([^}]*)\}/gu)) {
+    const grade = body.match(/grade:\s*(\d+)/u);
+    const clues = body.match(/clues:\s*(\d+)/u);
     rows.set(key, {
       grade: grade === null ? null : Number(grade[1]),
       clues: clues === null ? null : Number(clues[1]),

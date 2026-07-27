@@ -30,7 +30,7 @@ import { expect, test } from '@playwright/test';
 const SAVE_KEY = 'sudoku:save';
 
 /* The name render() gives every cell: "Fila 3, columna 7, 4, dada". */
-const CELL_NAME = /^Fila \d, columna \d/;
+const CELL_NAME = /^Fila \d, columna \d/u;
 
 /* Loads the page with the console under watch. The returned array is the
    browser's answer to the old helper's `errors`: it is filled by uncaught
@@ -204,7 +204,7 @@ test('a game in progress survives a reload', async ({ page, context }) => {
   /* The restored clock resumes running, so this allows the seconds that pass
      while it is read on a slow runner, but not a reset to 0:00 and not a lost
      minute. */
-  await expect(page.locator('#time')).toHaveText(/^0:[45]\d$/);
+  await expect(page.locator('#time')).toHaveText(/^0:[45]\d$/u);
   expect(await page.evaluate(() => playing), 'restored game is not playable').toBe(true);
 });
 
@@ -355,7 +355,7 @@ for (const [name, payload] of [
       solution: new Array(81).fill(1),
       values: new Array(81).fill(0),
       fixed: new Array(81).fill(false),
-      notes: new Array(81).fill([]),
+      notes: Array.from({ length: 81 }, () => []),
       diffKey: 'medium',
     }),
   ],
@@ -367,7 +367,7 @@ for (const [name, payload] of [
       solution: new Array(81).fill(1),
       values: new Array(81).fill(0),
       fixed: new Array(81).fill(false),
-      notes: new Array(81).fill([]),
+      notes: Array.from({ length: 81 }, () => []),
       diffKey: 'medium',
     }),
   ],
@@ -379,7 +379,7 @@ for (const [name, payload] of [
       solution: new Array(81).fill(1),
       values: new Array(81).fill(0),
       fixed: new Array(81).fill(false),
-      notes: new Array(81).fill([]),
+      notes: Array.from({ length: 81 }, () => []),
       diffKey: 'imposible',
     }),
   ],
@@ -397,7 +397,7 @@ for (const [name, payload] of [
       solution: new Array(81).fill(1),
       values: new Array(81).fill(0),
       fixed: new Array(81).fill(false),
-      notes: new Array(81).fill([]),
+      notes: Array.from({ length: 81 }, () => []),
       diffKey: 'constructor',
     }),
   ],
@@ -409,7 +409,7 @@ for (const [name, payload] of [
       solution: new Array(81).fill(1),
       values: new Array(81).fill(1),
       fixed: new Array(81).fill(false),
-      notes: new Array(81).fill([]),
+      notes: Array.from({ length: 81 }, () => []),
       diffKey: 'medium',
       solved: true,
     }),
@@ -433,7 +433,7 @@ for (const [name, payload] of [
       page.getByRole('dialog', { name: 'SUDOKU' }),
       'the start dialog did not open',
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: /Normal/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Normal/u })).toBeVisible();
     await expect(page.locator('#remaining')).toHaveText('81 por llenar');
 
     /* Everything above is the rejection itself and runs on both engines, which
@@ -483,7 +483,7 @@ test('a localStorage that throws costs the save, not the game', async ({ page })
     String(plan.digit),
   );
   await expect(page.locator('#board .cell').nth(plan.index)).toHaveAccessibleName(
-    new RegExp(`^Fila \\d, columna \\d, ${plan.digit}$`),
+    new RegExp(`^Fila \\d, columna \\d, ${plan.digit}$`, 'u'),
   );
   expect(problems, 'playing threw with storage disabled').toEqual([]);
   expect(await page.evaluate(() => playing)).toBe(true);
@@ -511,7 +511,7 @@ test('pausing captures the clock', async ({ page }) => {
      the next load. Tolerant of the seconds that pass while it is read, since
      the restored clock starts running again. */
   await page.reload();
-  await expect(page.locator('#time')).toHaveText(/^2:[01]\d$/);
+  await expect(page.locator('#time')).toHaveText(/^2:[01]\d$/u);
 });
 
 test('a save survives a reload the service worker serves from cache', async ({ page }) => {

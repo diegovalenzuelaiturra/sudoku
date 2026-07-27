@@ -24,11 +24,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { build, BUILD_ID_PATTERN, PLACEHOLDER } from '../scripts/build.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = join(import.meta.dirname, '..');
 
 /* A minimal publishable tree: both required allowlist entries, plus the two
    optional text files whose whole point is to carry the build id. */
@@ -101,7 +100,7 @@ test('a build id that could break out of a string literal is refused', (t) => {
     assert.equal(BUILD_ID_PATTERN.test(id), false, `${JSON.stringify(id)} should not match`);
     assert.throws(
       () => build({ root: dir, outDir: out, buildId: id }),
-      /refusing to publish with BUILD_ID/,
+      /refusing to publish with BUILD_ID/u,
       `build accepted ${JSON.stringify(id)}`,
     );
   }
@@ -112,7 +111,7 @@ test('a build id that could break out of a string literal is refused', (t) => {
 
 test('every job that builds the site installs what the build imports', () => {
   const source = readFileSync(join(root, 'scripts', 'build.mjs'), 'utf8');
-  const specifiers = [...source.matchAll(/\bfrom\s+'([^']+)'/g)].map((m) => m[1]);
+  const specifiers = [...source.matchAll(/\bfrom\s+'([^']+)'/gu)].map((m) => m[1]);
 
   assert.ok(specifiers.length > 0, 'found no imports at all, so this check read the wrong file');
   const external = specifiers.filter((s) => !s.startsWith('node:'));
@@ -138,17 +137,17 @@ test('every job that builds the site installs what the build imports', () => {
   const workflows = join(root, '.github', 'workflows');
   for (const name of readdirSync(workflows)) {
     const yaml = readFileSync(join(workflows, name), 'utf8');
-    for (const [, job] of yaml.matchAll(/^ {2}([\w-]+):$/gm)) {
+    for (const [, job] of yaml.matchAll(/^ {2}([\w-]+):$/gmu)) {
       /* Crude on purpose: the job's text is everything from its key to the
          next one at the same indentation. Enough to ask whether the job that
          runs the build also runs the install. */
       const start = yaml.indexOf(`\n  ${job}:`);
-      const next = yaml.slice(start + 1).search(/\n {2}[\w-]+:$/m);
+      const next = yaml.slice(start + 1).search(/\n {2}[\w-]+:$/mu);
       const body = next === -1 ? yaml.slice(start) : yaml.slice(start, start + 1 + next);
-      if (!/run:\s*npm run build/.test(body)) continue;
+      if (!/run:\s*npm run build/u.test(body)) continue;
       assert.match(
         body,
-        /run:\s*npm ci/,
+        /run:\s*npm ci/u,
         `${name}: the "${job}" job runs npm run build but never installs, and the build now ` +
           `imports ${external.join(', ')} from node_modules, so the publish step crashes`,
       );
@@ -176,17 +175,17 @@ test('the job holding the publish credentials runs no third party code', () => {
      1, the filter below still sees pages: write, and every assertion after it
      passes because it is reading a body with no steps in it. The guard on the
      job that holds the publish credentials would go quiet without failing. */
-  const jobs = [...workflow.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|$(?![\s\S]))/gm)]
+  const jobs = [...workflow.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|$(?![\s\S]))/gmu)]
     .map(([, name, body]) => ({ name, body }))
-    .filter(({ body }) => /^ {6}pages:\s*write/m.test(body));
+    .filter(({ body }) => /^ {6}pages:\s*write/mu.test(body));
 
   assert.equal(jobs.length, 1, 'exactly one job should hold pages: write');
 
   const { name, body } = jobs[0];
   for (const [pattern, what] of [
-    [/uses:\s*actions\/checkout/, 'checks out the repository'],
-    [/uses:\s*actions\/setup-node/, 'installs node'],
-    [/run:\s*npm /, 'runs npm'],
+    [/uses:\s*actions\/checkout/u, 'checks out the repository'],
+    [/uses:\s*actions\/setup-node/u, 'installs node'],
+    [/run:\s*npm /u, 'runs npm'],
   ]) {
     assert.ok(
       !pattern.test(body),
@@ -198,7 +197,7 @@ test('the job holding the publish credentials runs no third party code', () => {
 
   /* Every action it does use must be GitHub owned, since anything else would be
      third party code running with those credentials. */
-  for (const [, action] of body.matchAll(/uses:\s*([^@\s]+)@/g)) {
+  for (const [, action] of body.matchAll(/uses:\s*([^@\s]+)@/gu)) {
     assert.ok(
       action.startsWith('actions/'),
       `the "${name}" job uses ${action}, which is not a GitHub owned action`,
@@ -230,7 +229,7 @@ test('the test:coverage script still asks node to enforce a coverage floor', () 
 
   assert.match(
     script,
-    /--experimental-test-coverage\b/,
+    /--experimental-test-coverage\b/u,
     'the "test:coverage" script no longer enables coverage, so node accepts the thresholds ' +
       'below, measures nothing and exits 0',
   );
@@ -262,7 +261,7 @@ test('the test:coverage script still asks node to enforce a coverage floor', () 
        first match is the value node ignores, and reading it would let a floor
        be lowered by adding to the script rather than by editing it. */
     const asked = [
-      ...script.matchAll(new RegExp(`--test-coverage-${metric}[= ](\\d+(?:\\.\\d+)?)`, 'g')),
+      ...script.matchAll(new RegExp(`--test-coverage-${metric}[= ](\\d+(?:\\.\\d+)?)`, 'gu')),
     ];
     assert.ok(
       asked.length > 0,

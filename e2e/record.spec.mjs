@@ -143,7 +143,7 @@ test('a flawless win is written into the record, the streak and the ledger', asy
   expect(played).toBe('1');
   expect(won).toBe('1');
   /* Whatever the clock said, as long as it is a time and not an empty cell. */
-  expect(best).toMatch(/^\d+:\d\d$/);
+  expect(best).toMatch(/^\d+:\d\d$/u);
 
   await expect(page.locator('#streakLine')).toHaveText('Racha de secas: 1. La mejor: 1.');
 
@@ -204,14 +204,14 @@ test('a save with a negative clock cannot poison the best time', async ({ page }
   await expect(page.locator('#board .cell')).toHaveCount(81);
 
   /* Never renders a negative, so it never reaches the record as one. */
-  await expect(page.locator('#time')).toHaveText(/^\d+:\d\d$/);
+  await expect(page.locator('#time')).toHaveText(/^\d+:\d\d$/u);
 
   await solve(page);
   await page.locator('#againBtn').click();
   await openRecord(page);
 
   const [, , , best] = await recordRow(page, 1);
-  expect(best).toMatch(/^\d+:\d\d$/);
+  expect(best).toMatch(/^\d+:\d\d$/u);
   const stored = JSON.parse(await readRaw(page, STATS_KEY)).d.medium.best;
   expect(stored, 'a negative time reached the record').toBeGreaterThanOrEqual(0);
 

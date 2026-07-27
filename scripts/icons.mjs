@@ -17,10 +17,9 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = join(import.meta.dirname, '..');
 const SVG = join(ROOT, 'icons', 'icon.svg');
 
 /* Sizes the manifest declares. Keep in step with manifest.webmanifest. */
@@ -63,16 +62,19 @@ async function render() {
   }
 
   /* Record the artwork this render came from, so drift is detectable. */
-  const self = fileURLToPath(import.meta.url);
+  const self = import.meta.filename;
   const src = readFileSync(self, 'utf8');
   const hash = svgHash();
   writeFileSync(
     self,
-    src.replace(/export const SOURCE_SHA256 = '[^']*';/, `export const SOURCE_SHA256 = '${hash}';`),
+    src.replace(
+      /export const SOURCE_SHA256 = '[^']*';/u,
+      `export const SOURCE_SHA256 = '${hash}';`,
+    ),
   );
   console.log(`  recorded source sha256 ${hash.slice(0, 16)}`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && import.meta.filename === process.argv[1]) {
   await render();
 }

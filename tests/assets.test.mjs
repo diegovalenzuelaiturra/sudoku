@@ -10,10 +10,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = join(import.meta.dirname, '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
 const readBytes = (rel) => readFileSync(join(root, rel));
 
@@ -50,7 +49,7 @@ function appShell() {
   const sw = read('sw.js');
   return sw
     .slice(sw.indexOf('APP_SHELL'), sw.indexOf('];', sw.indexOf('APP_SHELL')))
-    .match(/'([^']+)'/g)
+    .match(/'([^']+)'/gu)
     .map((s) => s.slice(1, -1));
 }
 
@@ -82,15 +81,15 @@ test('the deploy workflow builds through the same script CI runs', async () => {
      same tree and CI exercises it. Assert the workflow delegates rather than
      re-implementing the copy, and that the allowlist covers what exists. */
   assert.ok(
-    /run:\s*npm run build/.test(workflow),
+    /run:\s*npm run build/u.test(workflow),
     'the deploy workflow no longer builds through npm run build',
   );
   assert.ok(
-    !/cp\s+index\.html/.test(workflow),
+    !/cp\s+index\.html/u.test(workflow),
     'the deploy workflow still copies assets inline, which CI never exercises',
   );
   assert.ok(
-    !/cp\s+-R?\s*\.\s+_site/.test(workflow),
+    !/cp\s+-R?\s*\.\s+_site/u.test(workflow),
     'the deploy workflow copies the whole checkout',
   );
 
@@ -135,7 +134,7 @@ test('the service worker precaches relative paths that all exist', () => {
      with the commit SHA. That is strictly stronger than a hand bumped -vN,
      which only changes when somebody remembers to change it. */
   assert.ok(
-    /CACHE_NAME\s*=\s*'sudoku-__BUILD__'/.test(sw),
+    /CACHE_NAME\s*=\s*'sudoku-__BUILD__'/u.test(sw),
     'the cache name no longer carries the build placeholder, so every deploy would reuse one cache',
   );
 });
@@ -185,13 +184,13 @@ test('every raster icon really is a PNG of the size the manifest declares', () =
    tests/site.test.mjs proves the URL resolves to a published file. */
 test('the social preview image agrees with the file it names', () => {
   const meta = (attr, key) =>
-    html.match(new RegExp(`<meta ${attr}="${key}" content="([^"]+)">`))?.[1];
+    html.match(new RegExp(`<meta ${attr}="${key}" content="([^"]+)">`, 'u'))?.[1];
 
   const image = meta('property', 'og:image');
   assert.ok(image, 'no og:image');
   assert.equal(meta('name', 'twitter:image'), image, 'the two social images disagree');
 
-  const rel = image.replace(/^https:\/\/[^/]+\/sudoku\//, '');
+  const rel = image.replace(/^https:\/\/[^/]+\/sudoku\//u, '');
   assert.notEqual(rel, image, 'og:image is not under the canonical origin');
   assert.equal(
     pngSize(rel),
@@ -201,11 +200,11 @@ test('the social preview image agrees with the file it names', () => {
 });
 
 test('index.html links the manifest and registers the worker relatively', () => {
-  const manifestLink = html.match(/<link rel="manifest" href="([^"]+)">/);
+  const manifestLink = html.match(/<link rel="manifest" href="([^"]+)">/u);
   assert.ok(manifestLink, 'index.html does not link a manifest');
   assert.equal(manifestLink[1], 'manifest.webmanifest');
 
-  const register = app.match(/serviceWorker\s*\.\s*register\(\s*'([^']+)'/);
+  const register = app.match(/serviceWorker\s*\.\s*register\(\s*'([^']+)'/u);
   assert.ok(register, 'app.js never registers the service worker');
   assert.equal(register[1], './sw.js');
   assert.ok(
@@ -218,7 +217,7 @@ test('index.html links the manifest and registers the worker relatively', () => 
    would ship as a request for a file that is never published, and the game
    would simply not load. */
 test('index.html asks for app.js and the build inlines it', async () => {
-  assert.match(html, /<script src="app\.js"><\/script>/, 'index.html no longer loads app.js');
+  assert.match(html, /<script src="app\.js"><\/script>/u, 'index.html no longer loads app.js');
 
   const { ALLOWLIST } = await import('../scripts/build.mjs');
   assert.ok(
@@ -242,8 +241,8 @@ test('no shipped file points at an absolute path or hardcodes the subdirectory',
       .split('\n')
       .forEach((line, i) => {
         /* data: URIs are self-contained and carry no path at all. */
-        const stripped = line.replace(/(href|src)="data:[^"]*"/g, '');
-        for (const re of [/(?:href|src)="\//, /"\/sudoku/, /'\/sudoku/]) {
+        const stripped = line.replace(/(href|src)="data:[^"]*"/gu, '');
+        for (const re of [/(?:href|src)="\//u, /"\/sudoku/u, /'\/sudoku/u]) {
           if (re.test(stripped)) offences.push(`${rel}:${i + 1} ${line.trim().slice(0, 90)}`);
         }
       });
@@ -255,30 +254,30 @@ test('no shipped file points at an absolute path or hardcodes the subdirectory',
 test('the head declares a content security policy and a theme colour', () => {
   const head = html.slice(0, html.indexOf('</head>'));
 
-  const csp = head.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/);
+  const csp = head.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/u);
   assert.ok(csp, 'no CSP meta tag');
   for (const directive of ["object-src 'none'", "base-uri 'none'", "form-action 'none'"]) {
     assert.ok(csp[1].includes(directive), `CSP is missing ${directive}`);
   }
   /* The page is one inline script and one inline style, and both are covered
      by the policy: without these two the app would not run at all. */
-  assert.ok(/script-src [^;]*'unsafe-inline'/.test(csp[1]));
-  assert.ok(/style-src [^;]*'unsafe-inline'/.test(csp[1]));
+  assert.ok(/script-src [^;]*'unsafe-inline'/u.test(csp[1]));
+  assert.ok(/style-src [^;]*'unsafe-inline'/u.test(csp[1]));
 
   /* The service worker is a same-origin script file, not an inline one. It is
      governed by worker-src, which falls back to script-src (and then to
      default-src) in browsers that do not implement it, so both have to allow
      'self' or registration is blocked and the app silently loses offline. */
-  assert.ok(/script-src [^;]*'self'/.test(csp[1]), "script-src must allow 'self' for sw.js");
-  assert.ok(/worker-src [^;]*'self'/.test(csp[1]), "worker-src must allow 'self' for sw.js");
-  assert.ok(/default-src 'self'/.test(csp[1]), "default-src 'none' would block the manifest");
+  assert.ok(/script-src [^;]*'self'/u.test(csp[1]), "script-src must allow 'self' for sw.js");
+  assert.ok(/worker-src [^;]*'self'/u.test(csp[1]), "worker-src must allow 'self' for sw.js");
+  assert.ok(/default-src 'self'/u.test(csp[1]), "default-src 'none' would block the manifest");
 
   /* The manifest's theme_color and this meta tag colour the same surface: the
      title bar when the app is installed, the browser UI when it is a tab. They
      drifted apart once (manifest vermilion, page cream), which showed up as a
      red title bar over a cream page, so they are pinned to each other here
      rather than to a literal. Change both or neither. */
-  const themeColor = head.match(/<meta name="theme-color" content="([^"]+)"/);
+  const themeColor = head.match(/<meta name="theme-color" content="([^"]+)"/u);
   assert.ok(themeColor, 'no theme-color');
   assert.equal(
     JSON.parse(read('manifest.webmanifest')).theme_color,
@@ -300,7 +299,7 @@ test('the error page gives its only link a focus ring', () => {
 
   assert.match(
     notFound,
-    /a:focus-visible\{[^}]*outline:/,
+    /a:focus-visible\{[^}]*outline:/u,
     'the 404 link has no focus-visible outline',
   );
 });
@@ -310,8 +309,8 @@ test('the error page gives its only link a focus ring', () => {
 test('the Apache-2.0 icon sprite carries its attribution', () => {
   assert.ok(existsSync(join(root, 'NOTICE')), 'no NOTICE file');
   const notice = read('NOTICE');
-  assert.match(notice, /Material Symbols/);
-  assert.match(notice, /Apache License, Version 2\.0/);
+  assert.match(notice, /Material Symbols/u);
+  assert.match(notice, /Apache License, Version 2\.0/u);
 
-  assert.match(html, /Material Symbols[\s\S]{0,200}Apache/, 'index.html ships icons unattributed');
+  assert.match(html, /Material Symbols[\s\S]{0,200}Apache/u, 'index.html ships icons unattributed');
 });

@@ -5,7 +5,14 @@
     "correctness": "error"
   },
   "rules": {
-    "unicorn/no-new-array": "off"
+    "unicorn/no-new-array": "off",
+    "eslint/no-shadow": "error",
+    "eslint/require-unicode-regexp": "error",
+    "eslint/no-underscore-dangle": ["error", { "allow": ["__writes", "__updates", "__persists", "__survived"] }],
+    "unicorn/no-array-fill-with-reference-type": "error",
+    "unicorn/no-array-sort": "error",
+    "unicorn/prefer-import-meta-properties": "error",
+    "unicorn/prefer-dom-node-append": "error"
   },
   "ignorePatterns": [".claude/**", "_site/**", "test-results/**", "playwright-report/**"]
 }

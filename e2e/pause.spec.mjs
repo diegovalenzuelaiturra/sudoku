@@ -23,7 +23,7 @@
 import { expect, test } from '@playwright/test';
 
 /* The name render() gives every cell: "Fila 3, columna 7, 4, dada". */
-const CELL_NAME = /^Fila \d, columna \d/;
+const CELL_NAME = /^Fila \d, columna \d/u;
 
 /* Everything Chrome would hand to assistive tech: ignored nodes are dropped,
    and an inert subtree is ignored. */
@@ -47,7 +47,7 @@ const countCells = (nodes) =>
    marks inert: .controls holds undo, erase, notes, hint and new game, and
    #pauseBtn is not in it, so nothing else in the suite notices if the controls
    are taken away and never handed back. */
-const CONTROL_NAMES = [/deshacer/i, /borrar/i, /notas/i, /pista/i, /nueva partida/i];
+const CONTROL_NAMES = [/deshacer/iu, /borrar/iu, /notas/iu, /pista/iu, /nueva partida/iu];
 
 const countControls = (nodes) =>
   CONTROL_NAMES.filter((label) =>

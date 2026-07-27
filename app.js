@@ -76,7 +76,7 @@ function loadGeneratorScript() {
       genScript = null;
       reject(new Error(`could not load ${GENERATOR_URL}`));
     });
-    document.head.appendChild(el);
+    document.head.append(el);
   });
   return genScript;
 }
@@ -223,7 +223,7 @@ for (let i = 0; i < 81; i++) {
   v.className = 'v';
   const n = document.createElement('div');
   n.className = 'notes';
-  for (let d = 1; d <= 9; d++) n.appendChild(document.createElement('span'));
+  for (let d = 1; d <= 9; d++) n.append(document.createElement('span'));
   b.append(v, n);
   /* The selection is part of the save, so a bare click has to persist it too:
      without this a reload restores the selection from the last digit entry,
@@ -236,7 +236,7 @@ for (let i = 0; i < 81; i++) {
     render();
     saveGame();
   });
-  boardEl.appendChild(b);
+  boardEl.append(b);
   cells.push(b);
 }
 const keys = [];
@@ -245,7 +245,7 @@ for (let d = 1; d <= 9; d++) {
   k.className = 'key';
   k.innerHTML = `<span class="d">${d}</span><span class="c">9</span>`;
   k.addEventListener('click', () => inputDigit(d));
-  padEl.appendChild(k);
+  padEl.append(k);
   keys.push(k);
 }
 
@@ -769,9 +769,9 @@ function paintRecord() {
     ]) {
       const td = document.createElement('td');
       td.textContent = text;
-      tr.appendChild(td);
+      tr.append(td);
     }
-    rows.appendChild(tr);
+    rows.append(tr);
   }
   /* Wins as well as games, because only a game started on this build is counted
      as played: a player who resumed a game from before the record existed and
@@ -809,7 +809,7 @@ function paintRecord() {
       when.textContent = `${at.getDate()}/${at.getMonth() + 1}`;
     }
     li.append(what, when);
-    list.appendChild(li);
+    list.append(li);
   }
 }
 /* On screen only while the mode is on. Not hidden with the hidden attribute:
@@ -1115,7 +1115,7 @@ function rain(n, glyph) {
     f.style.setProperty('--spin', `${((Math.random() * 720) | 0) - 360}deg`);
     f.addEventListener('animationend', () => f.remove());
     setTimeout(() => f.remove(), (dur + delay) * 1000 + 500);
-    wrap.appendChild(f);
+    wrap.append(f);
   }
 }
 
