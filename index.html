@@ -1,43 +1,54 @@
 <!DOCTYPE html>
 <html lang="es-CL">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sudoku 数独</title>
-<meta name="description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
-<meta name="theme-color" content="#EDEFE7">
-<link rel="manifest" href="manifest.webmanifest">
-<!-- iOS Safari ignores the manifest entirely when it builds a home screen icon:
-     without this link, Add to Home Screen uses a screenshot of the page. Relative,
-     like everything else here. Apple's own size is 180, and it downscales 192
-     cleanly, so this reuses the manifest icon rather than shipping a third file. -->
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Sudoku 数独">
-<meta property="og:description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
-<meta property="og:locale" content="es_CL">
-<!-- Absolute on purpose, and the only place this site uses absolute URLs: social
-     scrapers fetch these out of context and many do not resolve a relative og:image
-     or og:url against the page, so the canonical origin has to be spelled out. -->
-<meta property="og:url" content="https://diegovalenzuelaiturra.github.io/sudoku/">
-<link rel="canonical" href="https://diegovalenzuelaiturra.github.io/sudoku/">
-<meta property="og:image" content="https://diegovalenzuelaiturra.github.io/sudoku/icons/icon-512.png">
-<meta property="og:image:width" content="512">
-<meta property="og:image:height" content="512">
-<meta property="og:image:alt" content="Icono de Sudoku: una cuadrícula de 3x3 en color crema sobre un fondo rojo.">
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Sudoku 数独">
-<meta name="twitter:description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
-<!-- twitter:card stays "summary", the 1:1 slot, which fits a 512 square exactly.
-     "summary_large_image" expects roughly 2:1 and would pillarbox or crop the icon. -->
-<meta name="twitter:image" content="https://diegovalenzuelaiturra.github.io/sudoku/icons/icon-512.png">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Sudoku 数独</title>
+        <meta name="description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
+        <!-- Baseline calls theme-color limited, because desktop Firefox ignores it.
+            That is a reason to expect nothing from it there, not a reason to drop it:
+            it colours the title bar of the installed app, and tests/assets.test.mjs
+            pins this value to the manifest's theme_color, since the two paint the same
+            surface and drifted apart once already. -->
+        <!-- eslint-disable-next-line html/use-baseline -->
+        <meta name="theme-color" content="#EDEFE7">
+        <!-- Baseline says the same about rel=manifest, and this is the one link that
+            makes the app installable, so the app either declares it or stops being a
+            PWA. tests/site.test.mjs and tests/assets.test.mjs both assert it is here
+            and that it stays relative. -->
+        <!-- eslint-disable-next-line html/use-baseline -->
+        <link rel="manifest" href="manifest.webmanifest">
+        <!-- iOS Safari ignores the manifest entirely when it builds a home screen icon:
+            without this link, Add to Home Screen uses a screenshot of the page. Relative,
+            like everything else here. Apple's own size is 180, and it downscales 192
+            cleanly, so this reuses the manifest icon rather than shipping a third file. -->
+        <link rel="apple-touch-icon" href="icons/icon-192.png">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+        <meta property="og:type" content="website">
+        <meta property="og:title" content="Sudoku 数独">
+        <meta property="og:description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
+        <meta property="og:locale" content="es_CL">
+        <!-- Absolute on purpose, and the only place this site uses absolute URLs: social
+            scrapers fetch these out of context and many do not resolve a relative og:image
+            or og:url against the page, so the canonical origin has to be spelled out. -->
+        <meta property="og:url" content="https://diegovalenzuelaiturra.github.io/sudoku/">
+        <link rel="canonical" href="https://diegovalenzuelaiturra.github.io/sudoku/">
+        <meta property="og:image" content="https://diegovalenzuelaiturra.github.io/sudoku/icons/icon-512.png">
+        <meta property="og:image:width" content="512">
+        <meta property="og:image:height" content="512">
+        <meta property="og:image:alt" content="Icono de Sudoku: una cuadrícula de 3x3 en color crema sobre un fondo rojo.">
+        <meta name="twitter:card" content="summary">
+        <meta name="twitter:title" content="Sudoku 数独">
+        <meta name="twitter:description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
+        <!-- twitter:card stays "summary", the 1:1 slot, which fits a 512 square exactly.
+            "summary_large_image" expects roughly 2:1 and would pillarbox or crop the icon. -->
+        <meta name="twitter:image" content="https://diegovalenzuelaiturra.github.io/sudoku/icons/icon-512.png">
 
-<!-- Inline so the site stays a single published file. A 3x3 grid rather than the
-     数 seal: pure paths render the same everywhere and stay legible at 16px,
-     where a CJK glyph turns to mush and depends on a CJK font being installed. -->
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C43A20'/%3E%3Cg stroke='%23F7F1E6' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 13h20M6 19h20M13 6v20M19 6v20'/%3E%3C/g%3E%3C/svg%3E">
-<style>
+        <!-- Inline so the site stays a single published file. A 3x3 grid rather than the
+            数 seal: pure paths render the same everywhere and stay legible at 16px,
+            where a CJK glyph turns to mush and depends on a CJK font being installed. -->
+        <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C43A20'/%3E%3Cg stroke='%23F7F1E6' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 13h20M6 19h20M13 6v20M19 6v20'/%3E%3C/g%3E%3C/svg%3E">
+        <style>
   :root{
     --paper:#EDEFE7;
     --paper-raised:#F7F8F3;
@@ -242,6 +253,37 @@
   .modal .stat b{font-family:var(--serif);font-size:18px;display:block}
   .modal .stat i{font-style:normal;font-size:10.5px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
   .modal .quiet{margin-top:12px;background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;text-decoration:underline}
+  /* A disabled difficulty button is not broken, it is busy: keep it legible
+     rather than greying it into something that looks unavailable for good. */
+  .diff[disabled],.modal .quiet[disabled]{opacity:.5;cursor:default}
+  .diff[disabled]:hover{border-color:var(--line);color:var(--ink)}
+  .genstatus{margin-top:12px;font-size:11.5px;color:var(--ink-soft);letter-spacing:.06em}
+  /* Never hidden, only emptied. A live region announces a change made while it
+     is already in the accessibility tree; the hidden attribute is display:none,
+     which takes it out, so text written before unhiding is text no screen
+     reader ever hears. Empty it is zero height and costs nothing. */
+  .genstatus:empty{margin-top:0}
+  .modal .code{margin-top:14px;font-size:11px;color:var(--ink-soft);letter-spacing:.04em}
+  .modal .code b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+
+  /* ---------- the record ---------- */
+  .record{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}
+  .record th{font-weight:600;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);padding-bottom:6px}
+  .record td{padding:5px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+  .record td:first-child{text-align:left;letter-spacing:.04em}
+  .purse{display:grid;gap:8px;margin-bottom:14px}
+  .purseRow{
+    display:flex;align-items:center;justify-content:space-between;
+    border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:14px;
+  }
+  .purseRow b{font-family:var(--serif);font-variant-numeric:tabular-nums}
+  .modal .redeem{margin-top:0}
+  /* Mid confirmation, so the second press is visibly a different act. */
+  .modal .redeem.arm{color:var(--vermilion);text-decoration-thickness:2px}
+  .ledger{list-style:none;font-size:11px;color:var(--ink-soft);text-align:left;max-height:132px;overflow-y:auto}
+  .ledger li{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-top:1px solid var(--line)}
+  .ledger li:first-child{border-top:none}
+  .ledger time{font-variant-numeric:tabular-nums;white-space:nowrap}
 
   /* ---------- prizes ---------- */
   /* Named for the mechanic rather than the glyph: papas fritas and chocolates
@@ -286,942 +328,374 @@
     *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
     .stamp.show{opacity:1}
   }
-</style>
-</head>
-<body>
-<!-- Icon sprite: Material Symbols (Google LLC), Apache License 2.0, inlined as raw
-     path data. See NOTICE. Everything else here is MIT, see LICENSE. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-pause" viewBox="0 -960 960 960"><path d="M525-200v-560h235v560H525Zm-325 0v-560h235v560H200Zm385-60h115v-440H585v440Zm-325 0h115v-440H260v440Zm0-440v440-440Zm325 0v440-440Z"/></symbol>
-  <symbol id="i-play_arrow" viewBox="0 -960 960 960"><path d="M320-203v-560l440 280-440 280Zm60-280Zm0 171 269-171-269-171v342Z"/></symbol>
-  <symbol id="i-undo" viewBox="0 -960 960 960"><path d="M259-200v-60h310q70 0 120.5-46.5T740-422q0-69-50.5-115.5T569-584H274l114 114-42 42-186-186 186-186 42 42-114 114h294q95 0 163.5 64T800-422q0 94-68.5 158T568-200H259Z"/></symbol>
-  <symbol id="i-ink_eraser" viewBox="0 -960 960 960"><path d="M678-220h203v60H618l60-60Zm-499 60-81-84q-18-17-17.5-41.5T97-327l458-498q16-17 40.57-17 24.56 0 41.43 17l205 215q17 17 18 42t-16 42L503-160H179Zm301-60 324-352-207-217-455 503 64 66h274Zm0-260Z"/></symbol>
-  <symbol id="i-stylus_note" viewBox="0 -960 960 960"><path d="m499-259 364-363-81-80-363 363 80 80Zm-280 48q-88-6-133.5-40.5T40-349q0-60 51-98t142-46q44-4 65.5-16t21.5-33q0-29-29-44.5T194-609l5-60q89 9 135 41t46 86q0 46-37.5 75T238-433q-69 5-103.5 26T100-349q0 35 30.5 54.5T222-271l-3 60Zm299 18L353-358l398-397q14-14 31.5-13.5T814-755l102 101q14 14 14 32t-14 32L518-193Zm-159 33q-17 4-30-9t-9-30l33-159 165 165-159 33Z"/></symbol>
-  <symbol id="i-lightbulb" viewBox="0 -960 960 960"><path d="M422.5-103.5Q399-127 399-161h162q0 34-23.5 57.5T480-80q-34 0-57.5-23.5ZM318-223v-60h324v60H318Zm5-121q-66-43-104.5-107.5T180-597q0-122 89-211t211-89q122 0 211 89t89 211q0 81-38 145.5T637-344H323Zm22-60h271q48-32 76-83t28-110q0-99-70.5-169.5T480-837q-99 0-169.5 70.5T240-597q0 59 28 110t77 83Zm135 0Z"/></symbol>
-  <symbol id="i-refresh" viewBox="0 -960 960 960"><path d="M480-160q-133 0-226.5-93.5T160-480q0-133 93.5-226.5T480-800q85 0 149 34.5T740-671v-129h60v254H546v-60h168q-38-60-97-97t-137-37q-109 0-184.5 75.5T220-480q0 109 75.5 184.5T480-220q83 0 152-47.5T728-393h62q-29 105-115 169t-195 64Z"/></symbol>
-</svg>
-<div class="app">
-  <header>
-    <div class="brand">
-      <div class="seal" aria-hidden="true">数</div>
-      <div class="wordmark">
-        <div class="title">SUDOKU</div>
-        <div class="sub">数独, juego de números</div>
-      </div>
-    </div>
-    <div class="clock">
-      <div class="time" id="time">0:00</div>
-      <button class="iconbtn" id="pauseBtn" aria-label="Pausar"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-pause"/></svg></button>
-    </div>
-  </header>
+        </style>
+    </head>
+    <body>
+        <!-- Icon sprite: Material Symbols (Google LLC), Apache License 2.0, inlined as raw
+            path data. See NOTICE. Everything else here is MIT, see LICENSE. -->
+        <svg
+            width="0"
+            height="0"
+            style="position:absolute"
+            aria-hidden="true"
+        >
+            <symbol id="i-pause" viewBox="0 -960 960 960">
+                <path d="M525-200v-560h235v560H525Zm-325 0v-560h235v560H200Zm385-60h115v-440H585v440Zm-325 0h115v-440H260v440Zm0-440v440-440Zm325 0v440-440Z"/>
+            </symbol>
+            <symbol id="i-play_arrow" viewBox="0 -960 960 960">
+                <path d="M320-203v-560l440 280-440 280Zm60-280Zm0 171 269-171-269-171v342Z"/>
+            </symbol>
+            <symbol id="i-undo" viewBox="0 -960 960 960">
+                <path d="M259-200v-60h310q70 0 120.5-46.5T740-422q0-69-50.5-115.5T569-584H274l114 114-42 42-186-186 186-186 42 42-114 114h294q95 0 163.5 64T800-422q0 94-68.5 158T568-200H259Z"/>
+            </symbol>
+            <symbol id="i-ink_eraser" viewBox="0 -960 960 960">
+                <path d="M678-220h203v60H618l60-60Zm-499 60-81-84q-18-17-17.5-41.5T97-327l458-498q16-17 40.57-17 24.56 0 41.43 17l205 215q17 17 18 42t-16 42L503-160H179Zm301-60 324-352-207-217-455 503 64 66h274Zm0-260Z"/>
+            </symbol>
+            <symbol id="i-stylus_note" viewBox="0 -960 960 960">
+                <path d="m499-259 364-363-81-80-363 363 80 80Zm-280 48q-88-6-133.5-40.5T40-349q0-60 51-98t142-46q44-4 65.5-16t21.5-33q0-29-29-44.5T194-609l5-60q89 9 135 41t46 86q0 46-37.5 75T238-433q-69 5-103.5 26T100-349q0 35 30.5 54.5T222-271l-3 60Zm299 18L353-358l398-397q14-14 31.5-13.5T814-755l102 101q14 14 14 32t-14 32L518-193Zm-159 33q-17 4-30-9t-9-30l33-159 165 165-159 33Z"/>
+            </symbol>
+            <symbol id="i-lightbulb" viewBox="0 -960 960 960">
+                <path d="M422.5-103.5Q399-127 399-161h162q0 34-23.5 57.5T480-80q-34 0-57.5-23.5ZM318-223v-60h324v60H318Zm5-121q-66-43-104.5-107.5T180-597q0-122 89-211t211-89q122 0 211 89t89 211q0 81-38 145.5T637-344H323Zm22-60h271q48-32 76-83t28-110q0-99-70.5-169.5T480-837q-99 0-169.5 70.5T240-597q0 59 28 110t77 83Zm135 0Z"/>
+            </symbol>
+            <symbol id="i-refresh" viewBox="0 -960 960 960">
+                <path d="M480-160q-133 0-226.5-93.5T160-480q0-133 93.5-226.5T480-800q85 0 149 34.5T740-671v-129h60v254H546v-60h168q-38-60-97-97t-137-37q-109 0-184.5 75.5T220-480q0 109 75.5 184.5T480-220q83 0 152-47.5T728-393h62q-29 105-115 169t-195 64Z"/>
+            </symbol>
+        </svg>
+        <div class="app">
+            <header>
+                <div class="brand">
+                    <div class="seal" aria-hidden="true">数</div>
+                    <div class="wordmark">
+                        <div class="title">SUDOKU</div>
+                        <div class="sub">数独, juego de números</div>
+                    </div>
+                </div>
+                <div class="clock">
+                    <div class="time" id="time">0:00</div>
+                    <button
+                        type="button"
+                        class="iconbtn"
+                        id="pauseBtn"
+                        aria-label="Pausar"
+                    >
+                        <svg
+                            class="ico"
+                            aria-hidden="true"
+                            focusable="false"
+                        >
+                            <use href="#i-pause"/>
+                        </svg>
+                    </button>
+                </div>
+            </header>
 
-  <div class="status">
-    <span class="chip" id="diffLabel">Normal</span>
-    <span class="warn">Errores <b id="mistakes">0</b></span>
-    <span>Pistas <b id="hints">0</b></span>
-    <span class="prize" id="frychip">🍟 <b id="fries">0</b> <span class="visually-hidden">papas fritas ganadas</span></span>
-    <span class="prize" id="chocochip">🍫 <b id="chocos">0</b> <span class="visually-hidden">chocolates ganados</span></span>
-    <span class="spacer"></span>
-    <span id="remaining"><b>81</b> por llenar</span>
-    <span id="srStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></span>
-    <span id="srAlert" class="visually-hidden" role="alert" aria-live="assertive" aria-atomic="true"></span>
-  </div>
+            <div class="status">
+                <span class="chip" id="diffLabel">Normal</span>
+                <span class="warn">Errores <b id="mistakes">0</b></span>
+                <span>Pistas <b id="hints">0</b></span>
+                <span class="prize" id="frychip">🍟 <b id="fries">0</b> <span class="visually-hidden">papas fritas ganadas</span></span>
+                <span class="prize" id="chocochip">🍫 <b id="chocos">0</b> <span class="visually-hidden">chocolates ganados</span></span>
+                <span class="spacer"></span>
+                <span id="remaining"><b>81</b> por llenar</span>
+            </div>
 
-  <main>
-    <div class="board-wrap">
-      <!-- role="group", not role="grid": a grid has to own role="row" children, and
-           the 81 cells are appended straight into this element. Each cell already
-           names its own row and column in its aria-label, so the grid role bought
-           nothing except an invalid tree (Lighthouse aria-required-children). -->
-      <div class="board" id="board" role="group" aria-label="Tablero de sudoku"></div>
-      <div class="veil" id="veil" role="dialog" aria-modal="true" aria-labelledby="veilTitle">
-        <p id="veilTitle">EN PAUSA</p>
-        <button class="newgame" style="width:auto;padding:10px 26px" id="resumeBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-play_arrow"/></svg> Seguir</button>
-      </div>
-      <div class="stamp" id="stamp" aria-hidden="true">
-        <div class="big">解</div>
-        <div class="small">¡BUENA!</div>
-      </div>
-    </div>
+            <main>
+                <div class="board-wrap">
+                    <!-- role="group", not role="grid": a grid has to own role="row" children, and
+                        the 81 cells are appended straight into this element. Each cell already
+                        names its own row and column in its aria-label, so the grid role bought
+                        nothing except an invalid tree (Lighthouse aria-required-children). -->
+                    <div
+                        class="board"
+                        id="board"
+                        role="group"
+                        aria-label="Tablero de sudoku"
+                    ></div>
+                    <div
+                        class="veil"
+                        id="veil"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="veilTitle"
+                    >
+                        <p id="veilTitle">EN PAUSA</p>
+                        <button
+                            type="button"
+                            class="newgame"
+                            style="width:auto;padding:10px 26px"
+                            id="resumeBtn"
+                        >
+                            <svg
+                                class="ico"
+                                aria-hidden="true"
+                                focusable="false"
+                            >
+                                <use href="#i-play_arrow"/>
+                            </svg>
+                            Seguir
+                        </button>
+                    </div>
+                    <div
+                        class="stamp"
+                        id="stamp"
+                        aria-hidden="true"
+                    >
+                        <div class="big">解</div>
+                        <div class="small">¡BUENA!</div>
+                    </div>
+                </div>
 
-    <div class="controls">
-      <div class="pad" id="pad"></div>
-      <div class="tools">
-        <button class="tool" id="undoBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-undo"/></svg>Deshacer <span class="k">Z</span></button>
-        <button class="tool" id="eraseBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-ink_eraser"/></svg>Borrar <span class="k">⌫</span></button>
-        <button class="tool" id="notesBtn" aria-pressed="false" aria-describedby="notesHint"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-stylus_note"/></svg>Notas <span class="k">N</span></button>
-        <button class="tool" id="hintBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-lightbulb"/></svg>Pista <span class="k">H</span></button>
-      </div>
-      <!-- What "Notas" does was guessable from the icon and nothing else. Kept
-           out of sight until the mode is on, so the board is not carrying an
-           instruction nobody is reading, but always in the accessibility tree
-           as the button's description, where it is read on focus either way. -->
-      <p class="toolhint visually-hidden" id="notesHint">Anota candidatos: el número queda chico. Tócalo de nuevo para borrarlo.</p>
-      <button class="newgame" id="newBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg> Nueva partida</button>
-    </div>
-  </main>
-</div>
+                <div class="controls">
+                    <div class="pad" id="pad"></div>
+                    <div class="tools">
+                        <button
+                            type="button"
+                            class="tool"
+                            id="undoBtn"
+                        >
+                            <svg
+                                class="ico"
+                                aria-hidden="true"
+                                focusable="false"
+                            >
+                                <use href="#i-undo"/>
+                            </svg>
+                            Deshacer <span class="k">Z</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="tool"
+                            id="eraseBtn"
+                        >
+                            <svg
+                                class="ico"
+                                aria-hidden="true"
+                                focusable="false"
+                            >
+                                <use href="#i-ink_eraser"/>
+                            </svg>
+                            Borrar <span class="k">⌫</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="tool"
+                            id="notesBtn"
+                            aria-pressed="false"
+                            aria-describedby="notesHint"
+                        >
+                            <svg
+                                class="ico"
+                                aria-hidden="true"
+                                focusable="false"
+                            >
+                                <use href="#i-stylus_note"/>
+                            </svg>
+                            Notas <span class="k">N</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="tool"
+                            id="hintBtn"
+                        >
+                            <svg
+                                class="ico"
+                                aria-hidden="true"
+                                focusable="false"
+                            >
+                                <use href="#i-lightbulb"/>
+                            </svg>
+                            Pista <span class="k">H</span>
+                        </button>
+                    </div>
+                    <!-- What "Notas" does was guessable from the icon and nothing else. Kept
+                        out of sight until the mode is on, so the board is not carrying an
+                        instruction nobody is reading, but always in the accessibility tree
+                        as the button's description, where it is read on focus either way. -->
+                    <p class="toolhint visually-hidden" id="notesHint">Anota candidatos: el número queda chico. Tócalo de nuevo para borrarlo.</p>
+                    <button
+                        type="button"
+                        class="newgame"
+                        id="newBtn"
+                    >
+                        <svg
+                            class="ico"
+                            aria-hidden="true"
+                            focusable="false"
+                        >
+                            <use href="#i-refresh"/>
+                        </svg>
+                        Nueva partida
+                    </button>
+                </div>
+            </main>
+        </div>
 
-<div class="overlay" id="startOverlay">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="startTitle">
-    <div class="seal" aria-hidden="true">数</div>
-    <h2 id="startTitle">SUDOKU</h2>
-    <p class="lede">Llena la cuadrícula: cada fila, columna y cuadrante con los números del 1 al 9, sin repetir.</p>
-    <div class="diffs">
-      <button class="diff" data-d="easy"></button>
-      <button class="diff" data-d="medium"></button>
-      <button class="diff" data-d="hard"></button>
-      <button class="diff" data-d="expert"></button>
-    </div>
-    <button class="quiet" id="cancelNew" hidden>Seguir jugando</button>
-  </div>
-</div>
+        <!-- Outside .app, and that is the whole point. Every overlay sets appEl.inert,
+            which drops everything inside .app from the accessibility tree, so a live
+            region kept in there is silent for exactly the actions that happen with a
+            dialog open: redeeming announces through #srStatus and the record dialog is
+            the only place the redeem buttons exist. -->
+        <span
+            id="srStatus"
+            class="visually-hidden"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+        ></span>
+        <span
+            id="srAlert"
+            class="visually-hidden"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+        ></span>
 
-<div class="overlay" id="winOverlay">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="winTitle">
-    <div class="seal" aria-hidden="true">解</div>
-    <h2 id="winTitle">¡SECA!</h2>
-    <p class="lede" id="winLede">Una cuadrícula limpia.</p>
-    <div class="stats">
-      <div class="stat"><b id="wTime">0:00</b><i>Tiempo</i></div>
-      <div class="stat"><b id="wMist">0</b><i>Errores</i></div>
-      <div class="stat"><b id="wHint">0</b><i>Pistas</i></div>
-    </div>
-    <div class="frybanner" id="fryBanner">🍟</div>
-    <button class="newgame" id="againBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg> Otra al tiro</button>
-  </div>
-</div>
-<script>
-/* ================= LOGIC ================= */
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]]}return a}
-const boxOf=i=>((((i/9)|0)/3)|0)*3+(((i%9)/3)|0);
+        <div class="overlay" id="startOverlay">
+            <div
+                class="modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="startTitle"
+            >
+                <div class="seal" aria-hidden="true">数</div>
+                <h2 id="startTitle">SUDOKU</h2>
+                <p class="lede">Llena la cuadrícula: cada fila, columna y cuadrante con los números del 1 al 9, sin repetir.</p>
+                <div class="diffs">
+                    <button
+                        type="button"
+                        class="diff"
+                        data-d="easy"
+                    ></button>
+                    <button
+                        type="button"
+                        class="diff"
+                        data-d="medium"
+                    ></button>
+                    <button
+                        type="button"
+                        class="diff"
+                        data-d="hard"
+                    ></button>
+                    <button
+                        type="button"
+                        class="diff"
+                        data-d="expert"
+                    ></button>
+                </div>
+                <!-- Generation happens in a worker and takes long enough to notice on the
+                    hardest tiers, so it is announced rather than left as a dead dialog.
+                    role=status is polite: a screen reader hears it after whatever it was
+                    already saying, which is the difficulty button that was just pressed.
+                    Empty rather than hidden, and empty rather than pre-filled: see the
+                    .genstatus:empty rule for why both matter. -->
+                <p
+                    class="genstatus"
+                    id="genStatus"
+                    role="status"
+                ></p>
+                <button
+                    type="button"
+                    class="quiet"
+                    id="recordBtn"
+                >Ver mi registro</button>
+                <button
+                    type="button"
+                    class="quiet"
+                    id="cancelNew"
+                    hidden
+                >Seguir jugando</button>
+            </div>
+        </div>
 
-function generateFull(){
-  const g=new Array(81).fill(0);
-  const rows=new Array(9).fill(0),cols=new Array(9).fill(0),boxes=new Array(9).fill(0);
-  function fill(i){
-    if(i===81)return true;
-    const r=(i/9)|0,c=i%9,b=boxOf(i);
-    for(const d of shuffle([1,2,3,4,5,6,7,8,9])){
-      const bit=1<<d;
-      if((rows[r]|cols[c]|boxes[b])&bit)continue;
-      g[i]=d;rows[r]|=bit;cols[c]|=bit;boxes[b]|=bit;
-      if(fill(i+1))return true;
-      g[i]=0;rows[r]^=bit;cols[c]^=bit;boxes[b]^=bit;
-    }
-    return false;
-  }
-  fill(0);
-  return g;
-}
+        <div class="overlay" id="winOverlay">
+            <div
+                class="modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="winTitle"
+            >
+                <div class="seal" aria-hidden="true">解</div>
+                <h2 id="winTitle">¡SECA!</h2>
+                <p class="lede" id="winLede">Una cuadrícula limpia.</p>
+                <div class="stats">
+                    <div class="stat"><b id="wTime">0:00</b><i>Tiempo</i></div>
+                    <div class="stat"><b id="wMist">0</b><i>Errores</i></div>
+                    <div class="stat"><b id="wHint">0</b><i>Pistas</i></div>
+                </div>
+                <div class="frybanner" id="fryBanner">🍟</div>
+                <!-- What the board really was and the seed that rebuilds it. The technique
+                    is the honest difficulty, and the code is here so a board worth talking
+                    about can be found again. -->
+                <p class="code" id="wCodeLine">Técnica: <b id="wGrade">directas</b>. Código: <b id="wCode">0</b></p>
+                <button
+                    type="button"
+                    class="newgame"
+                    id="againBtn"
+                >
+                    <svg
+                        class="ico"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <use href="#i-refresh"/>
+                    </svg>
+                    Otra al tiro
+                </button>
+            </div>
+        </div>
 
-function countSolutions(grid,limit){
-  const rows=new Array(9).fill(0),cols=new Array(9).fill(0),boxes=new Array(9).fill(0);
-  const empties=[];
-  for(let i=0;i<81;i++){
-    const v=grid[i],r=(i/9)|0,c=i%9,b=boxOf(i);
-    if(v){const bit=1<<v;if((rows[r]|cols[c]|boxes[b])&bit)return 0;rows[r]|=bit;cols[c]|=bit;boxes[b]|=bit}
-    else empties.push(i);
-  }
-  let count=0;
-  function dfs(k){
-    if(count>=limit)return;
-    if(k===empties.length){count++;return}
-    let best=k,bestN=10;
-    for(let j=k;j<empties.length;j++){
-      const i=empties[j],r=(i/9)|0,c=i%9,used=rows[r]|cols[c]|boxes[boxOf(i)];
-      let n=0;for(let d=1;d<=9;d++)if(!(used&(1<<d)))n++;
-      if(n<bestN){bestN=n;best=j;if(n<=1)break}
-    }
-    [empties[k],empties[best]]=[empties[best],empties[k]];
-    const i=empties[k],r=(i/9)|0,c=i%9,b=boxOf(i);
-    const used=rows[r]|cols[c]|boxes[b];
-    for(let d=1;d<=9;d++){
-      const bit=1<<d;
-      if(used&bit)continue;
-      rows[r]|=bit;cols[c]|=bit;boxes[b]|=bit;
-      dfs(k+1);
-      rows[r]^=bit;cols[c]^=bit;boxes[b]^=bit;
-      if(count>=limit)break;
-    }
-  }
-  dfs(0);
-  return count;
-}
-
-/* Digging is greedy, so a single pass can stall above the target at low clue counts.
-   Retry with a fresh grid (bailing as soon as we land on it) and keep the sparsest. */
-function makePuzzle(clues,tries=4){
-  let best=null;
-  for(let t=0;t<tries;t++){
-    const r=dig(clues);
-    if(!best||r.clues<best.clues)best=r;
-    if(best.clues<=clues)break;
-  }
-  return best;
-}
-
-function dig(clues){
-  const solution=generateFull();
-  const g=solution.slice();
-  let filled=81;
-  function tryRemove(cells){
-    const saved=cells.map(i=>g[i]);
-    for(const i of cells)g[i]=0;
-    if(countSolutions(g,2)!==1){cells.forEach((i,k)=>{g[i]=saved[k]});return false}
-    filled-=cells.length;return true;
-  }
-  /* pass 1: 180-degree-symmetric pairs, walking one index per pair (0..40) so a
-     rejected pair is never re-tested from its partner index */
-  for(const i of shuffle([...Array(41).keys()])){
-    if(filled<=clues)break;
-    if(i===80-i)tryRemove([i]);
-    else if(filled-2>=clues)tryRemove([i,80-i]);
-  }
-  /* pass 2: single cells, to land exactly on the advertised clue count */
-  if(filled>clues){
-    for(const i of shuffle([...Array(81).keys()])){
-      if(filled<=clues)break;
-      if(g[i]!==0)tryRemove([i]);
-    }
-  }
-  return{puzzle:g,solution,clues:filled};
-}
-/* =============== END LOGIC =============== */
-
-/* ================== UI =================== */
-/* Two prizes, two rules. Papas fritas are paid for every win, doubled by the
-   flawless bonus. Chocolates are paid only for a flawless win, so they are the
-   scarce one and the count says something the fries total cannot. */
-const DIFF={easy:{clues:40,label:'Piola',fries:5,choco:1},medium:{clues:34,label:'Normal',fries:10,choco:2},hard:{clues:28,label:'Peludo',fries:15,choco:3},expert:{clues:24,label:'Brígido',fries:25,choco:5}};
-const $=id=>document.getElementById(id);
-const boardEl=$('board'),padEl=$('pad');
-
-let solution=new Array(81).fill(0),fixed=new Array(81).fill(false),values=new Array(81).fill(0),puzzle=new Array(81).fill(0);
-let notes=Array.from({length:81},()=>new Set()),sel=-1;
-let notesMode=false,mistakes=0,hints=0,seconds=0,tick=null,paused=false,solved=false,playing=false;
-let undoStack=[],diffKey='medium',friesTotal=0,chocoTotal=0,winTimers=[],pausedByDialog=false;
-const reduceMotion=matchMedia('(prefers-reduced-motion:reduce)');
-/* persistence: bump SAVE_VERSION and loadGame()'s shape checks together if this payload shape ever changes */
-const SAVE_KEY='sudoku:save',SAVE_VERSION=1;
-/* The prize totals live in their own key, deliberately not in the game save:
-   winning is what pays them and winning is also what deletes the save, so a
-   total kept in there was lost on the next reload. */
-const WALLET_KEY='sudoku:wallet',WALLET_VERSION=1;
-
-/* ---- build DOM once ---- */
-const cells=[];
-for(let i=0;i<81;i++){
-  const b=document.createElement('button');
-  b.className='cell';b.dataset.i=i;
-  const v=document.createElement('span');v.className='v';
-  const n=document.createElement('div');n.className='notes';
-  for(let d=1;d<=9;d++)n.appendChild(document.createElement('span'));
-  b.append(v,n);
-  /* The selection is part of the save, so a bare click has to persist it too:
-     without this a reload restores the selection from the last digit entry,
-     one move behind. A click is a discrete, human paced action like that digit
-     entry and a pointer cannot autorepeat, so it saves straight away with no
-     coalescing; the held-arrow path is the one that needs that. */
-  b.addEventListener('click',()=>{if(!playing||paused)return;sel=i;render();saveGame()});
-  boardEl.appendChild(b);cells.push(b);
-}
-const keys=[];
-for(let d=1;d<=9;d++){
-  const k=document.createElement('button');
-  k.className='key';k.innerHTML=`<span class="d">${d}</span><span class="c">9</span>`;
-  k.addEventListener('click',()=>inputDigit(d));
-  padEl.appendChild(k);keys.push(k);
-}
-
-/* ---- helpers ---- */
-const pad2=n=>String(n).padStart(2,'0');
-const fmt=s=>s<3600?`${(s/60)|0}:${pad2(s%60)}`:`${(s/3600)|0}:${pad2(((s/60)|0)%60)}:${pad2(s%60)}`;
-function snapshot(){
-  undoStack.push({values:values.slice(),fixed:fixed.slice(),notes:notes.map(s=>[...s]),mistakes,hints});
-  if(undoStack.length>300)undoStack.shift();
-}
-function peers(i){
-  const r=(i/9)|0,c=i%9,b=boxOf(i),out=new Set();
-  for(let k=0;k<81;k++){
-    if(k===i)continue;
-    if(((k/9)|0)===r||k%9===c||boxOf(k)===b)out.add(k);
-  }
-  return out;
-}
-/* peer sets are fixed board geometry: build them once instead of on every render */
-const PEERS=Array.from({length:81},(_,i)=>peers(i));
-
-/* ---- overlays ---- */
-const appEl=document.querySelector('.app');
-const controlsEl=document.querySelector('.controls');
-function showOverlay(el){
-  el.classList.add('show');
-  appEl.inert=true;
-  /* This focus() shows up in a trace as a ~50ms forced reflow because it
-     pulls the document's first layout of the 81-cell board into the script.
-     Three alternatives were measured against it, 20 cold loads each, fresh
-     browser context, no tracing overhead (tracing on its own inflates the
-     reflow: 5ms warm untraced, 46ms warm traced):
-       - focus() before appEl.inert: no change, reverted.
-       - focus() inside requestAnimationFrame: the reflow leaves the trace
-         entirely, 35.5ms of script time becomes 0.2ms, but first paint does
-         not move (60ms median either way) and total main thread blocking
-         barely does (35.9ms to 32.8ms median).
-       - no focus() at all, the ceiling for anything done to this line:
-         first paint still 60ms.
-     That layout is work the first paint needs, so no reordering here can
-     recover it; deferring only relabels it. Keep it synchronous, where focus
-     is guaranteed to land in the dialog even in a tab that is never given an
-     animation frame. */
-  const first=el.querySelector('button:not([hidden])');
-  if(first)first.focus();
-}
-function hideOverlay(el){
-  el.classList.remove('show');
-  if(!$('startOverlay').classList.contains('show')&&!$('winOverlay').classList.contains('show'))appEl.inert=false;
-}
-
-/* ---- timer ---- */
-function startTimer(){
-  clearInterval(tick);
-  tick=setInterval(()=>{seconds++;$('time').textContent=fmt(seconds)},1000);
-}
-function setPaused(p){
-  if(!playing||solved)return;
-  const veil=$('veil');
-  const wasShown=veil.classList.contains('show');
-  paused=p;
-  veil.classList.toggle('show',p);
-  boardEl.classList.toggle('veiled',p);
-  /* pauseBtn is icon-only: swap the sprite reference rather than assigning
-     textContent, which would delete the <svg> the markup depends on. */
-  $('pauseBtn').querySelector('use').setAttribute('href',p?'#i-play_arrow':'#i-pause');
-  $('pauseBtn').setAttribute('aria-label',p?'Seguir':'Pausar');
-  /* .board.veiled only paints the digits transparent, which hides them from
-     sight and from nobody else: assistive tech still read every solved value
-     and Tab still walked all 81 cells while "paused". Mark the two regions
-     that leak instead - the board holds the values, the controls act on them.
-     appEl cannot be used here the way showOverlay does it, because the veil
-     lives inside .app and would disable its own resume button. */
-  boardEl.inert=p;
-  controlsEl.inert=p;
-  if(p){clearInterval(tick);saveGame();$('resumeBtn').focus()} /* capture `seconds` the moment play stops, not at the last digit */
-  else{startTimer();if(wasShown)$('pauseBtn').focus()}
-}
-
-/* ---- game flow ---- */
-function newGame(key){
-  diffKey=key;
-  winTimers.forEach(clearTimeout);winTimers=[];
-  document.querySelectorAll('.drop').forEach(f=>f.remove());
-  const{puzzle:generated,solution:sol}=makePuzzle(DIFF[key].clues);
-  puzzle=generated;
-  solution=sol;
-  values=generated.slice();
-  fixed=generated.map(v=>v!==0);
-  notes=Array.from({length:81},()=>new Set());
-  undoStack=[];mistakes=0;hints=0;seconds=0;solved=false;playing=true;notesMode=false;pausedByDialog=false;
-  sel=values.indexOf(0);
-  $('notesBtn').setAttribute('aria-pressed','false');
-  showNotesHint();
-  /* The win paints the chips on a timer, and every win timer was cleared at the
-     top of this function. Starting the next puzzle during the payout animation
-     would otherwise leave both totals reading what they said before the prize
-     was banked, until something else repainted them or the page reloaded. */
-  paintWallet();
-  $('diffLabel').textContent=DIFF[key].label;
-  $('time').textContent='0:00';
-  $('stamp').classList.remove('show');
-  $('srStatus').textContent='';
-  $('srAlert').textContent='';
-  hideOverlay($('startOverlay'));
-  hideOverlay($('winOverlay'));
-  setPaused(false); /* resets veil, pause glyph + aria-label, and restarts the timer */
-  /* a fresh puzzle starts from zero: don't let the tracker read it as progress */
-  srLast={mistakes:0,hints:0,remaining:null};
-  render();
-  clearSavedGame(); /* a freshly generated puzzle invalidates whatever was saved before */
-  saveGame(); /* persist right away: a refresh before the first move must still resume this puzzle, not the previous one */
-}
-
-/* ---- persistence ----
-   saveGame() is called from every discrete player action (digit entry, erase,
-   undo, hint, pause, and selecting a cell with the pointer) rather than on a
-   timer: those are human-paced clicks and keypresses, not a text-input stream,
-   and the payload (a handful of 81-length arrays) is small enough that writing
-   it synchronously on each one is cheap. The single exception is the arrow key
-   path, which autorepeats while a key is held: it coalesces through
-   saveSelectionSoon() below and writes once the burst stops. The
-   `!playing||solved` guard below makes saveGame() safe to call
-   unconditionally, including right after win() flips `solved`. */
-function saveGame(){
-  if(!playing||solved)return;
-  try{
-    localStorage.setItem(SAVE_KEY,JSON.stringify({
-      v:SAVE_VERSION,
-      puzzle,
-      solution,
-      values,
-      fixed,
-      notes:notes.map(s=>[...s]),
-      sel,
-      mistakes,
-      hints,
-      seconds,
-      diffKey,
-      solved,
-    }));
-  }catch(e){/* Safari private mode throws on setItem, quota can be exceeded, etc: losing the autosave is fine, losing the game isn't */}
-}
-/* Selection is the one player action that can autorepeat: a held arrow key
-   fires dozens of times a second, and each save serialises 81 note Sets. The
-   arrow path therefore coalesces and writes once the burst stops. Clicks
-   cannot repeat, so the board's click handler still saves immediately. The
-   pending write re-reads the live globals and goes through saveGame(), whose
-   !playing||solved guard makes a late timer a no-op rather than a resurrected
-   save. */
-let selSaveTimer=null;
-function saveSelectionSoon(){
-  clearTimeout(selSaveTimer);
-  selSaveTimer=setTimeout(()=>{selSaveTimer=null;saveGame()},250);
-}
-function clearSavedGame(){
-  try{localStorage.removeItem(SAVE_KEY)}catch(e){}
-}
-/* ---- prizes ----
-   The totals live in a key of their own rather than in the game save. That
-   save used to carry friesTotal, but win() is both what pays a prize and what
-   calls clearSavedGame(), so the total survived only as long as the tab did:
-   reloading after a win put it back to zero.
-
-   Dropping the field needs no SAVE_VERSION bump. loadGame() checks the grids,
-   the notes array and diffKey, never friesTotal, and reads every scalar
-   through Number(x)||0, so a save written before this change still restores.
-   Bumping would have been the expensive choice: an unrecognised version is
-   rejected outright, which would have thrown away every game in progress. */
-function saveWallet(){
-  try{localStorage.setItem(WALLET_KEY,JSON.stringify({v:WALLET_VERSION,fries:friesTotal,choco:chocoTotal}))}catch(e){/* as with the autosave: a wallet that cannot be written is not worth failing a win over */}
-}
-/* The bytes under the key, or null when there are none and when storage itself
-   is gone. Split out of readWallet() because the two answers it folds together,
-   "nothing is stored" and "something is stored that this build cannot read",
-   have to be told apart before anything is written back. */
-function walletRaw(){
-  try{return localStorage.getItem(WALLET_KEY)}catch(e){return null}
-}
-/* One rule for every total that arrives from outside this tab, whether from the
-   wallet key or from the save it migrates once: a whole number this build can
-   still add to, or nothing.
-
-   The ceiling is not decoration. Beyond MAX_SAFE_INTEGER addition stops being
-   exact, so a stored 1e308 makes friesTotal+fries a no-op and every win from
-   then on visibly pays nothing. Infinity is worse: it renders as "Infinity",
-   JSON.stringify writes it as null, and the next read turns that null into 0,
-   which is the whole wallet gone by the route this code exists to close. */
-function count(x){
-  const n=Math.floor(Number(x));
-  return Number.isFinite(n)&&n>0&&n<=Number.MAX_SAFE_INTEGER?n:0;
-}
-/* The stored totals, or null if there is nothing readable and current there.
-   Separate from loadWallet() because banking a prize has to consult the key
-   again rather than trust what this tab read at boot. */
-function readWallet(raw=walletRaw()){
-  if(raw===null)return null;
-  let w;
-  try{w=JSON.parse(raw)}catch(e){return null}
-  if(!w||typeof w!=='object'||w.v!==WALLET_VERSION)return null;
-  return{fries:count(w.fries),choco:count(w.choco)};
-}
-/* Adds a prize to the wallet, against what is stored rather than against what
-   this tab happens to hold. The player can have the game open twice: the other
-   tab read its totals at boot, and if this one wrote its own over the top, every
-   prize won over there would vanish. Measured before this existed: two flawless
-   wins in two tabs, 20 papas then 50, left 50 stored instead of 70.
-
-   Falling back to the in-memory totals keeps a tab whose storage has died (or
-   was cleared mid-game) counting its own prizes for as long as it lives. */
-function bankPrize(fries,choco){
-  const raw=walletRaw();
-  const stored=readWallet(raw);
-  const base=stored||{fries:friesTotal,choco:chocoTotal};
-  friesTotal=base.fries+fries;
-  chocoTotal=base.choco+choco;
-  /* Written only when the key is empty or this build could read it. Bytes it
-     could not read belong to another build, most likely a newer one the player
-     still has cached, and loadWallet() already refuses to zero those: saving
-     here regardless would undo that on the first win, putting this tab's total
-     plus the prize over a record it never read. The chips still count either
-     way, because a tab that cannot write is still allowed to keep score. */
-  if(stored||raw===null)saveWallet();
-}
-function paintWallet(){
-  $('fries').textContent=friesTotal;
-  $('chocos').textContent=chocoTotal;
-}
-/* On screen only while the mode is on. Not hidden with the hidden attribute:
-   aria-describedby has to keep resolving to it, and a hidden element is dropped
-   from the accessibility tree, taking the button's description with it. */
-function showNotesHint(){
-  $('notesHint').classList.toggle('visually-hidden',!notesMode);
-}
-/* Restarts the pop even if the chip is already mid-animation: removing the
-   class is not enough on its own, the reflow between is what replays it. */
-function popChip(id){
-  const chip=$(id);
-  chip.classList.remove('pop');void chip.offsetWidth;chip.classList.add('pop');
-}
-/* Reads the wallet at boot. Anything unreadable, corrupt or from a version
-   this build does not know leaves both totals at zero rather than guessing. */
-function loadWallet(){
-  const raw=walletRaw();
-  if(raw!==null){
-    const stored=readWallet(raw);
-    /* Something is under the key. If this build cannot read it, leave it there:
-       overwriting it with zeros would discard the wallet of a newer build the
-       player still has cached, which is worse than showing nothing. */
-    if(stored){friesTotal=stored.fries;chocoTotal=stored.choco}
-    return;
-  }
-  /* No wallet yet: either a new player, or one whose papas are still sitting
-     in a game save from before this key existed. Carry those across. */
-  try{
-    const s=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');
-    /* Behind the same version gate loadGame() applies: a save this build would
-       refuse to restore is not a record to mint papas from. count() then applies
-       the same rule the stored wallet gets, rather than a second one written
-       here, because both feed the total that is written back and added to
-       forever. */
-    friesTotal=count(s&&typeof s==='object'&&s.v===SAVE_VERSION?s.friesTotal:0);
-  }catch(e){}
-  /* Only when something was actually carried across. Writing a zero wallet here
-     would be a storage event in every other open tab, and their listener adopts
-     what it reads: a second tab opening after the key was evicted would take a
-     tab that still held the totals in memory down to zero with it. */
-  if(friesTotal)saveWallet();
-}
-/* Restores a saved game on boot. Returns false, leaving every global
-   untouched, for: nothing saved, corrupt JSON, a getItem/localStorage
-   failure, an unrecognised schema version, a malformed grid, an unknown
-   diffKey, or an already-solved save: the caller (boot block) then falls
-   back to showing the start dialog exactly as it does today. */
-function loadGame(){
-  let raw;
-  try{raw=localStorage.getItem(SAVE_KEY)}catch(e){return false}
-  if(!raw)return false;
-  let s;
-  try{s=JSON.parse(raw)}catch(e){return false}
-  if(!s||typeof s!=='object'||s.v!==SAVE_VERSION)return false;
-  const isGrid=a=>Array.isArray(a)&&a.length===81;
-  if(!isGrid(s.puzzle)||!isGrid(s.solution)||!isGrid(s.values)||!isGrid(s.fixed)||!Array.isArray(s.notes)||s.notes.length!==81)return false;
-  /* hasOwn rather than a bare lookup: every name on Object.prototype answers
-     truthy to DIFF[key], so a save claiming diffKey:'constructor' restored a
-     playable board with no row of the table behind it. Winning it then read
-     DIFF[key].fries, which is undefined, multiplied it, and banked NaN, which
-     JSON writes as null and reads back as zero: every prize the player had
-     ever earned, spent on a save nobody wrote on purpose.
-
-     hasOwnProperty.call rather than Object.hasOwn, which is Safari 15.4 and
-     newer. This runs on the boot path with nothing around it to catch a throw,
-     so on an older engine the whole page would die here, and only for players
-     who already have a save: the first visit takes the early return above, the
-     first move writes one, and the second launch is a dead board. The rest of
-     this file degrades quietly on old engines rather than throwing, and there
-     is no stated support floor to check a hard requirement against. */
-  if(!Object.prototype.hasOwnProperty.call(DIFF,s.diffKey)||s.solved)return false;
-  puzzle=s.puzzle.slice();
-  solution=s.solution.slice();
-  values=s.values.slice();
-  fixed=s.fixed.slice();
-  notes=s.notes.map(a=>new Set(Array.isArray(a)?a:[]));
-  /* Bounded, not just integral: sel indexes notes[] and fixed[], and inputDigit()
-     only guards sel<0. An out-of-range sel restores a playable board, then the
-     first digit throws on notes[sel].clear() after values[sel] has already been
-     written past the end of the grid, and the next autosave persists an 82+ cell
-     board that loadGame() rejects on the following load. The game is gone. */
-  sel=Number.isInteger(s.sel)&&s.sel>=0&&s.sel<81?s.sel:-1;
-  mistakes=Number(s.mistakes)||0;
-  hints=Number(s.hints)||0;
-  seconds=Number(s.seconds)||0;
-  diffKey=s.diffKey;
-  solved=false;playing=true;notesMode=false;pausedByDialog=false;undoStack=[];
-  winTimers.forEach(clearTimeout);winTimers=[];
-  $('notesBtn').setAttribute('aria-pressed','false');
-  showNotesHint();
-  $('diffLabel').textContent=DIFF[diffKey].label;
-  $('time').textContent=fmt(seconds);
-  $('stamp').classList.remove('show');
-  /* seed the announcement tracker with the restored counters, so resuming a
-     game with mistakes on the board does not announce them as fresh ones */
-  srLast={mistakes,hints,remaining:null};
-  render();
-  setPaused(false);
-  return true;
-}
-
-/* Falls whatever glyph it is handed: the animation is the prize mechanic, and
-   papas and chocolates differ only in what rains and how much of it. */
-function rain(n,glyph){
-  const wrap=document.querySelector('.board-wrap');
-  const w=wrap.clientWidth,h=wrap.clientHeight;
-  for(let k=0;k<n;k++){
-    const f=document.createElement('span');
-    f.className='drop';f.textContent=glyph;
-    const dur=1.1+Math.random()*1.2,delay=Math.random()*.9;
-    f.style.left=(Math.random()*(w-34))+'px';
-    f.style.fontSize=(20+Math.random()*15)+'px';
-    f.style.setProperty('--dur',dur+'s');
-    f.style.setProperty('--delay',delay+'s');
-    f.style.setProperty('--fall',(h+100)+'px');
-    f.style.setProperty('--spin',(((Math.random()*720)|0)-360)+'deg');
-    f.addEventListener('animationend',()=>f.remove());
-    setTimeout(()=>f.remove(),(dur+delay)*1000+500);
-    wrap.appendChild(f);
-  }
-}
-
-function win(){
-  solved=true;playing=false;
-  clearSavedGame(); /* a finished game has nothing to resume into */
-  clearInterval(tick);
-  sel=-1;render();
-  $('stamp').classList.add('show');
-  const flawless=mistakes===0&&hints===0;
-  const earned=DIFF[diffKey].fries*(flawless?2:1);
-  const chocoEarned=flawless?DIFF[diffKey].choco:0;
-  const chocoWord=n=>n===1?'1 chocolate':n+' chocolates';
-  /* assertive: the win is the one event worth interrupting for, and the modal
-     it belongs to only appears after ~2s of animation. The prize goes in here
-     too: showOverlay() focuses the dialog's button, not the banner, so this is
-     the only announcement that reliably carries it. */
-  $('srAlert').textContent=`Ganaste. ${fmt(seconds)}, ${mistakes===1?'1 error':mistakes+' errores'}, ${hints===1?'1 pista':hints+' pistas'}.`
-    +` Te llevas ${earned} papas fritas${chocoEarned?` y ${chocoWord(chocoEarned)}`:''}.`;
-  const finalTime=seconds,finalMist=mistakes,finalHints=hints;
-  /* Banked now, not on the timers below: those are decoration, and a player
-     who closes the tab during the animation has still won the prize. */
-  bankPrize(earned,chocoEarned);
-  /* reduced motion: no rain, and don't make the player wait out the animation */
-  const slow=reduceMotion.matches?0:1;
-  if(!reduceMotion.matches){
-    winTimers.push(setTimeout(()=>rain(Math.min(earned,30),'🍟'),450));
-    /* staggered: the chocolates are meant to read as a second, rarer shower
-       rather than get lost among the papas. No cap, unlike the papas above:
-       the most the table pays is five. */
-    if(chocoEarned)winTimers.push(setTimeout(()=>rain(chocoEarned,'🍫'),700));
-  }
-  winTimers.push(setTimeout(()=>{
-    paintWallet();
-    popChip('frychip');
-    if(chocoEarned)popChip('chocochip');
-  },950*slow));
-  winTimers.push(setTimeout(()=>{
-    $('wTime').textContent=fmt(finalTime);
-    $('wMist').textContent=finalMist;
-    $('wHint').textContent=finalHints;
-    $('winLede').textContent=
-      flawless?'La más seca: cero errores, cero pistas.':
-      finalMist===0?'Sin errores. Filete.':'Costó, pero salió igual.';
-    /* What you just won, as icons. The sentence this replaced said the same
-       thing three times over, and the running totals it repeated are the chips
-       in the status bar, one dismissal away. The words survive for a screen
-       reader, which cannot see either.
-
-       innerHTML, and every hole in it is a number straight from the DIFF table.
-       Nothing player-authored is interpolated, so there is no markup to inject. */
-    $('fryBanner').innerHTML=`<b aria-hidden="true">🍟 +${earned}</b>`
-      +(chocoEarned?`<b aria-hidden="true">🍫 +${chocoEarned}</b>`:'')
-      +`<span class="visually-hidden">Ganaste ${earned} papas fritas${chocoEarned?` y ${chocoWord(chocoEarned)}`:''}.</span>`;
-    showOverlay($('winOverlay'));
-  },1900*slow));
-}
-
-/* ---- actions ---- */
-function inputDigit(d){
-  if(!playing||paused||sel<0||fixed[sel])return;
-  if(notesMode&&values[sel]!==0)return; /* checked before snapshot(): a no-op must not evict undo history */
-  snapshot();
-  if(notesMode){
-    notes[sel].has(d)?notes[sel].delete(d):notes[sel].add(d);
-  }else{
-    if(values[sel]===d){values[sel]=0}
-    else{
-      values[sel]=d;
-      notes[sel].clear();
-      if(d===solution[sel]){
-        for(const p of PEERS[sel])notes[p].delete(d);
-      }else mistakes++;
-    }
-  }
-  render();
-  saveGame();
-  if(values.every((v,i)=>v===solution[i]))win();
-}
-function erase(){
-  if(!playing||paused||sel<0||fixed[sel])return;
-  if(values[sel]===0&&notes[sel].size===0)return;
-  snapshot();
-  values[sel]=0;notes[sel].clear();
-  render();
-  saveGame();
-}
-function undo(){
-  if(!playing||paused||undoStack.length===0)return;
-  const s=undoStack.pop();
-  values=s.values;
-  fixed=s.fixed;
-  notes=s.notes.map(a=>new Set(a));
-  mistakes=s.mistakes;hints=s.hints;
-  render();
-  saveGame();
-}
-function hint(){
-  if(!playing||paused)return;
-  let i=sel>=0&&!fixed[sel]&&values[sel]!==solution[sel]?sel:-1;
-  if(i<0){
-    const open=[];
-    for(let k=0;k<81;k++)if(values[k]!==solution[k])open.push(k);
-    if(open.length===0)return;
-    i=open[(Math.random()*open.length)|0];
-  }
-  snapshot();
-  values[i]=solution[i];
-  fixed[i]=true;
-  notes[i].clear();
-  for(const p of PEERS[i])notes[p].delete(solution[i]);
-  hints++;sel=i;
-  render();
-  saveGame();
-  if(values.every((v,k)=>v===solution[k]))win();
-}
-
-/* ---- render ---- */
-/* Tracks the last-announced values so the live region only speaks on
-   meaningful change, never on every cell edit (selection moves call
-   render() constantly and must stay silent). remaining is bucketed by
-   ten so it reads at a sane cadence instead of once per fill. */
-let srLast={mistakes:0,hints:0,remaining:null};
-function render(){
-  const selVal=sel>=0?values[sel]:0;
-  const pr=sel>=0?PEERS[sel]:null;
-  let left=0;
-  const counts=new Array(10).fill(0);
-  for(let i=0;i<81;i++){
-    const v=values[i];
-    /* count only correct placements, so wrong entries never retire a digit key */
-    if(v&&v===solution[i])counts[v]++;
-    if(!v||v!==solution[i])left++;
-    const el=cells[i];
-    el.firstChild.textContent=v||'';
-    const ns=el.lastChild.children;
-    for(let d=1;d<=9;d++)ns[d-1].textContent=(!v&&notes[i].has(d))?d:'';
-    el.className='cell'
-      +(fixed[i]?' given':'')
-      +(v&&v!==solution[i]?' wrong':'')
-      +(i===sel?' sel':'')
-      +(pr&&pr.has(i)&&i!==sel?' peer':'')
-      +(selVal&&v===selVal&&i!==sel?' same':'');
-    const r=((i/9)|0)+1,c=i%9+1;
-    el.setAttribute('aria-label',`Fila ${r}, columna ${c}${v?', '+v:', vacía'}${fixed[i]?', dada':''}`);
-  }
-  for(let d=1;d<=9;d++){
-    keys[d-1].querySelector('.c').textContent=Math.max(0,9-counts[d]);
-    keys[d-1].classList.toggle('done',counts[d]>=9);
-  }
-  $('mistakes').textContent=mistakes;
-  $('hints').textContent=hints;
-  $('remaining').innerHTML=`<b>${left}</b> por llenar`;
-  /* Screen-reader announcements: polite, batched, and gated to actual play
-     so neither the boot screen nor a paused/finished board can speak.
-     Mistakes and hints announce on every change (they're rare and meaningful);
-     the remaining count only when it crosses into a new ten, so filling
-     cells one by one does not spam the user. */
-  if(playing){
-    const srBits=[];
-    if(mistakes!==srLast.mistakes)srBits.push(mistakes===1?'1 error':`${mistakes} errores`);
-    if(hints!==srLast.hints)srBits.push(hints===1?'1 pista usada':`${hints} pistas usadas`);
-    if(left!==srLast.remaining&&(srLast.remaining===null||((left/10)|0)!==((srLast.remaining/10)|0))){
-      srBits.push(left===0?'tablero completo':`${left} celdas por llenar`);
-    }
-    if(srBits.length)$('srStatus').textContent=srBits.join('. ')+'.';
-    srLast={mistakes,hints,remaining:left};
-  }
-}
-
-/* ---- wiring ---- */
-$('pauseBtn').addEventListener('click',()=>setPaused(!paused));
-$('resumeBtn').addEventListener('click',()=>setPaused(false));
-$('notesBtn').addEventListener('click',e=>{
-  if(!playing||paused)return;
-  notesMode=!notesMode;
-  e.currentTarget.setAttribute('aria-pressed',String(notesMode));
-  showNotesHint();
-});
-$('eraseBtn').addEventListener('click',erase);
-$('undoBtn').addEventListener('click',undo);
-$('hintBtn').addEventListener('click',hint);
-$('newBtn').addEventListener('click',()=>{
-  $('cancelNew').hidden=!playing;
-  pausedByDialog=playing&&!paused;
-  if(pausedByDialog)setPaused(true);
-  showOverlay($('startOverlay'));
-});
-$('cancelNew').addEventListener('click',()=>{
-  hideOverlay($('startOverlay'));
-  if(pausedByDialog)setPaused(false); /* only resume if this dialog is what paused it */
-  pausedByDialog=false;
-});
-$('againBtn').addEventListener('click',()=>{
-  hideOverlay($('winOverlay'));
-  $('cancelNew').hidden=true;
-  showOverlay($('startOverlay'));
-});
-/* difficulty labels come from DIFF so the copy can't drift from the generated clue count */
-let genDoneAt=0;
-document.querySelectorAll('.diff').forEach(b=>{
-  const d=DIFF[b.dataset.d];
-  b.innerHTML=`${d.label} <span>${d.clues} números</span>`;
-  b.addEventListener('click',e=>{
-    /* generation blocks the main thread; drop clicks the user made during the freeze */
-    if(e.timeStamp<genDoneAt)return;
-    newGame(b.dataset.d);
-    genDoneAt=performance.now();
-  });
-});
-
-document.addEventListener('keydown',e=>{
-  if(!e.key)return;
-  const k=e.key.toLowerCase();
-  if($('startOverlay').classList.contains('show')){
-    if(k==='escape'&&!$('cancelNew').hidden)$('cancelNew').click();
-    return;
-  }
-  if($('winOverlay').classList.contains('show'))return;
-  /* let browser shortcuts through: only Ctrl/Cmd+Z is ours */
-  if((e.ctrlKey||e.metaKey||e.altKey)&&k!=='z')return;
-  if(k==='p'){setPaused(!paused);return}
-  if(k==='escape'&&paused){setPaused(false);return}
-  if(!playing||paused)return;
-  if(e.key>='1'&&e.key<='9'){inputDigit(+e.key);return}
-  if(k==='backspace'||k==='delete'||e.key==='0'){e.preventDefault();erase()}
-  else if(k==='n')$('notesBtn').click();
-  else if(k==='h')hint();
-  else if(k==='z')undo();
-  else if(k.startsWith('arrow')){
-    e.preventDefault();
-    if(sel<0){sel=0;render();saveSelectionSoon();return}
-    const r=(sel/9)|0,c=sel%9;
-    if(k==='arrowup'&&r>0)sel-=9;
-    if(k==='arrowdown'&&r<8)sel+=9;
-    if(k==='arrowleft'&&c>0)sel-=1;
-    if(k==='arrowright'&&c<8)sel+=1;
-    render();
-    saveSelectionSoon();
-  }
-});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)setPaused(true)});
-/* Another tab banked a prize while this one was open. Adopt its totals: ours
-   are stale from here on, and the chips would otherwise keep showing a number
-   the wallet no longer holds. Fires only in the other tabs, never the writer's,
-   which is exactly the tab that needs telling. A clear() reports a null key and
-   is ignored: bankPrize() falls back to memory, so this tab keeps counting. */
-addEventListener('storage',e=>{
-  if(e.key!==WALLET_KEY)return;
-  const w=readWallet();
-  if(!w)return;
-  friesTotal=w.fries;chocoTotal=w.choco;
-  paintWallet();
-});
-
-/* ---- boot ---- */
-/* Before loadGame(): the prizes are the player's, not the puzzle's, so they are
-   painted on both paths, the resumed game and the difficulty picker alike. */
-loadWallet();
-paintWallet();
-/* loadGame() renders and unpauses itself when it restores something; only the
-   no-save (or rejected-save) path falls through to the difficulty picker. */
-if(!loadGame()){
-  render();
-  $('cancelNew').hidden=true;
-  showOverlay($('startOverlay'));
-}
-/* Relative path so the worker's scope is this directory, not the account root.
-   Deferred to load, feature-guarded, and failures are swallowed: an offline
-   cache that cannot register must never keep the game from starting. */
-if('serviceWorker' in navigator){
-  /* Was this document already under a worker when it loaded? Read now, before
-     anything can claim it, because it is the difference between a first ever
-     install and a swap to a newer build. */
-  const wasControlled=!!navigator.serviceWorker.controller;
-  let registration=null,nextCheckAt=0,checking=false,reloading=false;
-
-  window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('./sw.js').then(r=>{registration=r}).catch(()=>{});
-  });
-
-  /* The update trigger an installed app otherwise does not have. A worker is
-     only checked for updates on an in-scope navigation, or on a functional
-     event at most once a day. A home screen web app is a single page that
-     never navigates: it is resumed, not loaded. Its fetch handler serves the
-     shell from cache and asks the network nothing. So a player who installs it
-     and only ever switches back to it can sit on that build indefinitely,
-     which is the whole failure this exists to prevent.
-
-     Throttled, because switching between apps must not mean a request per
-     focus, and skipped while hidden so a background tab does not poll. */
-  const CHECK_EVERY=36e5,RETRY_AFTER=6e4;
-  function checkForUpdate(){
-    if(registration===null||document.hidden||checking)return;
-    /* A resume with no connectivity is the ordinary way an installed app wakes
-       up, and it must not spend the hour on a check that cannot reach the
-       network. Refused here, before anything is spent, because reacting to the
-       failure afterwards cannot work: the two engines do not agree on what a
-       failure is. Measured on the built page, offline: WebKit rejects,
-       Chromium resolves without having asked the network. So catching the
-       rejection fixed nothing on Chromium and, on WebKit, handed back the
-       throttle on every resume. onLine is false only when the device knows it
-       has no connectivity, which is the case worth skipping and the one this
-       is named for. */
-    if(navigator.onLine===false)return;
-    if(Date.now()<nextCheckAt)return;
-    checking=true;
-    /* The short gap is taken first and the hour granted only once a request
-       has actually come back. An sw.js that 404s, times out or fails to parse
-       rejects every time, and without this that is a fetch on every single app
-       switch, forever, from every installed copy. */
-    nextCheckAt=Date.now()+RETRY_AFTER;
-    registration.update()
-      .then(()=>{nextCheckAt=Date.now()+CHECK_EVERY})
-      .catch(()=>{})
-      .finally(()=>{checking=false});
-  }
-  document.addEventListener('visibilitychange',checkForUpdate);
-  /* Only a restore from the back forward cache. An ordinary load already
-     checked, in register() above, and would otherwise check twice on boot. */
-  window.addEventListener('pageshow',e=>{if(e.persisted)checkForUpdate()});
-
-  /* A newer worker has taken over. sw.js calls skipWaiting() and
-     clients.claim(), so this fires while the old document is still on screen,
-     holding markup and a cache that no longer agree. Reloading is what makes
-     them agree, and it is safe: the game autosaves on every move and restores
-     itself, which e2e/persistence.spec.mjs holds down.
-
-     Not on a first install, where nothing is stale and a reload would be an
-     unexplained flash for a new visitor, and never twice. */
-  navigator.serviceWorker.addEventListener('controllerchange',()=>{
-    if(!wasControlled||reloading)return;
-    reloading=true;
-    location.reload();
-  });
-
-  /* Installed apps are exempt from the seven day rule and from idle eviction,
-     but not from eviction under storage pressure, and the save and the prize
-     totals are both in localStorage. Asked for only when actually installed:
-     in a browser tab this is a permission prompt in some engines, which is a
-     lot to spend on a sudoku nobody has chosen to keep yet. */
-  if(matchMedia('(display-mode: standalone)').matches&&navigator.storage&&navigator.storage.persist){
-    navigator.storage.persist().catch(()=>{});
-  }
-}
-</script>
-</body>
+        <!-- The record: games played and won, best times, the flawless streak, and the
+            wallet with somewhere for the prizes to go. The totals used to only ever
+            rise, with no way to say a prize had actually been handed over. -->
+        <div class="overlay" id="recordOverlay">
+            <div
+                class="modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="recordTitle"
+            >
+                <h2 id="recordTitle">TU REGISTRO</h2>
+                <p class="lede" id="streakLine">Sin partidas todavía.</p>
+                <table class="record">
+                    <thead>
+                        <tr>
+                            <th>Nivel</th>
+                            <th>Jugadas</th>
+                            <th>Ganadas</th>
+                            <th>Mejor</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordRows"></tbody>
+                </table>
+                <div class="purse">
+                    <div class="purseRow">
+                        <span>🍟 <b id="purseFries">0</b> <span class="visually-hidden">papas fritas por canjear</span></span>
+                        <button
+                            type="button"
+                            class="quiet redeem"
+                            id="redeemFries"
+                            data-k="fries"
+                        >Canjear</button>
+                    </div>
+                    <div class="purseRow">
+                        <span>🍫 <b id="purseChoco">0</b> <span class="visually-hidden">chocolates por canjear</span></span>
+                        <button
+                            type="button"
+                            class="quiet redeem"
+                            id="redeemChoco"
+                            data-k="choco"
+                        >Canjear</button>
+                    </div>
+                </div>
+                <ul class="ledger" id="ledgerList"></ul>
+                <button
+                    type="button"
+                    class="newgame"
+                    id="closeRecord"
+                    data-autofocus
+                >Listo</button>
+            </div>
+        </div>
+        <script src="app.js"></script>
+    </body>
 </html>

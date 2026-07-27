@@ -30,7 +30,7 @@ import { expect, test } from '@playwright/test';
 const SAVE_KEY = 'sudoku:save';
 
 /* The name render() gives every cell: "Fila 3, columna 7, 4, dada". */
-const CELL_NAME = /^Fila \d, columna \d/;
+const CELL_NAME = /^Fila \d, columna \d/u;
 
 /* Loads the page with the console under watch. The returned array is the
    browser's answer to the old helper's `errors`: it is filled by uncaught
@@ -122,8 +122,8 @@ async function exposedBoard(page, cdp) {
    the path from a real event to a written save. */
 async function playAndSave(page) {
   const plan = await page.evaluate(() => {
-    const a = values.findIndex((v, i) => !fixed[i]);
-    const b = values.findIndex((v, i) => !fixed[i] && i !== a);
+    const a = values.findIndex((_v, i) => !fixed[i]);
+    const b = values.findIndex((_v, i) => !fixed[i] && i !== a);
     /* a digit that is not the one about to be placed at b, so filling b does
        not sweep the pencil mark off a as a now-impossible candidate */
     return { a, b, note: (solution[b] % 9) + 1, digit: solution[b] };
@@ -140,9 +140,11 @@ async function playAndSave(page) {
 
   /* Both moves have to be on the board before the save is flushed, or the
      assertions below would be reading an empty grid and calling it a match. */
-  await expect(cell(plan.a).locator('.notes span').nth(plan.note - 1)).toHaveText(
-    String(plan.note),
-  );
+  await expect(
+    cell(plan.a)
+      .locator('.notes span')
+      .nth(plan.note - 1),
+  ).toHaveText(String(plan.note));
   await expect(cell(plan.b).locator('.v')).toHaveText(String(plan.digit));
 
   /* The clock cannot be waited out. Setting it and flushing the save in one
@@ -202,7 +204,7 @@ test('a game in progress survives a reload', async ({ page, context }) => {
   /* The restored clock resumes running, so this allows the seconds that pass
      while it is read on a slow runner, but not a reset to 0:00 and not a lost
      minute. */
-  await expect(page.locator('#time')).toHaveText(/^0:[45]\d$/);
+  await expect(page.locator('#time')).toHaveText(/^0:[45]\d$/u);
   expect(await page.evaluate(() => playing), 'restored game is not playable').toBe(true);
 });
 
@@ -250,9 +252,7 @@ test('selecting a cell is saved at once by a click, once per burst by the arrows
     }
   });
   expect(await writes(), 'a burst of arrow keys wrote once per keystroke').toBe(1);
-  await expect
-    .poll(writes, { message: 'the coalesced selection was never written' })
-    .toBe(2);
+  await expect.poll(writes, { message: 'the coalesced selection was never written' }).toBe(2);
 
   /* Compared against the live selection rather than a hardcoded index: the
      arrows clamp at the edge of the board, so where 20 of them land is the
@@ -278,14 +278,19 @@ test('a new game replaces the previous save immediately, before any move', async
   expect(raw, 'the previous puzzle is still the save').not.toBe(stale);
   const fresh = JSON.parse(raw);
   expect(fresh.diffKey).toBe('hard');
-  expect(fresh.puzzle.filter((v) => v !== 0)).toHaveLength(28);
+  /* A difficulty no longer deals a fixed number of clues: it asks for a grade
+     and the generator moves the count to reach one. So the count is taken from
+     the payload and used as the expectation below, rather than written here. */
+  const givens = fresh.puzzle.filter((v) => v !== 0).length;
+  expect(givens).toBeGreaterThanOrEqual(17);
+  expect(givens).toBeLessThan(81);
   expect(problems).toEqual([]);
 
   await page.reload();
   await expect(page.locator('#diffLabel')).toHaveText('Peludo');
   /* The clue count on screen, not only in the payload: a stale restore would
-     put the 34 givens of the abandoned Normal puzzle back on the board. */
-  await expect(page.locator('#board .cell.given')).toHaveCount(28);
+     put the givens of the abandoned Normal puzzle back on the board. */
+  await expect(page.locator('#board .cell.given')).toHaveCount(givens);
   expect(problems).toEqual([]);
 });
 
@@ -342,68 +347,83 @@ for (const [name, payload] of [
      grid shape check, so deleting the version check left the suite green: the
      test named a guarantee it was not testing. Filled in, the version stamp is
      the only thing standing between this and a restored board. */
-  ['an unknown schema version', JSON.stringify({
-    v: 99,
-    puzzle: new Array(81).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(0),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'medium',
-  })],
-  ['a truncated grid', JSON.stringify({
-    v: 1,
-    puzzle: new Array(80).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(0),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'medium',
-  })],
-  ['an unknown difficulty', JSON.stringify({
-    v: 1,
-    puzzle: new Array(81).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(0),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'imposible',
-  })],
+  [
+    'an unknown schema version',
+    JSON.stringify({
+      v: 99,
+      puzzle: new Array(81).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(0),
+      fixed: new Array(81).fill(false),
+      notes: Array.from({ length: 81 }, () => []),
+      diffKey: 'medium',
+    }),
+  ],
+  [
+    'a truncated grid',
+    JSON.stringify({
+      v: 1,
+      puzzle: new Array(80).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(0),
+      fixed: new Array(81).fill(false),
+      notes: Array.from({ length: 81 }, () => []),
+      diffKey: 'medium',
+    }),
+  ],
+  [
+    'an unknown difficulty',
+    JSON.stringify({
+      v: 1,
+      puzzle: new Array(81).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(0),
+      fixed: new Array(81).fill(false),
+      notes: Array.from({ length: 81 }, () => []),
+      diffKey: 'imposible',
+    }),
+  ],
   /* "imposible" above is the honest typo. This one is the difficulty that is not
      a difficulty: every name on Object.prototype answers truthy to a bare
      DIFF[key] lookup, so a plain `if(!DIFF[s.diffKey])` accepted this save and
      restored a playable board with no row behind it. Winning then multiplied
      undefined, banked NaN, and wrote a wallet of nulls that read back as zero,
      taking every prize the player had ever earned with it. */
-  ['a difficulty borrowed from Object.prototype', JSON.stringify({
-    v: 1,
-    puzzle: new Array(81).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(0),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'constructor',
-  })],
-  ['an already-solved game', JSON.stringify({
-    v: 1,
-    puzzle: new Array(81).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(1),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'medium',
-    solved: true,
-  })],
+  [
+    'a difficulty borrowed from Object.prototype',
+    JSON.stringify({
+      v: 1,
+      puzzle: new Array(81).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(0),
+      fixed: new Array(81).fill(false),
+      notes: Array.from({ length: 81 }, () => []),
+      diffKey: 'constructor',
+    }),
+  ],
+  [
+    'an already-solved game',
+    JSON.stringify({
+      v: 1,
+      puzzle: new Array(81).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(1),
+      fixed: new Array(81).fill(false),
+      notes: Array.from({ length: 81 }, () => []),
+      diffKey: 'medium',
+      solved: true,
+    }),
+  ],
 ]) {
-  test(`a save that is ${name} is ignored and the start dialog opens`, async ({ page, context }) => {
+  test(`a save that is ${name} is ignored and the start dialog opens`, async ({
+    page,
+    context,
+  }) => {
     const problems = await boot(page);
 
     /* Planted in the browser's own storage and then reloaded, so the page
        reads it back through the same localStorage a visitor would. */
-    await page.evaluate(
-      ([key, value]) => localStorage.setItem(key, value),
-      [SAVE_KEY, payload],
-    );
+    await page.evaluate(([key, value]) => localStorage.setItem(key, value), [SAVE_KEY, payload]);
     await page.reload();
 
     expect(problems, 'a bad save threw during boot').toEqual([]);
@@ -413,7 +433,7 @@ for (const [name, payload] of [
       page.getByRole('dialog', { name: 'SUDOKU' }),
       'the start dialog did not open',
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: /Normal/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Normal/u })).toBeVisible();
     await expect(page.locator('#remaining')).toHaveText('81 por llenar');
 
     /* Everything above is the rejection itself and runs on both engines, which
@@ -451,7 +471,7 @@ test('a localStorage that throws costs the save, not the game', async ({ page })
 
   await startGame(page, 'medium');
   const plan = await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     return { index: i, digit: solution[i] };
   });
   await page.locator('#board .cell').nth(plan.index).click();
@@ -463,7 +483,7 @@ test('a localStorage that throws costs the save, not the game', async ({ page })
     String(plan.digit),
   );
   await expect(page.locator('#board .cell').nth(plan.index)).toHaveAccessibleName(
-    new RegExp(`^Fila \\d, columna \\d, ${plan.digit}$`),
+    new RegExp(`^Fila \\d, columna \\d, ${plan.digit}$`, 'u'),
   );
   expect(problems, 'playing threw with storage disabled').toEqual([]);
   expect(await page.evaluate(() => playing)).toBe(true);
@@ -491,7 +511,7 @@ test('pausing captures the clock', async ({ page }) => {
      the next load. Tolerant of the seconds that pass while it is read, since
      the restored clock starts running again. */
   await page.reload();
-  await expect(page.locator('#time')).toHaveText(/^2:[01]\d$/);
+  await expect(page.locator('#time')).toHaveText(/^2:[01]\d$/u);
 });
 
 test('a save survives a reload the service worker serves from cache', async ({ page }) => {

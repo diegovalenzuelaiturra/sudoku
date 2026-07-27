@@ -15,6 +15,9 @@ import { expect, test } from '@playwright/test';
 
 const SAVE_KEY = 'sudoku:save';
 const WALLET_KEY = 'sudoku:wallet';
+/* The schema the wallet is written in today. Version 1 was the same two totals
+   with no ledger and is still read, so that a player who had one keeps it. */
+const WALLET_VERSION = 2;
 
 /* What the table pays on Normal: ten papas fritas, doubled when flawless, and
    two chocolates for the flawless win only. Written out here rather than read
@@ -61,13 +64,32 @@ const solve = (page) =>
   });
 
 /* One wrong digit into the first empty cell, which is all it takes to lose the
-   flawless bonus. Solving afterwards overwrites it. */
+   flawless bonus. Solving afterwards overwrites it. It hands back the cell it
+   wrote, so a caller asserting on that cell cannot end up watching a different
+   one. */
 const spoil = (page) =>
   page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     sel = i;
     inputDigit((solution[i] % 9) + 1);
+    return i;
   });
+
+/* Wrong digits into n distinct empty cells, returning how many it managed.
+   Empty only: typing the same wrong digit into a cell that already holds it
+   toggles it back off rather than counting a second mistake, so reusing spoil()
+   for this would silently make no mistakes at all. */
+const spoilMany = (page, n) =>
+  page.evaluate((wanted) => {
+    let made = 0;
+    for (let i = 0; i < 81 && made < wanted; i++) {
+      if (fixed[i] || values[i] !== 0) continue;
+      sel = i;
+      inputDigit((solution[i] % 9) + 1);
+      made++;
+    }
+    return made;
+  }, n);
 
 test('a flawless win pays papas fritas doubled, and chocolates', async ({ page }) => {
   const problems = await boot(page);
@@ -82,7 +104,7 @@ test('a flawless win pays papas fritas doubled, and chocolates', async ({ page }
   await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
   await expect(page.locator('#chocos')).toHaveText(String(NORMAL.choco));
   expect(await readWallet(page)).toMatchObject({
-    v: 1,
+    v: WALLET_VERSION,
     fries: NORMAL.fries * 2,
     choco: NORMAL.choco,
   });
@@ -91,7 +113,7 @@ test('a flawless win pays papas fritas doubled, and chocolates', async ({ page }
      button rather than the banner, so this is the announcement that carries
      it to a screen reader. */
   expect(await page.locator('#srAlert').textContent()).toMatch(
-    new RegExp(`${NORMAL.fries * 2} papas fritas y ${NORMAL.choco} chocolates`),
+    new RegExp(`${NORMAL.fries * 2} papas fritas y ${NORMAL.choco} chocolates`, 'u'),
   );
 
   /* And on screen. The banner is icons and numbers, so what is asserted is the
@@ -130,6 +152,174 @@ test('a win with a mistake pays papas fritas at face value and no chocolate', as
      meaningless. */
   await expect(page.locator('#chocos')).toHaveText('0');
   expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
+  expect(problems).toEqual([]);
+});
+
+/* The bonus is gated on mistakes===0&&hints===0, and undo used to put both
+   counters back, so guessing a digit and pressing Z when it turned out wrong
+   paid the flawless win. At most nine tries a cell brute-forced a whole board
+   reading zero errors, and the chocolates a clean solve exists to reserve were
+   paid for guessing. Deshacer still rolls the board back. It no longer rolls
+   back what the player did. */
+test('a mistake undone still costs the flawless bonus', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  /* Asked of spoil() rather than recomputed here. Two copies of the same
+     findIndex agree only by luck, and the moment they stopped agreeing the
+     toBeEmpty() checks below would run against a cell nobody ever wrote to,
+     which is an assertion that can no longer fail. The bounds check is the
+     other half: nth(-1) resolves to the last cell rather than throwing. */
+  const target = await spoil(page);
+  expect(target, 'the board had no empty cell to spoil').toBeGreaterThanOrEqual(0);
+  const cell = page.locator('#board .cell').nth(target);
+  await expect(cell.locator('.v'), 'the wrong digit never reached the board').not.toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('1');
+
+  /* Both entry points. They delegate to the same undo(), but the click handler
+     is exercised nowhere else in the suite and the key is what a player uses. */
+  await page.locator('#undoBtn').click();
+  await expect(cell.locator('.v'), 'undo left the wrong digit on the board').toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('1');
+
+  await spoil(page);
+  await expect(page.locator('#mistakes')).toHaveText('2');
+  await page.keyboard.press('z');
+  await expect(cell.locator('.v')).toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('2');
+
+  /* The save agrees, so a reload cannot hand the rewind back. Read the way
+     readWallet reads: JSON.parse(null) is null, so an absent save would die on
+     the property access instead of reporting that nothing was written. */
+  const saved = await readRaw(page, SAVE_KEY);
+  expect(saved, 'the undo wrote no save').not.toBeNull();
+  expect(JSON.parse(saved).mistakes).toBe(2);
+
+  await solve(page);
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries));
+  await expect(page.locator('#chocos')).toHaveText('0');
+  expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
+  expect(problems).toEqual([]);
+});
+
+/* The cheaper half of the same hole, and the reason hints are monotonic too:
+   press H, read the answer off the screen, press Z, and the hint was off the
+   record while the digit was still in the player's head. Undo can clear a cell.
+   It cannot un-see an answer. */
+test('a hint undone still costs the flawless bonus', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  await page.keyboard.press('h');
+  await expect(page.locator('#hints')).toHaveText('1');
+  const cell = page.locator('#board .cell').nth(await page.evaluate(() => sel));
+  await expect(cell).toHaveClass(/given/u);
+
+  await page.keyboard.press('z');
+  /* The board first, and this is the half that makes the test falsifiable: the
+     counter reads 1 either side of the key, so on the counter alone this passed
+     with undo() gutted to a bare return, which is all a broken Z looks like. */
+  await expect(cell).not.toHaveClass(/given/u);
+  await expect(cell.locator('.v')).toBeEmpty();
+  await expect(page.locator('#hints')).toHaveText('1');
+
+  await solve(page);
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries));
+  await expect(page.locator('#chocos')).toHaveText('0');
+  expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
+  expect(problems).toEqual([]);
+});
+
+/* The counters the bonus is gated on are read back from storage a player can
+   edit, and Number(x)||0 let a negative through. A save could start the counter
+   below zero and let real, visible wrong entries climb back to exactly 0. */
+test('a save that starts the mistake counter below zero cannot buy the bonus', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  /* One correct digit, only to make the game write a save. What is planted is
+     then this build's own save with a single field edited, rather than a hand
+     written blob that might be rejected for an unrelated reason and pass this
+     test by never restoring at all. */
+  await page.evaluate(() => {
+    const i = values.findIndex((_v, k) => !fixed[k]);
+    sel = i;
+    inputDigit(solution[i]);
+  });
+  const save = JSON.parse(await readRaw(page, SAVE_KEY));
+  save.mistakes = -3;
+  /* Planted through addInitScript so it lands before the page's own scripts on
+     the next load. Written into the live page instead, the edit was overwritten
+     before the reload by the 250ms coalesced selection save, and the test passed
+     against the unpatched build by restoring a save that no longer carried it. */
+  await page.addInitScript(
+    ([key, value]) => localStorage.setItem(key, value),
+    [SAVE_KEY, JSON.stringify(save)],
+  );
+  await page.reload();
+  await expect(page.locator('#board .cell')).toHaveCount(81);
+
+  /* Clamped on the way in. This read alone is the whole fix: -3 used to restore
+     verbatim. */
+  await expect(page.locator('#mistakes')).toHaveText('0');
+
+  /* Exactly three, because the debt is what the exploit spends: three real and
+     visible wrong entries used to bring -3 up to exactly 0, which is what the
+     flawless gate tests. */
+  expect(await spoilMany(page, 3), 'the board ran out of empty cells to spoil').toBe(3);
+  await expect(page.locator('#mistakes')).toHaveText('3');
+
+  await solve(page);
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  await expect(page.locator('#chocos')).toHaveText('0');
+  expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
+  expect(problems).toEqual([]);
+});
+
+/* Two tabs on one board, which is the same forged prize with nothing edited at
+   all. The storage listener adopts the record and the wallet but falls through
+   on SAVE_KEY, so the second tab kept its own counters in memory and its next
+   keystroke wrote them over the first tab's. */
+test('a second tab cannot reset the counters the bonus is gated on', async ({ page, context }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  /* The second tab resumes the save the first just wrote, so both are on the
+     same puzzle, which is the situation a player creates by opening the app
+     twice. */
+  const other = await context.newPage();
+  await other.goto('./');
+  await expect(other.locator('#board .cell')).toHaveCount(81);
+  await expect(other.locator('#mistakes')).toHaveText('0');
+
+  /* The first tab counts a mistake and saves it. */
+  await spoil(page);
+  await expect(page.locator('#mistakes')).toHaveText('1');
+  expect(JSON.parse(await readRaw(page, SAVE_KEY)).mistakes).toBe(1);
+
+  /* The second tab, still holding 0 in memory, writes. This is the keystroke
+     that used to erase the mistake from storage entirely. */
+  await other.evaluate(() => {
+    const i = values.findIndex((_v, k) => !fixed[k] && values[k] === 0);
+    sel = i;
+    inputDigit(solution[i]);
+  });
+  expect(
+    JSON.parse(await readRaw(other, SAVE_KEY)).mistakes,
+    'the second tab overwrote the first tab count',
+  ).toBe(1);
+
+  /* And the gate reads the live variable, not the bytes, so winning in the
+     second tab has to pay face value. */
+  await solve(other);
+  expect(await other.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+  await expect(other.locator('#chocos')).toHaveText('0');
+  expect(await readWallet(other)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
   expect(problems).toEqual([]);
 });
 
@@ -251,7 +441,10 @@ test('a tab that never hears about the other one still cannot erase it', async (
   expect(await deaf.evaluate(() => friesTotal), 'the deaf tab heard the win').toBe(0);
 
   await deaf.locator('#newBtn').click();
-  await deaf.locator('#startOverlay button.diff[data-d="hard"]').click();
+  /* Through the helper, which waits for the dialog to go: generation runs in a
+     worker now, so the click starts a board rather than finishing one, and
+     solving before it arrives solves the board that is still on screen. */
+  await startGame(deaf, 'hard');
   await solve(deaf);
 
   /* It goes straight from zero to the combined total rather than to its own
@@ -290,9 +483,10 @@ test('a stored total too large to add to is refused, not carried', async ({ page
   await startGame(page);
   await solve(page);
   await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
-  expect(await readWallet(page), 'the win banked against a total it could not add to').toMatchObject(
-    { fries: NORMAL.fries * 2, choco: NORMAL.choco },
-  );
+  expect(
+    await readWallet(page),
+    'the win banked against a total it could not add to',
+  ).toMatchObject({ fries: NORMAL.fries * 2, choco: NORMAL.choco });
   expect(problems).toEqual([]);
 });
 
@@ -300,11 +494,15 @@ test('a stored total too large to add to is refused, not carried', async ({ page
    newer one the player still has cached. Zeroing it would be worse than
    showing nothing, so it is read as absent and left where it is. */
 test('a wallet from an unknown version is ignored, not overwritten', async ({ page }) => {
-  const planted = { v: 2, fries: 99, choco: 9 };
-  await page.addInitScript(
-    ({ key, wallet }) => localStorage.setItem(key, JSON.stringify(wallet)),
-    { key: WALLET_KEY, wallet: planted },
-  );
+  /* One past what this build writes, so it stands for the newer build the
+     player still has cached. It has to keep moving with WALLET_VERSION: pinned
+     at a literal, this test quietly stopped meaning anything the moment the
+     wallet gained a ledger and version 2 became readable. */
+  const planted = { v: WALLET_VERSION + 1, fries: 99, choco: 9 };
+  await page.addInitScript(({ key, wallet }) => localStorage.setItem(key, JSON.stringify(wallet)), {
+    key: WALLET_KEY,
+    wallet: planted,
+  });
 
   const problems = await boot(page);
   await expect(page.locator('#fries')).toHaveText('0');
@@ -384,7 +582,7 @@ test('a game in progress keeps no prize total of its own', async ({ page }) => {
 
   const saved = JSON.parse(await readRaw(page, SAVE_KEY));
   expect(
-    Object.keys(saved).filter((key) => /fries|choco/i.test(key)),
+    Object.keys(saved).filter((key) => /fries|choco/iu.test(key)),
     'the game save carries a prize total again, and winning deletes that save',
   ).toEqual([]);
   expect(problems).toEqual([]);

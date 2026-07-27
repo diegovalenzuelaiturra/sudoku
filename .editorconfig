@@ -26,6 +26,14 @@ trim_trailing_whitespace = true
 [*.md]
 trim_trailing_whitespace = false
 
+# HTML is the one exception to the two spaces above, because markup nests far
+# deeper than the code does: the board sits eight levels in. This has to keep
+# saying the same number as the html/indent rule in eslint.config.mjs, which is
+# what actually reformats these files. If the two disagree, an editor and the
+# linter take turns rewriting the file.
+[*.html]
+indent_size = 4
+
 # Binary assets. Editors will not reindent a PNG, but tooling that reads this
 # file and walks every path can try to "fix" one, so unset the text rules.
 [*.{png,ico,woff,woff2}]

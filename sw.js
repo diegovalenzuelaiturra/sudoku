@@ -21,6 +21,12 @@ const CACHE_PREFIX = 'sudoku-';
 const APP_SHELL = [
   './',
   './index.html',
+  /* The generator runs in a worker, and a worker script is fetched separately
+     from the document that spawns it. Left out of here, an installed app that
+     has been offline since it was added would load, show the difficulty picker,
+     and fail on the first tap: the page is cached and the thing that builds the
+     board is not. */
+  './generator.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
@@ -32,9 +38,7 @@ self.addEventListener('install', (event) => {
      paired with clients.claim() below so a fresh deploy is not stuck
      behind an already-open tab running the old script. */
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
 });
 
 self.addEventListener('activate', (event) => {
@@ -50,10 +54,10 @@ self.addEventListener('activate', (event) => {
         Promise.all(
           names
             .filter((name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
-            .map((name) => caches.delete(name))
-        )
+            .map((name) => caches.delete(name)),
+        ),
       )
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -69,6 +73,6 @@ self.addEventListener('fetch', (event) => {
     caches
       .open(CACHE_NAME)
       .then((cache) => cache.match(event.request, { ignoreSearch: true }))
-      .then((cached) => cached || fetch(event.request))
+      .then((cached) => cached || fetch(event.request)),
   );
 });

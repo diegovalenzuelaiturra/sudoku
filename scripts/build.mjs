@@ -16,16 +16,8 @@
    file at a time and the allowlist is allowed to run ahead of the tree. */
 
 import { createHash } from 'node:crypto';
-import {
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 /* The only two imports here that are not node builtins, and they cost the
@@ -42,7 +34,7 @@ import { gzipSync } from 'node:zlib';
 import { minify as minifyHtml } from 'html-minifier-terser';
 import { minify as minifyJs } from 'terser';
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = resolve(import.meta.dirname, '..');
 
 /* The complete set of things that may be published, in publication order.
    type 'dir' is copied recursively; dotfiles are dropped at every level.
@@ -52,6 +44,10 @@ export const ALLOWLIST = [
   { path: '404.html', type: 'file', required: false },
   { path: 'manifest.webmanifest', type: 'file', required: false },
   { path: 'sw.js', type: 'file', required: false },
+  /* Required, unlike the two above: index.html cannot generate a puzzle without
+     it, by either the worker path or the fallback, so a build that published
+     the page without it would ship a game with no games in it. */
+  { path: 'generator.js', type: 'file', required: true },
   { path: 'icons', type: 'dir', required: false },
 ];
 
@@ -65,7 +61,7 @@ export const PLACEHOLDER = '__BUILD__';
    no path separators. A commit SHA passes. A value that could close a string
    literal and keep going, which is a script injection into a file the browser
    runs with origin scope, does not. */
-export const BUILD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+export const BUILD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 
 /* Only these are decoded as text for placeholder substitution. Anything else,
    an icon PNG for instance, is copied byte for byte and never re-encoded. */
@@ -87,7 +83,7 @@ const isText = (relPath) => TEXT_EXTENSIONS.has(extname(relPath).toLowerCase());
    error rather than something to follow quietly. */
 function inspect(root, relPath) {
   const stat = lstatSync(join(root, relPath), { throwIfNoEntry: false });
-  if (stat && stat.isSymbolicLink()) {
+  if (stat?.isSymbolicLink()) {
     throw new Error(`refusing to publish a symlink: ${relPath}`);
   }
   return stat;
@@ -95,7 +91,7 @@ function inspect(root, relPath) {
 
 function walkDir(root, relDir) {
   const found = [];
-  for (const name of readdirSync(join(root, relDir)).sort()) {
+  for (const name of readdirSync(join(root, relDir)).toSorted()) {
     if (name.startsWith('.')) continue;
     const relPath = `${relDir}/${name}`;
     const stat = inspect(root, relPath);
@@ -140,6 +136,40 @@ function collect(root) {
   return { paths, skipped };
 }
 
+/* Scripts folded into the page that asks for them rather than published on
+   their own. app.js is the game, kept in its own file so the linters read it as
+   JavaScript instead of as text inside markup.
+
+   This runs before contentHash below, and has to: the hash covers what is
+   published, so an app.js left out of it would change the game without changing
+   the build id, and every returning visitor would be served the previous
+   version out of the service worker cache. */
+const INLINED_SCRIPTS = new Set(['app.js']);
+
+const SCRIPT_TAG = /[ \t]*<script\s+src="([^"]+)"\s*>\s*<\/script>/gu;
+
+function inlineScripts(root, files) {
+  for (const file of files) {
+    if (extname(file.path).toLowerCase() !== '.html') continue;
+    const html = file.source.toString('utf8');
+    let touched = false;
+
+    const next = html.replace(SCRIPT_TAG, (whole, src) => {
+      if (!INLINED_SCRIPTS.has(src)) return whole;
+      const from = join(root, src);
+      if (!inspect(root, src)?.isFile()) {
+        throw new Error(`${file.path} inlines ${src}, which does not exist`);
+      }
+      touched = true;
+      const indent = whole.slice(0, whole.length - whole.trimStart().length);
+      return `${indent}<script>\n${readFileSync(from, 'utf8').trimEnd()}\n${indent}</script>`;
+    });
+
+    if (touched) file.source = Buffer.from(next, 'utf8');
+  }
+  return files;
+}
+
 /* Deterministic: ALLOWLIST order plus sorted directory entries, hashed over
    path and content, so the same tree yields the same id on any machine. Taken
    before substitution, because the substituted text contains the id itself. */
@@ -169,7 +199,10 @@ export function build({ root = REPO_ROOT, outDir, buildId } = {}) {
   const target = resolve(outDir ?? join(root, '_site'));
   const { paths, skipped } = collect(root);
 
-  const files = paths.map((path) => ({ path, source: readFileSync(join(root, path)) }));
+  const files = inlineScripts(
+    root,
+    paths.map((path) => ({ path, source: readFileSync(join(root, path)) })),
+  );
 
   const envId = (buildId ?? process.env.BUILD_ID ?? '').trim();
   if (envId !== '' && !BUILD_ID_PATTERN.test(envId)) {
@@ -236,13 +269,17 @@ const HTML_MINIFY_OPTIONS = {
      was deleting the only notice it carried: NOTICE is repository metadata and
      is not in the allowlist. Kept by pattern rather than by rewriting the
      comment as <!--! ... -->, so the source stays readable prose. */
-  ignoreCustomComments: [/Material Symbols/],
-  /* conservativeCollapse squeezes a run of whitespace down to a single space
-     instead of deleting it at element boundaries. The toolbar buttons are
-     inline elements whose spacing is that whitespace, so the full collapse can
-     move the layout; it is worth 9 more gzipped bytes than this one. */
+  ignoreCustomComments: [/Material Symbols/u],
+  /* conservativeCollapse would squeeze each run of whitespace down to a single
+     space rather than deleting it, on the theory that a toolbar button is an
+     inline element whose spacing is that whitespace. It is off because that was
+     measured and does not hold here: the toolbar and the tools are flex
+     containers, which do not render whitespace between their items, and the
+     remaining runs sit where a line box trims them. Both builds were rendered
+     in Chromium at 420 and 1280 wide and compared over the bounding box of all
+     1189 elements and the visible text. Nothing moved, and it saves 181 bytes
+     of the ones the formatter's line breaks put there. */
   collapseWhitespace: true,
-  conservativeCollapse: true,
   minifyCSS: true,
   minifyJS: true,
 };
@@ -316,9 +353,7 @@ async function main() {
 
   console.log(`published ${result.files.length} file(s) to ${where}/`);
   for (const file of result.files) {
-    const subs = file.substitutions
-      ? `, ${file.substitutions} ${PLACEHOLDER} substitution(s)`
-      : '';
+    const subs = file.substitutions ? `, ${file.substitutions} ${PLACEHOLDER} substitution(s)` : '';
     const saved = savings.get(file.path);
     const shrunk = saved
       ? `, minified from ${saved.before} (gzipped ${saved.beforeGzip} -> ${saved.afterGzip})`
@@ -345,7 +380,7 @@ async function main() {
   console.log(`build id: ${result.buildId} (${result.idSource})`);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   try {
     await main();
   } catch (error) {

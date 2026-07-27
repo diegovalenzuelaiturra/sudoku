@@ -11,11 +11,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const source = readFileSync(join(root, 'index.html'), 'utf8');
+const root = join(import.meta.dirname, '..');
+/* The game is app.js, which the build inlines into the published page. The
+   markup it drives is still index.html, and the chip test below reads that. */
+const source = readFileSync(join(root, 'app.js'), 'utf8');
+const html = readFileSync(join(root, 'index.html'), 'utf8');
 
 /* The difficulties in the order the start dialog offers them, which is also
    the order the payouts have to be non-decreasing in. */
@@ -24,13 +26,13 @@ const ORDER = ['easy', 'medium', 'hard', 'expert'];
 /* Read per entry rather than by position, so reordering the fields inside a
    row is not a failure. Losing one is. */
 function prizeTable() {
-  const literal = source.match(/const DIFF=\{(.+)\};/);
+  const literal = source.match(/const DIFF\s*=\s*\{([\s\S]*?)\n\};/u);
   assert.ok(literal, 'the DIFF table is not where this test expects to find it');
 
   const rows = new Map();
-  for (const [, key, body] of literal[1].matchAll(/(\w+):\{([^}]*)\}/g)) {
-    const fries = body.match(/fries:(\d+)/);
-    const choco = body.match(/choco:(\d+)/);
+  for (const [, key, row] of literal[1].matchAll(/(\w+):\s*\{([^}]*)\}/gu)) {
+    const fries = row.match(/fries:\s*(\d+)/u);
+    const choco = row.match(/choco:\s*(\d+)/u);
     rows.set(key, {
       fries: fries === null ? null : Number(fries[1]),
       choco: choco === null ? null : Number(choco[1]),
@@ -56,7 +58,7 @@ function prizeTable() {
    it: the guards would keep passing while guarding a few lines. assert.ok on
    the match cannot see that, because a truncated body is still a match. */
 function body(name) {
-  const found = source.match(new RegExp(`function ${name}\\([^{]*\\)\\{[\\s\\S]*?\\n\\}`));
+  const found = source.match(new RegExp(`function ${name}\\([^{]*\\)\\s*\\{[\\s\\S]*?\\n\\}`, 'u'));
   assert.ok(found, `${name}() is not where this test expects to find it`);
 
   let depth = 0;
@@ -119,12 +121,12 @@ test('each prize has a chip, and the chip has an accessible name', () => {
   ];
 
   for (const { chip, count, name } of chips) {
-    const line = source.split('\n').find((text) => text.includes(`id="${chip}"`));
+    const line = html.split('\n').find((text) => text.includes(`id="${chip}"`));
     assert.ok(line, `the status bar has no ${chip}`);
-    assert.match(line, new RegExp(`<b id="${count}">`), `${chip} has no counter to paint`);
+    assert.match(line, new RegExp(`<b id="${count}">`, 'u'), `${chip} has no counter to paint`);
     assert.match(
       line,
-      new RegExp(`class="visually-hidden">[^<]*${name}`),
+      new RegExp(`class="visually-hidden">[^<]*${name}`, 'u'),
       `${chip} is an emoji with no accessible name`,
     );
   }
@@ -133,7 +135,7 @@ test('each prize has a chip, and the chip has an accessible name', () => {
 test('the prize totals are kept out of the game save', () => {
   assert.doesNotMatch(
     body('saveGame'),
-    /friesTotal|chocoTotal/,
+    /friesTotal|chocoTotal/u,
     'saveGame() writes a prize total again, and a win deletes that save moments after paying it',
   );
 });
@@ -144,7 +146,7 @@ test('the prize is banked before the animation timers, never on one', () => {
   assert.ok(scheduled > 0, 'win() schedules nothing, so this test no longer means anything');
   assert.match(
     win.slice(0, scheduled),
-    /bankPrize\(/,
+    /bankPrize\(/u,
     'the prize is banked on a timer, so closing the tab during the animation loses it',
   );
 });
@@ -152,7 +154,7 @@ test('the prize is banked before the animation timers, never on one', () => {
 test('banking a prize consults the stored wallet, not just this tab', () => {
   assert.match(
     body('bankPrize'),
-    /readWallet\(/,
+    /readWallet\(/u,
     "bankPrize() writes this tab's totals blind, which erases a prize banked by another tab",
   );
 });
@@ -167,12 +169,12 @@ test('banking refuses to overwrite a wallet this build cannot read', () => {
   const bank = body('bankPrize');
   assert.match(
     bank,
-    /walletRaw\(\)/,
+    /walletRaw\(\)/u,
     'bankPrize() cannot tell an absent wallet from an unreadable one',
   );
   assert.match(
     bank,
-    /if\([^)]*\)saveWallet\(\)/,
+    /if\s*\([^)]*\)\s*\{?\s*saveWallet\(\)/u,
     'bankPrize() saves unconditionally, so the first win destroys a newer wallet',
   );
 });
@@ -180,8 +182,8 @@ test('banking refuses to overwrite a wallet this build cannot read', () => {
 test('finishing a game clears the save without touching the wallet', () => {
   assert.doesNotMatch(
     body('clearSavedGame'),
-    /WALLET_KEY/,
+    /WALLET_KEY/u,
     'clearSavedGame() removes the wallet too, so every win would wipe the totals it just paid',
   );
-  assert.match(body('saveWallet'), /WALLET_KEY/, 'saveWallet() does not write the wallet key');
+  assert.match(body('saveWallet'), /WALLET_KEY/u, 'saveWallet() does not write the wallet key');
 });
