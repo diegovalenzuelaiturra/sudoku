@@ -893,8 +893,34 @@ function startGame(key,made){
    saveSelectionSoon() below and writes once the burst stops. The
    `!playing||solved` guard below makes saveGame() safe to call
    unconditionally, including right after win() flips `solved`. */
+/* The counters are re-read from storage before every write, for the same reason
+   bankPrize() consults the wallet key again rather than trusting what this tab
+   read at boot. Two tabs on one board used to lose whichever one wrote last: the
+   storage listener adopts STATS_KEY and WALLET_KEY but falls through on
+   SAVE_KEY, so this tab could sit on mistakes 0 while the other had counted
+   three, and the next keystroke here overwrote them with 0. Since the flawless
+   bonus is gated on mistakes===0&&hints===0, that paid a forged prize with two
+   tabs open and no storage editing at all, which is cheaper than the edited save
+   the clamp above closes.
+
+   Both counters only ever rise within a game, so the higher of the two is the
+   true count. Adopted into the live variables and not merely into the bytes,
+   because the gate reads the variables: saveGame() runs before win() evaluates
+   it, on the same keystroke that completes the board. Guarded to a save of this
+   same puzzle, since a save of another board says nothing about this one. The
+   marcador catches up on the next render rather than this instant, which is one
+   action of lag on a number that was wrong until now. */
+function adoptCounters(){
+  let s;
+  try{s=JSON.parse(localStorage.getItem(SAVE_KEY))}catch(e){return}
+  if(!s||typeof s!=='object'||s.v!==SAVE_VERSION)return;
+  if(!Array.isArray(s.solution)||s.solution.join()!==solution.join())return;
+  mistakes=Math.max(mistakes,count(s.mistakes));
+  hints=Math.max(hints,count(s.hints));
+}
 function saveGame(){
   if(!playing||solved)return;
+  adoptCounters();
   try{
     localStorage.setItem(SAVE_KEY,JSON.stringify({
       v:SAVE_VERSION,
@@ -1312,9 +1338,23 @@ function loadGame(){
      written past the end of the grid, and the next autosave persists an 82+ cell
      board that loadGame() rejects on the following load. The game is gone. */
   sel=Number.isInteger(s.sel)&&s.sel>=0&&s.sel<81?s.sel:-1;
-  mistakes=Number(s.mistakes)||0;
-  hints=Number(s.hints)||0;
-  seconds=Number(s.seconds)||0;
+  /* Read through count(), the rule every total arriving from outside this tab
+     already goes through, because these three come from storage a player can
+     edit. Number(x)||0 accepted a negative, and mistakes is one of the two
+     fields the flawless bonus is gated on: a save carrying mistakes:-3 restored,
+     let three real and visible wrong entries bring the counter up to exactly 0,
+     and paid double papas plus the chocolates on a board with three wrong digits
+     on it.
+
+     seconds is the same shape with a worse ending. A negative restored, rendered
+     as -15:00, and recordWin() wrote it as that difficulty's best time. The next
+     boot sanitised the stored best to 0 through the same count(), after which
+     time<row.best could never be true again and that difficulty could never
+     record a best time. Clamping here is what stops the record being poisoned;
+     repairing one already poisoned is not attempted, and is noted in the PR. */
+  mistakes=count(s.mistakes);
+  hints=count(s.hints);
+  seconds=count(s.seconds);
   diffKey=s.diffKey;
   /* hasOwnProperty for the same reason the DIFF lookup above uses it: every
      name on Object.prototype answers truthy to GRADE_WORDS[key], so a save
