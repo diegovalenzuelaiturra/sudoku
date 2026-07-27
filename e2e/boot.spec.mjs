@@ -240,7 +240,7 @@ for (const preset of PRESETS) {
   });
 }
 
-test('undo restores hint, mistake and given state', async ({ page }) => {
+test('undo restores the board but never the counters', async ({ page }) => {
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
   await expect(page.locator('#startOverlay')).toBeHidden();
 
@@ -252,10 +252,10 @@ test('undo restores hint, mistake and given state', async ({ page }) => {
   expect(index, 'no cell is selected after starting').toBeGreaterThanOrEqual(0);
   const cell = page.locator('#board .cell').nth(index);
 
-  /* Hint fills the cell and marks it given; undo must roll both back, or the
-     cell stays locked holding a value the player can no longer edit. Typed on
-     a real keyboard, so this also covers the document-level handler seeing the
-     key at all. */
+  /* Hint fills the cell and marks it given; undo must roll the board back, or
+     the cell stays locked holding a value the player can no longer edit. Typed
+     on a real keyboard, so this also covers the document-level handler seeing
+     the key at all. */
   await page.keyboard.press('h');
   await expect(page.locator('#hints')).toHaveText('1');
   await expect(cell).toHaveClass(/given/);
@@ -264,18 +264,26 @@ test('undo restores hint, mistake and given state', async ({ page }) => {
   expect(hinted).toMatch(/^[1-9]$/);
 
   await page.keyboard.press('z');
-  await expect(page.locator('#hints')).toHaveText('0');
   await expect(cell).not.toHaveClass(/given/);
   /* The undone cell announces itself as empty and editable again, which is the
      player-visible meaning of the class check above. */
   await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, vacía$/);
   await expect(cell.locator('.v')).toBeEmpty();
+  /* The board rolled back and the record did not. The answer was on the screen,
+     and pressing Z cannot un-see it. */
+  await expect(page.locator('#hints')).toHaveText('1');
 
-  /* A wrong entry must not strand the mistake counter, which gates the bonus. */
+  /* The same rule for a wrong entry, and this is the half that gates the bonus:
+     rewinding it would make guess-then-undo a free route to a flawless win. */
   await page.keyboard.press(String((Number(hinted) % 9) + 1));
   await expect(page.locator('#mistakes')).toHaveText('1');
   await page.keyboard.press('z');
-  await expect(page.locator('#mistakes')).toHaveText('0');
+  /* The board first, for the same reason the hint half checks it: the counter
+     reads 1 on both sides of the key, so on its own it would pass against an
+     undo that never ran. The line this replaced asserted '0', which at least
+     proved the keypress had arrived. */
+  await expect(cell.locator('.v')).toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('1');
 });
 
 test('keyboard focus is painted on the board, a pointer click is not', async ({ page }) => {

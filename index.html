@@ -656,8 +656,24 @@ for(let d=1;d<=9;d++){
 /* ---- helpers ---- */
 const pad2=n=>String(n).padStart(2,'0');
 const fmt=s=>s<3600?`${(s/60)|0}:${pad2(s%60)}`:`${(s/3600)|0}:${pad2(((s/60)|0)%60)}:${pad2(s%60)}`;
+/* The counters used to ride along in here and be put back by undo(), which meant
+   Deshacer erased the very mistake it was undoing: the marcador rewound,
+   saveGame() persisted the rewound number, and because the flawless bonus is
+   gated on mistakes===0&&hints===0, guessing a digit and undoing it when wrong
+   paid double papas plus the chocolates a clean solve exists to reserve. That
+   was the only route to a forged prize needing nothing but the game's own
+   buttons. Hints were the cheaper one: press H, read the answer, press Z, and
+   the hint was off the record while the digit was still on screen. Undo restores
+   a board. It cannot un-see an answer or un-make a mistake, so what the player
+   did is not its to rewrite.
+
+   7736ed4 put those two fields in here on purpose, and this reverts that half of
+   it with the cost taken knowingly: a mis-tapped digit, or a stray H, now
+   forfeits the bonus for the rest of the board. Its other half is why fixed is
+   still snapshotted, so undoing a hint unlocks the cell instead of leaving it
+   given and holding a value the player can no longer edit. */
 function snapshot(){
-  undoStack.push({values:values.slice(),fixed:fixed.slice(),notes:notes.map(s=>[...s]),mistakes,hints});
+  undoStack.push({values:values.slice(),fixed:fixed.slice(),notes:notes.map(s=>[...s])});
   if(undoStack.length>300)undoStack.shift();
 }
 /* Board geometry, needed here as well as in generator.js: this side of the wall
@@ -1459,7 +1475,6 @@ function undo(){
   values=s.values;
   fixed=s.fixed;
   notes=s.notes.map(a=>new Set(a));
-  mistakes=s.mistakes;hints=s.hints;
   render();
   saveGame();
 }
