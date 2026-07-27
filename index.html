@@ -601,6 +601,26 @@ const boardEl=$('board'),padEl=$('pad');
 let solution=new Array(81).fill(0),fixed=new Array(81).fill(false),values=new Array(81).fill(0),puzzle=new Array(81).fill(0);
 let notes=Array.from({length:81},()=>new Set()),sel=-1;
 let notesMode=false,mistakes=0,hints=0,seconds=0,tick=null,paused=false,solved=false,playing=false;
+/* Which cells have had their answer shown. Counters stopped rewinding with the
+   undo stack, which is right for a mistake but charged twice for one revealed
+   digit: hint() leaves sel on the cell it filled and undo() does not restore
+   sel, so H, Z, H found that cell empty and editable again and spent a second
+   hint on an answer already seen. Charging is per cell, not per press.
+
+   Deliberately not persisted. Written into the save it would be read back from
+   storage the player can edit, and a planted revealed:[0..80] with hints:0 buys
+   a whole board of free hints while the flawless gate still reads zero, which is
+   the forged prize this game keeps having to close. The cost of keeping it in
+   memory is that a reload forgets, so a cell revealed and undone before the
+   reload can be charged once more. That is what every build before this one did
+   for every hint, and it is not a prize anyone can farm. */
+let revealed=new Set();
+/* What the next render() should say out loud, for actions that change no
+   counter and so would otherwise be silent. render() is the single writer of
+   #srStatus during play and the only thing that keeps srLast in step; writing
+   the element directly from an action clobbers whatever render() just put there
+   and leaves srLast claiming it was said. */
+let srAction='';
 let undoStack=[],diffKey='medium',friesTotal=0,chocoTotal=0,winTimers=[],pausedByDialog=false;
 /* What the board in play actually is, as opposed to what was asked for: the
    grade it was measured at and the seed it was built from. Both are shown to
@@ -854,7 +874,7 @@ function startGame(key,made){
   values=generated.slice();
   fixed=generated.map(v=>v!==0);
   notes=Array.from({length:81},()=>new Set());
-  undoStack=[];mistakes=0;hints=0;seconds=0;solved=false;playing=true;notesMode=false;pausedByDialog=false;
+  undoStack=[];mistakes=0;hints=0;seconds=0;solved=false;playing=true;notesMode=false;pausedByDialog=false;revealed=new Set();
   sel=values.indexOf(0);
   $('notesBtn').setAttribute('aria-pressed','false');
   showNotesHint();
@@ -1369,7 +1389,7 @@ function loadGame(){
   puzzleGrade=graded?Number(s.grade):DIFF[s.diffKey].grade;
   puzzleSeed=seeded?s.seed:0;
   puzzleMeasured=graded&&seeded;
-  solved=false;playing=true;notesMode=false;pausedByDialog=false;undoStack=[];
+  solved=false;playing=true;notesMode=false;pausedByDialog=false;undoStack=[];revealed=new Set();
   winTimers.forEach(clearTimeout);winTimers=[];
   $('notesBtn').setAttribute('aria-pressed','false');
   showNotesHint();
@@ -1515,11 +1535,30 @@ function undo(){
   values=s.values;
   fixed=s.fixed;
   notes=s.notes.map(a=>new Set(a));
+  /* render() speaks when a counter moves or the cells left cross a ten. Undoing
+     a wrong digit moves neither, since a wrong digit is already counted as
+     unfilled, and undo moves no focus, so no cell label is re-read either: with
+     nothing here Deshacer is completely silent to a screen reader. Undoing a
+     correct digit or a hint does move the count, which is why this is handed to
+     render() rather than written to the element: written directly it overwrote
+     the count render() had just announced, after srLast had already recorded it
+     as said, so that crossing was lost for good. */
+  srAction='Deshecho.';
   render();
   saveGame();
 }
 function hint(){
   if(!playing||paused)return;
+  /* A given, and nothing else. Givens are selectable so the row, column and box
+     highlighting can follow them, so a stray H while looking at one used to fall
+     through to the random branch below and spend the bonus on a cell nobody
+     asked about, which Deshacer no longer refunds. Refusing every ineligible
+     cell instead is worse: values[sel]===solution[sel] is where sel sits after
+     every correct entry, so that turns the Pista button inert on a share of the
+     board that grows to all of it. Those still fall through, which is the press
+     that means "help me somewhere". Announced rather than silently ignored: a
+     key that does nothing and says nothing reads as one that never registered. */
+  if(sel>=0&&fixed[sel]){srAction='Esa casilla ya viene dada.';render();return}
   let i=sel>=0&&!fixed[sel]&&values[sel]!==solution[sel]?sel:-1;
   if(i<0){
     const open=[];
@@ -1532,7 +1571,10 @@ function hint(){
   fixed[i]=true;
   notes[i].clear();
   for(const p of PEERS[i])notes[p].delete(solution[i]);
-  hints++;sel=i;
+  /* Once per cell. The answer was shown once, however many times it is undone
+     and asked for again. */
+  if(!revealed.has(i)){hints++;revealed.add(i)}
+  sel=i;
   render();
   saveGame();
   if(values.every((v,k)=>v===solution[k]))win();
@@ -1581,12 +1623,22 @@ function render(){
      cells one by one does not spam the user. */
   if(playing){
     const srBits=[];
+    if(srAction){srBits.push(srAction);srAction=''}
     if(mistakes!==srLast.mistakes)srBits.push(mistakes===1?'1 error':`${mistakes} errores`);
     if(hints!==srLast.hints)srBits.push(hints===1?'1 pista usada':`${hints} pistas usadas`);
     if(left!==srLast.remaining&&(srLast.remaining===null||((left/10)|0)!==((srLast.remaining/10)|0))){
       srBits.push(left===0?'tablero completo':`${left} celdas por llenar`);
     }
-    if(srBits.length)$('srStatus').textContent=srBits.join('. ')+'.';
+    if(srBits.length){
+      const said=srBits.join('. ')+'.';
+      const node=$('srStatus');
+      /* An aria-atomic live region is only read out when its content changes,
+         and two undos in a row produce the same sentence, so the second press
+         was silent. Cleared and written back in a later task when the text would
+         repeat, which is a real change either side of it. */
+      if(node.textContent===said){node.textContent='';setTimeout(()=>{node.textContent=said},0)}
+      else node.textContent=said;
+    }
     srLast={mistakes,hints,remaining:left};
   }
 }
