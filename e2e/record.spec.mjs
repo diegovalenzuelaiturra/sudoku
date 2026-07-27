@@ -228,6 +228,28 @@ test('a save with a negative clock cannot poison the best time', async ({ page }
   expect(problems).toEqual([]);
 });
 
+/* The streak is the other consumer of the counters and the one a player is most
+   likely to notice: undoing a wrong digit ends a run of flawless wins that
+   Deshacer used to hide. The payout tests own the wallet, this owns the record. */
+test('a mistake undone still breaks the streak', async ({ page }) => {
+  const problems = await boot(page);
+
+  await startGame(page, 'medium');
+  await solve(page);
+  await page.locator('#againBtn').click();
+
+  await startGame(page, 'medium');
+  await spoil(page);
+  await page.locator('#undoBtn').click();
+  await expect(page.locator('#mistakes')).toHaveText('1');
+  await solve(page);
+  await page.locator('#againBtn').click();
+
+  await openRecord(page);
+  await expect(page.locator('#streakLine')).toHaveText('Racha de secas: 0. La mejor: 1.');
+  expect(problems).toEqual([]);
+});
+
 test('redeeming takes two presses, and the second one empties the balance', async ({ page }) => {
   const problems = await boot(page);
   await startGame(page, 'medium');
