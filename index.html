@@ -132,6 +132,12 @@
   /* ---------- board ---------- */
   .board-wrap{position:relative}
   .board{
+    /* The two column layout has the same problem the single column one has
+       under 720px, for the same reason and with different numbers: measured at
+       1440x700 the page overflows by 35px. The chrome around the board here is
+       137px, so the board yields the rest, floored so its cells never fall
+       below 32px. On a tall window min() picks 100% and nothing changes. */
+    max-width:min(100%,max(288px,calc(100dvh - 145px)));
     display:grid;grid-template-columns:repeat(9,1fr);aspect-ratio:1;
     background:var(--paper-raised);
     border:2px solid var(--ink);border-radius:4px;overflow:hidden;
@@ -231,7 +237,19 @@
   .overlay{
     position:fixed;inset:0;background:rgba(34,36,30,.42);z-index:10;
     display:none;align-items:center;justify-content:center;padding:20px;
+    /* A dialog taller than the window used to be centred and then cut off at
+       both ends, with no way to reach either. The record is the one that grows:
+       at 532px it does not fit a 420px window, and it took the title and the
+       button with it. Scrolling the backdrop rather than the dialog keeps the
+       dialog itself one piece.
+
+       auto margins on the modal, not align-items:center, because a flex item
+       centred by the container cannot be scrolled back up to: the overflow goes
+       to both sides and the top is unreachable. Auto margins collapse to zero
+       on the side that has no room, which is the behaviour wanted. */
+    overflow-y:auto;
   }
+  .overlay .modal{margin:auto}
   .overlay.show{display:flex}
   .modal{
     background:var(--paper-raised);border:2px solid var(--ink);border-radius:10px;
@@ -253,6 +271,12 @@
   .modal .stat b{font-family:var(--serif);font-size:18px;display:block}
   .modal .stat i{font-style:normal;font-size:10.5px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
   .modal .quiet{margin-top:12px;background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;text-decoration:underline}
+  /* Only the two that carry an icon. The Canjear buttons share .quiet and have
+     bare text, so moving the underline onto a label outright would take theirs
+     away. Underlining the button would draw a line under the glyph as well,
+     which reads as an underlined icon rather than a link. */
+  .modal .quiet:has(.ico){display:inline-flex;align-items:center;gap:5px;text-decoration:none}
+  .modal .quiet .label{text-decoration:underline}
   /* A disabled difficulty button is not broken, it is busy: keep it legible
      rather than greying it into something that looks unavailable for good. */
   .diff[disabled],.modal .quiet[disabled]{opacity:.5;cursor:default}
@@ -263,7 +287,15 @@
      which takes it out, so text written before unhiding is text no screen
      reader ever hears. Empty it is zero height and costs nothing. */
   .genstatus:empty{margin-top:0}
-  .modal .code{margin-top:14px;font-size:11px;color:var(--ink-soft);letter-spacing:.04em}
+  /* The bottom margin is not spacing, it is clearance. This line sits directly
+     above the dialog's button, which is focused the moment the dialog opens, and
+     button:focus-visible draws a 2px outline at a 2px offset: 4px outside the
+     button's own box, over whatever is flush against it. With margin-top alone
+     the two boxes met exactly, measured at 0px, and the ring was painted through
+     the descenders of "Técnica" and "Código". 8px leaves the ring its 4px and
+     4px of air. */
+  .modal .code{margin:14px 0 8px;font-size:11px;color:var(--ink-soft);letter-spacing:.04em}
+  #streakIcon{margin-right:5px}
   .modal .code b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
 
   /* ---------- the record ---------- */
@@ -315,7 +347,23 @@
   @media (max-width:719px){
     body{padding:14px 10px 30px}
     main{grid-template-columns:1fr;gap:16px}
-    .board{max-width:520px;margin:0 auto}
+    /* The board is the only thing in this column that can give up space, so it
+       is what yields when the viewport is short. A browser tab spends about
+       140px on the URL bar and the toolbar that the installed app keeps, and
+       that is the whole difference between the page fitting and the header
+       scrolling up underneath the URL bar: measured on a 393 wide iPhone, the
+       column is 698px against 800px of standalone viewport and 660px of tab.
+
+       dvh, not vh: on iOS vh is the large viewport, the one that pretends the
+       toolbars are not there, which is exactly what needs compensating for.
+       330px is the rest of the column, header, status, pad, tools, button and
+       the body padding, measured at 325 and rounded up.
+
+       The floor matters as much as the cap. Without it a 560px viewport asks
+       for a 230px board, whose cells are 25px, and a cell too small to hit is
+       worse than a page that scrolls. At 288px they are 32px and the page
+       scrolls again, which is where this started. */
+    .board{max-width:min(520px,100%,max(288px,calc(100dvh - 330px)));margin:0 auto}
     .controls{max-width:520px;margin:0 auto;width:100%}
     .tools{grid-template-columns:repeat(4,1fr)}
     .tool .k{display:none}
@@ -353,6 +401,12 @@
             </symbol>
             <symbol id="i-stylus_note" viewBox="0 -960 960 960">
                 <path d="m499-259 364-363-81-80-363 363 80 80Zm-280 48q-88-6-133.5-40.5T40-349q0-60 51-98t142-46q44-4 65.5-16t21.5-33q0-29-29-44.5T194-609l5-60q89 9 135 41t46 86q0 46-37.5 75T238-433q-69 5-103.5 26T100-349q0 35 30.5 54.5T222-271l-3 60Zm299 18L353-358l398-397q14-14 31.5-13.5T814-755l102 101q14 14 14 32t-14 32L518-193Zm-159 33q-17 4-30-9t-9-30l33-159 165 165-159 33Z"/>
+            </symbol>
+            <symbol id="i-leaderboard" viewBox="0 -960 960 960">
+                <path d="M160-200h160v-320H160v320Zm240 0h160v-560H400v560Zm240 0h160v-240H640v240ZM80-120v-480h240v-240h320v320h240v400H80Z"/>
+            </symbol>
+            <symbol id="i-local_fire_department" viewBox="0 -960 960 960">
+                <path d="M240-400q0 52 21 98.5t60 81.5q-1-5-1-9v-9q0-32 12-60t35-51l113-111 113 111q23 23 35 51t12 60v9q0 4-1 9 39-35 60-81.5t21-98.5q0-50-18.5-94.5T648-574q-20 13-42 19.5t-45 6.5q-62 0-107.5-41T401-690q-39 33-69 68.5t-50.5 72Q261-513 250.5-475T240-400Zm240 52-57 56q-11 11-17 25t-6 29q0 32 23.5 55t56.5 23q33 0 56.5-23t23.5-55q0-16-6-29.5T537-292l-57-56Zm0-492v132q0 34 23.5 57t57.5 23q18 0 33.5-7.5T622-658l18-22q74 42 117 117t43 163q0 134-93 227T480-80q-134 0-227-93t-93-227q0-129 86.5-245T480-840Z"/>
             </symbol>
             <symbol id="i-lightbulb" viewBox="0 -960 960 960">
                 <path d="M422.5-103.5Q399-127 399-161h162q0 34-23.5 57.5T480-80q-34 0-57.5-23.5ZM318-223v-60h324v60H318Zm5-121q-66-43-104.5-107.5T180-597q0-122 89-211t211-89q122 0 211 89t89 211q0 81-38 145.5T637-344H323Zm22-60h271q48-32 76-83t28-110q0-99-70.5-169.5T480-837q-99 0-169.5 70.5T240-597q0 59 28 110t77 83Zm135 0Z"/>
@@ -597,13 +651,31 @@
                     type="button"
                     class="quiet"
                     id="recordBtn"
-                >Ver mi registro</button>
+                >
+                    <svg
+                        class="ico"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <use href="#i-leaderboard"/>
+                    </svg>
+                    <span class="label">Ver mi registro</span>
+                </button>
                 <button
                     type="button"
                     class="quiet"
                     id="cancelNew"
                     hidden
-                >Seguir jugando</button>
+                >
+                    <svg
+                        class="ico"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <use href="#i-play_arrow"/>
+                    </svg>
+                    <span class="label">Seguir jugando</span>
+                </button>
             </div>
         </div>
 
@@ -655,7 +727,23 @@
                 aria-labelledby="recordTitle"
             >
                 <h2 id="recordTitle">TU REGISTRO</h2>
-                <p class="lede" id="streakLine">Sin partidas todavía.</p>
+                <!-- The flame is hidden at a streak of zero, because an icon that
+                    means "you are on a run" beside the number 0 says the opposite of
+                    what it draws. It inherits currentColor like every other sprite
+                    icon, so it stays the muted grey of this line rather than
+                    competing with the prize emoji below. -->
+                <p class="lede" id="streakLine">
+                    <svg
+                        class="ico"
+                        id="streakIcon"
+                        aria-hidden="true"
+                        focusable="false"
+                        hidden
+                    >
+                        <use href="#i-local_fire_department"/>
+                    </svg>
+                    <span id="streakText">Sin partidas todavía.</span>
+                </p>
                 <table class="record">
                     <thead>
                         <tr>
