@@ -250,4 +250,4 @@ repos:
         entry: npm run test:coverage
         language: system
         pass_filenames: false
-        files: ^(scripts/|tests/|e2e/|\.github/workflows/|index\.html|sw\.js|manifest\.webmanifest|404\.html|robots\.txt|package(-lock)?\.json|icons/)
+        files: ^(scripts/|tests/|e2e/|\.github/workflows/|index\.html|generator\.js|sw\.js|manifest\.webmanifest|404\.html|robots\.txt|package(-lock)?\.json|icons/)

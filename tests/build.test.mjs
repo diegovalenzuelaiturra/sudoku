@@ -30,13 +30,16 @@ import { build, BUILD_ID_PATTERN, PLACEHOLDER } from '../scripts/build.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/* A minimal publishable tree: the one required allowlist entry, plus the two
+/* A minimal publishable tree: both required allowlist entries, plus the two
    optional text files whose whole point is to carry the build id. */
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'sudoku-build-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
   writeFileSync(join(dir, 'index.html'), `<!doctype html><meta name=b content=${PLACEHOLDER}>`);
+  /* Required, and carries no placeholder: the build has to publish it either
+     way, which is the case a fixture with only substituted files would miss. */
+  writeFileSync(join(dir, 'generator.js'), 'function makePuzzle() {}\n');
   writeFileSync(join(dir, 'sw.js'), `const CACHE = "sudoku-${PLACEHOLDER}";\n`);
   writeFileSync(join(dir, 'manifest.webmanifest'), `{"name":"s","id":"${PLACEHOLDER}"}`);
   /* Not text, so it must come through byte for byte and never be re-encoded. */
@@ -60,6 +63,7 @@ test('the build id replaces every __BUILD__ in every published text file', (t) =
   const counts = Object.fromEntries(result.files.map((f) => [f.path, f.substitutions]));
   assert.deepEqual(counts, {
     'index.html': 1,
+    'generator.js': 0,
     'manifest.webmanifest': 1,
     'sw.js': 1,
     'icons/app.png': 0,

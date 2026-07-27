@@ -52,6 +52,10 @@ export const ALLOWLIST = [
   { path: '404.html', type: 'file', required: false },
   { path: 'manifest.webmanifest', type: 'file', required: false },
   { path: 'sw.js', type: 'file', required: false },
+  /* Required, unlike the two above: index.html cannot generate a puzzle without
+     it, by either the worker path or the fallback, so a build that published
+     the page without it would ship a game with no games in it. */
+  { path: 'generator.js', type: 'file', required: true },
   { path: 'icons', type: 'dir', required: false },
 ];
 
