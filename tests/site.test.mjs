@@ -57,7 +57,8 @@ const PRIVATE = new Set([
   'scripts',
 ]);
 
-const ASSET = /\.(?:html|js|mjs|css|json|webmanifest|map|txt|xml|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf)$/i;
+const ASSET =
+  /\.(?:html|js|mjs|css|json|webmanifest|map|txt|xml|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf)$/i;
 
 /* navigator.serviceWorker.register lives inside an inline script, so it is not
    an attribute and the attribute sweep cannot see it. */
@@ -72,7 +73,8 @@ const REGISTER = /serviceWorker\s*\.\s*register\s*\(\s*['"`]([^'"`\n]+)['"`]/g;
    so <script src> is still swept. */
 const COMMENT = /<!--[\s\S]*?-->/g;
 const RAW_TEXT = /(<(script|style)\b[^>]*>)[\s\S]*?<\/\2\s*>/gi;
-const START_TAG = /<([a-zA-Z][a-zA-Z0-9:-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'`=<>]+))?)*)\s*\/?>/g;
+const START_TAG =
+  /<([a-zA-Z][a-zA-Z0-9:-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'`=<>]+))?)*)\s*\/?>/g;
 const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+)))?/g;
 
 /* Attributes are written escaped and read back decoded, which is the form
@@ -84,7 +86,7 @@ const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0'
    precache list looks like. Anything cleverer needs a parser, and anything
    looser starts flagging cache names and header values. An array this misses is
    a check not run; an array it invents is a red build for no reason. */
-const QUOTED = "(?:'[^'\\n]*'|\"[^\"\\n]*\"|`[^`\\n]*`)";
+const QUOTED = '(?:\'[^\'\\n]*\'|"[^"\\n]*"|`[^`\\n]*`)';
 const STRING_ARRAY = new RegExp(`\\[\\s*(${QUOTED}(?:\\s*,\\s*${QUOTED})*\\s*,?)\\s*\\]`, 'g');
 const QUOTED_ITEM = new RegExp(QUOTED, 'g');
 

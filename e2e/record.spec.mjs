@@ -98,7 +98,8 @@ test('the difficulty buttons cannot be reached from behind the record', async ({
   for (let press = 0; press < 4; press++) {
     await page.keyboard.press('Tab');
     const escaped = await page.evaluate(
-      () => document.activeElement !== null && document.activeElement.closest('#startOverlay') !== null,
+      () =>
+        document.activeElement !== null && document.activeElement.closest('#startOverlay') !== null,
     );
     expect(escaped, 'Tab reached the dialog behind the record').toBe(false);
   }
@@ -414,7 +415,9 @@ test('a board that cannot be built at all says so instead of hanging', async ({ 
   const problems = await boot(page);
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
 
-  await expect(page.locator('#genStatus')).toHaveText('No se pudo armar el tablero. Probá de nuevo.');
+  await expect(page.locator('#genStatus')).toHaveText(
+    'No se pudo armar el tablero. Probá de nuevo.',
+  );
   await expect(page.locator('#startOverlay')).toBeVisible();
   /* And the buttons are handed back, so "probá de nuevo" is something the
      player can actually do. */

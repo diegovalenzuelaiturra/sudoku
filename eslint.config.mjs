@@ -1,25 +1,18 @@
-/* Three linters run over this tree: oxlint, ESLint and Biome. ESLint owns the
-   markup and the scope analysis, which needs to know which of four environments
-   a file runs in. The last entry hands .oxlintrc.json to eslint-plugin-oxlint,
-   which switches off the 68 rules oxlint already reports and reuses its ignore
-   list.
+/* ESLint owns the markup and the scope analysis. The last entry hands
+   .oxlintrc.json to eslint-plugin-oxlint, which switches off the 68 rules oxlint
+   already reports and reuses its ignore list.
 
-   .oxlintrc.json is plain JSON so every JSON tool can read it, which leaves it
-   nowhere to record two things:
+   .oxlintrc.json is plain JSON, so its three decisions are recorded here.
 
-   Only the correctness category is on. The others were run over this tree
+   Only oxlint's correctness category is on. The rest were run over this tree
    first: suspicious 33 findings, perf 22, pedantic 202, restriction 341, style
-   1403, and what is not opinion is a false positive here. Two that look like
-   bugs and are not: no-unmodified-loop-condition on the "while (left > 0)"
-   search in generator.js, where left is decremented by a helper it cannot see
-   through, and require-post-message-target-origin on that file's worker
-   replies, which have no target origin to pass.
+   1403, and what is not opinion is a false positive here.
 
    unicorn/no-new-array is off because all 33 sites are new Array(n).fill(x).
 
    .claude is ignored because it holds git worktrees, so from the main checkout
    a linter descending into it reads a second copy of the repository for every
-   open branch. tests/typography.test.mjs skips it for the same reason. */
+   open branch. */
 
 import { defineConfig } from 'eslint/config';
 import js from '@eslint/js';
@@ -35,22 +28,19 @@ export default defineConfig([
     languageOptions: { sourceType: 'module', globals: globals.node },
   },
 
-  /* A Playwright spec holds two languages: node outside page.evaluate, and page
-     code inside it, which ESLint resolves against the same scope and reports as
-     undefined. All 109 hits were inside an evaluate, waitForFunction or
-     addInitScript callback, naming globals app.js defines. Declaring those here
-     would be a copy of the app's internals that nothing keeps honest. */
+  /* A spec holds two languages: node outside page.evaluate, and page code
+     inside it, which ESLint resolves against the same scope and reports as
+     undefined. All 109 hits were of that second kind. Declaring those names here
+     would be a copy of app.js's internals that nothing keeps honest. */
   {
     files: ['e2e/**/*.mjs'],
     rules: { 'no-undef': 'off' },
   },
 
-  /* A classic script, not a module: it runs as a worker, and index.html injects
-     it as a plain script when constructing one throws.
-
-     no-implicit-globals is the "exactly one global" rule. On the fallback path
-     this file shares global scope with app.js, so a second top level binding of
-     a name they both use is a SyntaxError, and only on that path. */
+  /* A classic script: it runs as a worker, and app.js injects it as a plain
+     script when constructing one throws. On that fallback path it shares global
+     scope with app.js, so a second top level binding of a shared name is a
+     SyntaxError. no-implicit-globals is that rule. */
   {
     files: ['generator.js'],
     extends: [js.configs.recommended],
@@ -66,8 +56,8 @@ export default defineConfig([
     languageOptions: { sourceType: 'script', globals: globals.serviceworker },
   },
 
-  /* The game. The build inlines it into index.html as a classic script.
-     localStorage throws in private modes, and every one of those reads is best
+  /* The game, which the build inlines into index.html as a classic script.
+     localStorage throws in private modes and every one of those reads is best
      effort, so an empty catch is the handling rather than a missing one. */
   {
     files: ['app.js'],
@@ -87,8 +77,7 @@ export default defineConfig([
     rules: {
       /* Pages serves this repository under /sudoku/, so a rooted path resolves
          against a different site and 404s in production only.
-         tests/assets.test.mjs checks the same thing over five named files; this
-         checks every HTML file. */
+         tests/assets.test.mjs checks five named files; this checks all of them. */
       'html/no-restricted-attr-values': [
         'error',
         {
@@ -110,9 +99,8 @@ export default defineConfig([
       'html/no-duplicate-class': 'error',
 
       /* Markup nests deeper than the code, so HTML is the one place this tree is
-         not on two spaces. .editorconfig carries the matching [*.html] block and
-         has to keep saying the same number, or an editor and this rule take
-         turns rewriting the file. */
+         not on two spaces. .editorconfig and biome.json carry the same number
+         and have to keep doing so. */
       'html/indent': ['error', 4],
     },
   },

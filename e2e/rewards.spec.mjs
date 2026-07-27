@@ -483,9 +483,10 @@ test('a stored total too large to add to is refused, not carried', async ({ page
   await startGame(page);
   await solve(page);
   await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
-  expect(await readWallet(page), 'the win banked against a total it could not add to').toMatchObject(
-    { fries: NORMAL.fries * 2, choco: NORMAL.choco },
-  );
+  expect(
+    await readWallet(page),
+    'the win banked against a total it could not add to',
+  ).toMatchObject({ fries: NORMAL.fries * 2, choco: NORMAL.choco });
   expect(problems).toEqual([]);
 });
 
@@ -498,10 +499,10 @@ test('a wallet from an unknown version is ignored, not overwritten', async ({ pa
      at a literal, this test quietly stopped meaning anything the moment the
      wallet gained a ledger and version 2 became readable. */
   const planted = { v: WALLET_VERSION + 1, fries: 99, choco: 9 };
-  await page.addInitScript(
-    ({ key, wallet }) => localStorage.setItem(key, JSON.stringify(wallet)),
-    { key: WALLET_KEY, wallet: planted },
-  );
+  await page.addInitScript(({ key, wallet }) => localStorage.setItem(key, JSON.stringify(wallet)), {
+    key: WALLET_KEY,
+    wallet: planted,
+  });
 
   const problems = await boot(page);
   await expect(page.locator('#fries')).toHaveText('0');

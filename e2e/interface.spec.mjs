@@ -133,7 +133,9 @@ test('every icon reference resolves to a symbol the browser can paint', async ({
   /* Read from the bytes the server published, not from a source file the
      allowlist may never publish. */
   const source = await (await page.request.get('./')).text();
-  expect(source, 'the play icon is never used').toMatch(/<use href="#i-play_arrow"|'#i-play_arrow'/);
+  expect(source, 'the play icon is never used').toMatch(
+    /<use href="#i-play_arrow"|'#i-play_arrow'/,
+  );
 });
 
 /* The five in play controls plus the pause button. Chrome applies CSS
@@ -466,7 +468,8 @@ test('the notes button explains itself, on screen only while notes are on', asyn
   const cdp = await context.newCDPSession(page);
   const described = () =>
     accessibleNodes(cdp).then(
-      (nodes) => nodes.find((node) => node.role === 'button' && /Notas/.test(node.name))?.description,
+      (nodes) =>
+        nodes.find((node) => node.role === 'button' && /Notas/.test(node.name))?.description,
     );
 
   expect(await described(), 'the button carries no description while notes are off').toBe(text);

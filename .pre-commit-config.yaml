@@ -250,8 +250,9 @@ repos:
         pass_filenames: false
         files: \.(m?js|html)$|^\.oxlintrc\.json$
 
-      # The only one of the three that reads the JavaScript and CSS inside
-      # index.html. It overlaps the other two on purpose.
+      # Linter and formatter. The only one of the three that reads the
+      # JavaScript and CSS inside index.html, and the only one that formats
+      # anything but markup. It overlaps the other two on purpose.
       - id: biome
         name: biome
         entry: npm run --silent lint:biome

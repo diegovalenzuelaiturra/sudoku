@@ -57,39 +57,31 @@ not notice a brand new script that nothing imports.
 
 ```sh
 npm run lint:oxlint     # oxlint, the whole tree in milliseconds
-npm run lint:eslint     # ESLint, which is also what lints the markup
-npm run lint:biome      # Biome, which is what reads inside index.html
+npm run lint:eslint     # ESLint, which is what lints the markup
+npm run lint:biome      # Biome, lint and format
 npm run lint:fix        # all three, applying every fix they can make themselves
 ```
 
-[oxlint](https://oxc.rs) runs its `correctness` rules, the category it reserves
-for code that is simply wrong. [ESLint](https://eslint.org) takes the markup of
-`index.html` and `404.html` through [html-eslint](https://html-eslint.org), and
-the scope analysis that has to know whether a file is a node module, a classic
-worker script or a service worker. [Biome](https://biomejs.dev) is the only one
-of the three that reads the JavaScript and the CSS inside `index.html`, and it
-overlaps the other two on purpose: it is fast enough that the overlap is cheaper
-than deciding which tool owns which rule.
+[oxlint](https://oxc.rs) runs its `correctness` rules. [ESLint](https://eslint.org)
+takes the markup of `index.html` and `404.html` through
+[html-eslint](https://html-eslint.org), and the scope analysis that has to know
+whether a file is a node module, a classic worker script or a service worker.
+[Biome](https://biomejs.dev) lints and formats the JavaScript, including the CSS
+and the script inside `index.html`, which the other two read as text. The three
+overlap on purpose: they are fast enough that the overlap costs less than
+deciding which tool owns which rule.
 
-`eslint.config.mjs` reads `.oxlintrc.json` and switches off the 68 ESLint rules
-oxlint already covers, so those two share one ignore list. Both `.oxlintrc.json`
-and `biome.json` are plain JSON with no comments, so anything that reads JSON
-can read them; why a rule is on or off is recorded at the top of
-`eslint.config.mjs`, except for Biome's four, which are here:
+Two formatters touch the HTML, and they agree: html-eslint indents it and Biome
+formats it, both at four spaces, and running them in either order twice changes
+nothing. `.editorconfig`, `biome.json` and `eslint.config.mjs` all carry that
+number and have to keep saying the same one.
 
-- `noPrototypeBuiltins` and `useArrowFunction` are off because their automatic
-  fixes are wrong for this tree. The first rewrites
-  `Object.prototype.hasOwnProperty.call` to `Object.hasOwn`, which the comment
-  beside that call in `app.js` forbids: it is Safari 15.4 and newer, it runs on
-  the boot path with nothing to catch a throw, and the players who would hit it
-  are exactly those who already have a save. The second rewrites the IIFE in
-  `generator.js`, which exists to keep that file to one global.
-- `noImportantStyles` and `useSemanticElements` are off because the `!important`
-  rules and the `role="group"` board are deliberate.
-
-`npm run lint:fix` reformats the two HTML files, at the four space indent
-`.editorconfig` asks for. Biome is configured as a linter only, so nothing here
-formats JavaScript.
+`.oxlintrc.json` and `biome.json` are plain JSON with no comments, so anything
+that reads JSON can read them. Why an ESLint or oxlint rule is on or off is at
+the top of `eslint.config.mjs`. Biome has three off: `useArrowFunction`, because
+its fix rewrites the IIFE that keeps `generator.js` to one global, and
+`noImportantStyles` and `useSemanticElements`, because the `!important` rules and
+the `role="group"` board are deliberate.
 
 ## Git hooks
 

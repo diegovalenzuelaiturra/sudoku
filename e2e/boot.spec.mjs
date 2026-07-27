@@ -372,10 +372,9 @@ test('undo says so without silencing the count it moved', async ({ page }) => {
 
   await page.keyboard.press('z');
   await expect(page.locator('#srStatus')).toHaveText(/Deshecho\./);
-  await expect(
-    page.locator('#srStatus'),
-    'the undo ate the count it had just moved',
-  ).toHaveText(/20 celdas por llenar/);
+  await expect(page.locator('#srStatus'), 'the undo ate the count it had just moved').toHaveText(
+    /20 celdas por llenar/,
+  );
 });
 
 test('keyboard focus is painted on the board, a pointer click is not', async ({ page }) => {

@@ -189,28 +189,28 @@ test('a board is graded by technique, not by how many clues it shows', () => {
 });
 
 test('the grade words the game shows come from the generator', () => {
-  /* index.html is inline and generator.js has to run in a worker, so the table
-     is written twice. This is what stops the two drifting: a tier renamed in
+  /* app.js is inlined into the page and generator.js has to run in a worker, so
+     the table is written twice. This is what stops the two drifting: a tier renamed in
      one and not the other would put a word on the difficulty buttons that no
      board is ever graded with. */
-  const literal = app.match(/const GRADE_WORDS=\{([^}]*)\}/);
+  const literal = app.match(/const GRADE_WORDS\s*=\s*\{([^}]*)\}/);
   assert.ok(literal, 'GRADE_WORDS is not where this test expects to find it');
 
   const shown = {};
-  for (const [, key, word] of literal[1].matchAll(/(\d+):'([^']+)'/g)) shown[key] = word;
+  for (const [, key, word] of literal[1].matchAll(/(\d+):\s*'([^']+)'/g)) shown[key] = word;
 
   assert.deepEqual(shown, GRADE_NAMES, 'the grade words in app.js and generator.js disagree');
   assert.equal(Object.keys(shown).length, 4, 'there are not four tiers any more');
 });
 
 test('every difficulty asks for a grade, and harder ones ask for more', () => {
-  const literal = app.match(/const DIFF=\{(.+)\};/);
+  const literal = app.match(/const DIFF\s*=\s*\{([\s\S]*?)\n\};/);
   assert.ok(literal, 'the DIFF table is not where this test expects to find it');
 
   const rows = new Map();
-  for (const [, key, body] of literal[1].matchAll(/(\w+):\{([^}]*)\}/g)) {
-    const grade = body.match(/grade:(\d+)/);
-    const clues = body.match(/clues:(\d+)/);
+  for (const [, key, body] of literal[1].matchAll(/(\w+):\s*\{([^}]*)\}/g)) {
+    const grade = body.match(/grade:\s*(\d+)/);
+    const clues = body.match(/clues:\s*(\d+)/);
     rows.set(key, {
       grade: grade === null ? null : Number(grade[1]),
       clues: clues === null ? null : Number(clues[1]),
@@ -224,7 +224,11 @@ test('every difficulty asks for a grade, and harder ones ask for more', () => {
   );
   for (const preset of PRESETS) {
     const row = rows.get(preset.key);
-    assert.equal(row.grade, preset.grade, `${preset.label} no longer asks for grade ${preset.grade}`);
+    assert.equal(
+      row.grade,
+      preset.grade,
+      `${preset.label} no longer asks for grade ${preset.grade}`,
+    );
     assert.equal(row.clues, preset.clues, `${preset.label} starts its search somewhere else now`);
     assert.ok(GRADE_NAMES[row.grade], `${preset.label} asks for a grade with no name`);
   }

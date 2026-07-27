@@ -16,14 +16,7 @@
    file at a time and the allowlist is allowed to run ahead of the tree. */
 
 import { createHash } from 'node:crypto';
-import {
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -361,9 +354,7 @@ async function main() {
 
   console.log(`published ${result.files.length} file(s) to ${where}/`);
   for (const file of result.files) {
-    const subs = file.substitutions
-      ? `, ${file.substitutions} ${PLACEHOLDER} substitution(s)`
-      : '';
+    const subs = file.substitutions ? `, ${file.substitutions} ${PLACEHOLDER} substitution(s)` : '';
     const saved = savings.get(file.path);
     const shrunk = saved
       ? `, minified from ${saved.before} (gzipped ${saved.beforeGzip} -> ${saved.afterGzip})`

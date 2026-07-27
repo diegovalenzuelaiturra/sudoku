@@ -205,10 +205,13 @@ test('index.html links the manifest and registers the worker relatively', () => 
   assert.ok(manifestLink, 'index.html does not link a manifest');
   assert.equal(manifestLink[1], 'manifest.webmanifest');
 
-  const register = app.match(/serviceWorker\.register\('([^']+)'\)/);
+  const register = app.match(/serviceWorker\s*\.\s*register\(\s*'([^']+)'/);
   assert.ok(register, 'app.js never registers the service worker');
   assert.equal(register[1], './sw.js');
-  assert.ok(app.includes("'serviceWorker' in navigator"), 'the registration is not feature-guarded');
+  assert.ok(
+    app.includes("'serviceWorker' in navigator"),
+    'the registration is not feature-guarded',
+  );
 });
 
 /* The page is published as one file, so a script tag the build does not fold in
@@ -227,7 +230,14 @@ test('index.html asks for app.js and the build inlines it', async () => {
 test('no shipped file points at an absolute path or hardcodes the subdirectory', () => {
   const offences = [];
 
-  for (const rel of ['index.html', '404.html', 'app.js', 'sw.js', 'manifest.webmanifest', 'icons/icon.svg']) {
+  for (const rel of [
+    'index.html',
+    '404.html',
+    'app.js',
+    'sw.js',
+    'manifest.webmanifest',
+    'icons/icon.svg',
+  ]) {
     read(rel)
       .split('\n')
       .forEach((line, i) => {

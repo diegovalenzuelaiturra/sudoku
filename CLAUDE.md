@@ -83,14 +83,16 @@ npm run lint            # the git hooks, over every file
 npm run lint:fix        # all three linters, applying what they can fix
 ```
 
-Three linters, wired into the hooks and CI. oxlint runs its `correctness`
-rules; `eslint.config.mjs` reads `.oxlintrc.json` and switches off the ESLint
-rules oxlint already covers; Biome is the only one that reads the JavaScript and
-CSS inside `index.html`, and overlaps the other two on purpose.
+Three linters, wired into the hooks and CI. oxlint runs its `correctness` rules;
+`eslint.config.mjs` reads `.oxlintrc.json` and switches off the rules oxlint
+already covers; Biome lints and formats the JavaScript, which the other two only
+see as text when it is inside `index.html`.
 
-ESLint owns the markup, through html-eslint, and reformats `index.html` and
-`404.html` to a four space indent, the one place this tree is not on two, which
-`.editorconfig` records as well. Editing the markup means running
-`npm run lint:fix` or watching CI fail on indentation.
+HTML indents four, the one place this tree is not on two. `.editorconfig`,
+`biome.json` and `eslint.config.mjs` all say so and have to keep agreeing. Run
+`npm run lint:fix` after editing anything, or watch CI fail on formatting.
+
+The browser floor is Safari 15.4, so `Object.hasOwn` and optional chaining are
+fine.
 
 Two worktrees can run at once by setting `PLAYWRIGHT_PORT`.

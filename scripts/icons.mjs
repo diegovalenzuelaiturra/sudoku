@@ -66,7 +66,10 @@ async function render() {
   const self = fileURLToPath(import.meta.url);
   const src = readFileSync(self, 'utf8');
   const hash = svgHash();
-  writeFileSync(self, src.replace(/export const SOURCE_SHA256 = '[^']*';/, `export const SOURCE_SHA256 = '${hash}';`));
+  writeFileSync(
+    self,
+    src.replace(/export const SOURCE_SHA256 = '[^']*';/, `export const SOURCE_SHA256 = '${hash}';`),
+  );
   console.log(`  recorded source sha256 ${hash.slice(0, 16)}`);
 }
 

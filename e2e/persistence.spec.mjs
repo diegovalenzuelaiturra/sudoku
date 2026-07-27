@@ -140,9 +140,11 @@ async function playAndSave(page) {
 
   /* Both moves have to be on the board before the save is flushed, or the
      assertions below would be reading an empty grid and calling it a match. */
-  await expect(cell(plan.a).locator('.notes span').nth(plan.note - 1)).toHaveText(
-    String(plan.note),
-  );
+  await expect(
+    cell(plan.a)
+      .locator('.notes span')
+      .nth(plan.note - 1),
+  ).toHaveText(String(plan.note));
   await expect(cell(plan.b).locator('.v')).toHaveText(String(plan.digit));
 
   /* The clock cannot be waited out. Setting it and flushing the save in one
@@ -250,9 +252,7 @@ test('selecting a cell is saved at once by a click, once per burst by the arrows
     }
   });
   expect(await writes(), 'a burst of arrow keys wrote once per keystroke').toBe(1);
-  await expect
-    .poll(writes, { message: 'the coalesced selection was never written' })
-    .toBe(2);
+  await expect.poll(writes, { message: 'the coalesced selection was never written' }).toBe(2);
 
   /* Compared against the live selection rather than a hardcoded index: the
      arrows clamp at the edge of the board, so where 20 of them land is the
@@ -347,68 +347,83 @@ for (const [name, payload] of [
      grid shape check, so deleting the version check left the suite green: the
      test named a guarantee it was not testing. Filled in, the version stamp is
      the only thing standing between this and a restored board. */
-  ['an unknown schema version', JSON.stringify({
-    v: 99,
-    puzzle: new Array(81).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(0),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'medium',
-  })],
-  ['a truncated grid', JSON.stringify({
-    v: 1,
-    puzzle: new Array(80).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(0),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'medium',
-  })],
-  ['an unknown difficulty', JSON.stringify({
-    v: 1,
-    puzzle: new Array(81).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(0),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'imposible',
-  })],
+  [
+    'an unknown schema version',
+    JSON.stringify({
+      v: 99,
+      puzzle: new Array(81).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(0),
+      fixed: new Array(81).fill(false),
+      notes: new Array(81).fill([]),
+      diffKey: 'medium',
+    }),
+  ],
+  [
+    'a truncated grid',
+    JSON.stringify({
+      v: 1,
+      puzzle: new Array(80).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(0),
+      fixed: new Array(81).fill(false),
+      notes: new Array(81).fill([]),
+      diffKey: 'medium',
+    }),
+  ],
+  [
+    'an unknown difficulty',
+    JSON.stringify({
+      v: 1,
+      puzzle: new Array(81).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(0),
+      fixed: new Array(81).fill(false),
+      notes: new Array(81).fill([]),
+      diffKey: 'imposible',
+    }),
+  ],
   /* "imposible" above is the honest typo. This one is the difficulty that is not
      a difficulty: every name on Object.prototype answers truthy to a bare
      DIFF[key] lookup, so a plain `if(!DIFF[s.diffKey])` accepted this save and
      restored a playable board with no row behind it. Winning then multiplied
      undefined, banked NaN, and wrote a wallet of nulls that read back as zero,
      taking every prize the player had ever earned with it. */
-  ['a difficulty borrowed from Object.prototype', JSON.stringify({
-    v: 1,
-    puzzle: new Array(81).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(0),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'constructor',
-  })],
-  ['an already-solved game', JSON.stringify({
-    v: 1,
-    puzzle: new Array(81).fill(0),
-    solution: new Array(81).fill(1),
-    values: new Array(81).fill(1),
-    fixed: new Array(81).fill(false),
-    notes: new Array(81).fill([]),
-    diffKey: 'medium',
-    solved: true,
-  })],
+  [
+    'a difficulty borrowed from Object.prototype',
+    JSON.stringify({
+      v: 1,
+      puzzle: new Array(81).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(0),
+      fixed: new Array(81).fill(false),
+      notes: new Array(81).fill([]),
+      diffKey: 'constructor',
+    }),
+  ],
+  [
+    'an already-solved game',
+    JSON.stringify({
+      v: 1,
+      puzzle: new Array(81).fill(0),
+      solution: new Array(81).fill(1),
+      values: new Array(81).fill(1),
+      fixed: new Array(81).fill(false),
+      notes: new Array(81).fill([]),
+      diffKey: 'medium',
+      solved: true,
+    }),
+  ],
 ]) {
-  test(`a save that is ${name} is ignored and the start dialog opens`, async ({ page, context }) => {
+  test(`a save that is ${name} is ignored and the start dialog opens`, async ({
+    page,
+    context,
+  }) => {
     const problems = await boot(page);
 
     /* Planted in the browser's own storage and then reloaded, so the page
        reads it back through the same localStorage a visitor would. */
-    await page.evaluate(
-      ([key, value]) => localStorage.setItem(key, value),
-      [SAVE_KEY, payload],
-    );
+    await page.evaluate(([key, value]) => localStorage.setItem(key, value), [SAVE_KEY, payload]);
     await page.reload();
 
     expect(problems, 'a bad save threw during boot').toEqual([]);

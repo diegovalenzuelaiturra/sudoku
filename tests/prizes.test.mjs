@@ -27,13 +27,13 @@ const ORDER = ['easy', 'medium', 'hard', 'expert'];
 /* Read per entry rather than by position, so reordering the fields inside a
    row is not a failure. Losing one is. */
 function prizeTable() {
-  const literal = source.match(/const DIFF=\{(.+)\};/);
+  const literal = source.match(/const DIFF\s*=\s*\{([\s\S]*?)\n\};/);
   assert.ok(literal, 'the DIFF table is not where this test expects to find it');
 
   const rows = new Map();
-  for (const [, key, body] of literal[1].matchAll(/(\w+):\{([^}]*)\}/g)) {
-    const fries = body.match(/fries:(\d+)/);
-    const choco = body.match(/choco:(\d+)/);
+  for (const [, key, body] of literal[1].matchAll(/(\w+):\s*\{([^}]*)\}/g)) {
+    const fries = body.match(/fries:\s*(\d+)/);
+    const choco = body.match(/choco:\s*(\d+)/);
     rows.set(key, {
       fries: fries === null ? null : Number(fries[1]),
       choco: choco === null ? null : Number(choco[1]),
@@ -59,7 +59,7 @@ function prizeTable() {
    it: the guards would keep passing while guarding a few lines. assert.ok on
    the match cannot see that, because a truncated body is still a match. */
 function body(name) {
-  const found = source.match(new RegExp(`function ${name}\\([^{]*\\)\\{[\\s\\S]*?\\n\\}`));
+  const found = source.match(new RegExp(`function ${name}\\([^{]*\\)\\s*\\{[\\s\\S]*?\\n\\}`));
   assert.ok(found, `${name}() is not where this test expects to find it`);
 
   let depth = 0;
@@ -175,7 +175,7 @@ test('banking refuses to overwrite a wallet this build cannot read', () => {
   );
   assert.match(
     bank,
-    /if\([^)]*\)saveWallet\(\)/,
+    /if\s*\([^)]*\)\s*\{?\s*saveWallet\(\)/,
     'bankPrize() saves unconditionally, so the first win destroys a newer wallet',
   );
 });
