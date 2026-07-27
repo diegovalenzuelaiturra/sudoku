@@ -278,6 +278,11 @@ test('undo restores the board but never the counters', async ({ page }) => {
   await page.keyboard.press(String((Number(hinted) % 9) + 1));
   await expect(page.locator('#mistakes')).toHaveText('1');
   await page.keyboard.press('z');
+  /* The board first, for the same reason the hint half checks it: the counter
+     reads 1 on both sides of the key, so on its own it would pass against an
+     undo that never ran. The line this replaced asserted '0', which at least
+     proved the keypress had arrived. */
+  await expect(cell.locator('.v')).toBeEmpty();
   await expect(page.locator('#mistakes')).toHaveText('1');
 });
 
