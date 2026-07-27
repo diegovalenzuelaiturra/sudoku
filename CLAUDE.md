@@ -71,7 +71,19 @@ npm test                # unit, a few seconds
 npm run test:coverage   # the same, with the floor CI enforces
 npm run test:e2e        # Playwright, real Chromium and real WebKit
 npm run lint            # the git hooks, over every file
+npm run lint:fix        # oxlint and ESLint, applying what they can fix
 ```
+
+Two linters, configured not to overlap: oxlint runs its `correctness` rules, and
+`eslint.config.mjs` reads `.oxlintrc.json` to switch off the ESLint rules oxlint
+already covers. Both share the ignore list in `.oxlintrc.json`.
+
+ESLint owns the HTML, through html-eslint, and reformats `index.html` and
+`404.html` to a two space indent. It does not touch what is inside `<style>` or
+`<script>`: the body of those elements is opaque text to it, so the game's own
+JavaScript and CSS are linted by nothing and carried entirely by the suites
+above. Editing the markup means running `npm run lint:fix` or watching CI fail
+on indentation.
 
 Unit tests read the shipped files and evaluate them, rather than importing a
 copy, so they exercise what players actually run. The coverage floor only sees

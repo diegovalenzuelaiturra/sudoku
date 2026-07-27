@@ -1,43 +1,54 @@
 <!DOCTYPE html>
 <html lang="es-CL">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sudoku 数独</title>
-<meta name="description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
-<meta name="theme-color" content="#EDEFE7">
-<link rel="manifest" href="manifest.webmanifest">
-<!-- iOS Safari ignores the manifest entirely when it builds a home screen icon:
-     without this link, Add to Home Screen uses a screenshot of the page. Relative,
-     like everything else here. Apple's own size is 180, and it downscales 192
-     cleanly, so this reuses the manifest icon rather than shipping a third file. -->
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Sudoku 数独">
-<meta property="og:description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
-<meta property="og:locale" content="es_CL">
-<!-- Absolute on purpose, and the only place this site uses absolute URLs: social
-     scrapers fetch these out of context and many do not resolve a relative og:image
-     or og:url against the page, so the canonical origin has to be spelled out. -->
-<meta property="og:url" content="https://diegovalenzuelaiturra.github.io/sudoku/">
-<link rel="canonical" href="https://diegovalenzuelaiturra.github.io/sudoku/">
-<meta property="og:image" content="https://diegovalenzuelaiturra.github.io/sudoku/icons/icon-512.png">
-<meta property="og:image:width" content="512">
-<meta property="og:image:height" content="512">
-<meta property="og:image:alt" content="Icono de Sudoku: una cuadrícula de 3x3 en color crema sobre un fondo rojo.">
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Sudoku 数独">
-<meta name="twitter:description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
-<!-- twitter:card stays "summary", the 1:1 slot, which fits a 512 square exactly.
-     "summary_large_image" expects roughly 2:1 and would pillarbox or crop the icon. -->
-<meta name="twitter:image" content="https://diegovalenzuelaiturra.github.io/sudoku/icons/icon-512.png">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sudoku 数独</title>
+    <meta name="description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
+    <!-- Baseline calls theme-color limited, because desktop Firefox ignores it.
+      That is a reason to expect nothing from it there, not a reason to drop it:
+      it colours the title bar of the installed app, and tests/assets.test.mjs
+      pins this value to the manifest's theme_color, since the two paint the same
+      surface and drifted apart once already. -->
+    <!-- eslint-disable-next-line html/use-baseline -->
+    <meta name="theme-color" content="#EDEFE7">
+    <!-- Baseline says the same about rel=manifest, and this is the one link that
+      makes the app installable, so the app either declares it or stops being a
+      PWA. tests/site.test.mjs and tests/assets.test.mjs both assert it is here
+      and that it stays relative. -->
+    <!-- eslint-disable-next-line html/use-baseline -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <!-- iOS Safari ignores the manifest entirely when it builds a home screen icon:
+      without this link, Add to Home Screen uses a screenshot of the page. Relative,
+      like everything else here. Apple's own size is 180, and it downscales 192
+      cleanly, so this reuses the manifest icon rather than shipping a third file. -->
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Sudoku 数独">
+    <meta property="og:description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
+    <meta property="og:locale" content="es_CL">
+    <!-- Absolute on purpose, and the only place this site uses absolute URLs: social
+      scrapers fetch these out of context and many do not resolve a relative og:image
+      or og:url against the page, so the canonical origin has to be spelled out. -->
+    <meta property="og:url" content="https://diegovalenzuelaiturra.github.io/sudoku/">
+    <link rel="canonical" href="https://diegovalenzuelaiturra.github.io/sudoku/">
+    <meta property="og:image" content="https://diegovalenzuelaiturra.github.io/sudoku/icons/icon-512.png">
+    <meta property="og:image:width" content="512">
+    <meta property="og:image:height" content="512">
+    <meta property="og:image:alt" content="Icono de Sudoku: una cuadrícula de 3x3 en color crema sobre un fondo rojo.">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Sudoku 数独">
+    <meta name="twitter:description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
+    <!-- twitter:card stays "summary", the 1:1 slot, which fits a 512 square exactly.
+      "summary_large_image" expects roughly 2:1 and would pillarbox or crop the icon. -->
+    <meta name="twitter:image" content="https://diegovalenzuelaiturra.github.io/sudoku/icons/icon-512.png">
 
-<!-- Inline so the site stays a single published file. A 3x3 grid rather than the
-     数 seal: pure paths render the same everywhere and stay legible at 16px,
-     where a CJK glyph turns to mush and depends on a CJK font being installed. -->
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C43A20'/%3E%3Cg stroke='%23F7F1E6' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 13h20M6 19h20M13 6v20M19 6v20'/%3E%3C/g%3E%3C/svg%3E">
-<style>
+    <!-- Inline so the site stays a single published file. A 3x3 grid rather than the
+      数 seal: pure paths render the same everywhere and stay legible at 16px,
+      where a CJK glyph turns to mush and depends on a CJK font being installed. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C43A20'/%3E%3Cg stroke='%23F7F1E6' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 13h20M6 19h20M13 6v20M19 6v20'/%3E%3C/g%3E%3C/svg%3E">
+    <style>
   :root{
     --paper:#EDEFE7;
     --paper-raised:#F7F8F3;
@@ -317,156 +328,328 @@
     *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
     .stamp.show{opacity:1}
   }
-</style>
-</head>
-<body>
-<!-- Icon sprite: Material Symbols (Google LLC), Apache License 2.0, inlined as raw
-     path data. See NOTICE. Everything else here is MIT, see LICENSE. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-pause" viewBox="0 -960 960 960"><path d="M525-200v-560h235v560H525Zm-325 0v-560h235v560H200Zm385-60h115v-440H585v440Zm-325 0h115v-440H260v440Zm0-440v440-440Zm325 0v440-440Z"/></symbol>
-  <symbol id="i-play_arrow" viewBox="0 -960 960 960"><path d="M320-203v-560l440 280-440 280Zm60-280Zm0 171 269-171-269-171v342Z"/></symbol>
-  <symbol id="i-undo" viewBox="0 -960 960 960"><path d="M259-200v-60h310q70 0 120.5-46.5T740-422q0-69-50.5-115.5T569-584H274l114 114-42 42-186-186 186-186 42 42-114 114h294q95 0 163.5 64T800-422q0 94-68.5 158T568-200H259Z"/></symbol>
-  <symbol id="i-ink_eraser" viewBox="0 -960 960 960"><path d="M678-220h203v60H618l60-60Zm-499 60-81-84q-18-17-17.5-41.5T97-327l458-498q16-17 40.57-17 24.56 0 41.43 17l205 215q17 17 18 42t-16 42L503-160H179Zm301-60 324-352-207-217-455 503 64 66h274Zm0-260Z"/></symbol>
-  <symbol id="i-stylus_note" viewBox="0 -960 960 960"><path d="m499-259 364-363-81-80-363 363 80 80Zm-280 48q-88-6-133.5-40.5T40-349q0-60 51-98t142-46q44-4 65.5-16t21.5-33q0-29-29-44.5T194-609l5-60q89 9 135 41t46 86q0 46-37.5 75T238-433q-69 5-103.5 26T100-349q0 35 30.5 54.5T222-271l-3 60Zm299 18L353-358l398-397q14-14 31.5-13.5T814-755l102 101q14 14 14 32t-14 32L518-193Zm-159 33q-17 4-30-9t-9-30l33-159 165 165-159 33Z"/></symbol>
-  <symbol id="i-lightbulb" viewBox="0 -960 960 960"><path d="M422.5-103.5Q399-127 399-161h162q0 34-23.5 57.5T480-80q-34 0-57.5-23.5ZM318-223v-60h324v60H318Zm5-121q-66-43-104.5-107.5T180-597q0-122 89-211t211-89q122 0 211 89t89 211q0 81-38 145.5T637-344H323Zm22-60h271q48-32 76-83t28-110q0-99-70.5-169.5T480-837q-99 0-169.5 70.5T240-597q0 59 28 110t77 83Zm135 0Z"/></symbol>
-  <symbol id="i-refresh" viewBox="0 -960 960 960"><path d="M480-160q-133 0-226.5-93.5T160-480q0-133 93.5-226.5T480-800q85 0 149 34.5T740-671v-129h60v254H546v-60h168q-38-60-97-97t-137-37q-109 0-184.5 75.5T220-480q0 109 75.5 184.5T480-220q83 0 152-47.5T728-393h62q-29 105-115 169t-195 64Z"/></symbol>
-</svg>
-<div class="app">
-  <header>
-    <div class="brand">
-      <div class="seal" aria-hidden="true">数</div>
-      <div class="wordmark">
-        <div class="title">SUDOKU</div>
-        <div class="sub">数独, juego de números</div>
+    </style>
+  </head>
+  <body>
+    <!-- Icon sprite: Material Symbols (Google LLC), Apache License 2.0, inlined as raw
+      path data. See NOTICE. Everything else here is MIT, see LICENSE. -->
+    <svg
+      width="0"
+      height="0"
+      style="position:absolute"
+      aria-hidden="true"
+    >
+      <symbol id="i-pause" viewBox="0 -960 960 960">
+        <path d="M525-200v-560h235v560H525Zm-325 0v-560h235v560H200Zm385-60h115v-440H585v440Zm-325 0h115v-440H260v440Zm0-440v440-440Zm325 0v440-440Z"/>
+      </symbol>
+      <symbol id="i-play_arrow" viewBox="0 -960 960 960">
+        <path d="M320-203v-560l440 280-440 280Zm60-280Zm0 171 269-171-269-171v342Z"/>
+      </symbol>
+      <symbol id="i-undo" viewBox="0 -960 960 960">
+        <path d="M259-200v-60h310q70 0 120.5-46.5T740-422q0-69-50.5-115.5T569-584H274l114 114-42 42-186-186 186-186 42 42-114 114h294q95 0 163.5 64T800-422q0 94-68.5 158T568-200H259Z"/>
+      </symbol>
+      <symbol id="i-ink_eraser" viewBox="0 -960 960 960">
+        <path d="M678-220h203v60H618l60-60Zm-499 60-81-84q-18-17-17.5-41.5T97-327l458-498q16-17 40.57-17 24.56 0 41.43 17l205 215q17 17 18 42t-16 42L503-160H179Zm301-60 324-352-207-217-455 503 64 66h274Zm0-260Z"/>
+      </symbol>
+      <symbol id="i-stylus_note" viewBox="0 -960 960 960">
+        <path d="m499-259 364-363-81-80-363 363 80 80Zm-280 48q-88-6-133.5-40.5T40-349q0-60 51-98t142-46q44-4 65.5-16t21.5-33q0-29-29-44.5T194-609l5-60q89 9 135 41t46 86q0 46-37.5 75T238-433q-69 5-103.5 26T100-349q0 35 30.5 54.5T222-271l-3 60Zm299 18L353-358l398-397q14-14 31.5-13.5T814-755l102 101q14 14 14 32t-14 32L518-193Zm-159 33q-17 4-30-9t-9-30l33-159 165 165-159 33Z"/>
+      </symbol>
+      <symbol id="i-lightbulb" viewBox="0 -960 960 960">
+        <path d="M422.5-103.5Q399-127 399-161h162q0 34-23.5 57.5T480-80q-34 0-57.5-23.5ZM318-223v-60h324v60H318Zm5-121q-66-43-104.5-107.5T180-597q0-122 89-211t211-89q122 0 211 89t89 211q0 81-38 145.5T637-344H323Zm22-60h271q48-32 76-83t28-110q0-99-70.5-169.5T480-837q-99 0-169.5 70.5T240-597q0 59 28 110t77 83Zm135 0Z"/>
+      </symbol>
+      <symbol id="i-refresh" viewBox="0 -960 960 960">
+        <path d="M480-160q-133 0-226.5-93.5T160-480q0-133 93.5-226.5T480-800q85 0 149 34.5T740-671v-129h60v254H546v-60h168q-38-60-97-97t-137-37q-109 0-184.5 75.5T220-480q0 109 75.5 184.5T480-220q83 0 152-47.5T728-393h62q-29 105-115 169t-195 64Z"/>
+      </symbol>
+    </svg>
+    <div class="app">
+      <header>
+        <div class="brand">
+          <div class="seal" aria-hidden="true">数</div>
+          <div class="wordmark">
+            <div class="title">SUDOKU</div>
+            <div class="sub">数独, juego de números</div>
+          </div>
+        </div>
+        <div class="clock">
+          <div class="time" id="time">0:00</div>
+          <button
+            class="iconbtn"
+            id="pauseBtn"
+            aria-label="Pausar"
+          >
+            <svg
+              class="ico"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <use href="#i-pause"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="status">
+        <span class="chip" id="diffLabel">Normal</span>
+        <span class="warn">Errores <b id="mistakes">0</b></span>
+        <span>Pistas <b id="hints">0</b></span>
+        <span class="prize" id="frychip">🍟 <b id="fries">0</b> <span class="visually-hidden">papas fritas ganadas</span></span>
+        <span class="prize" id="chocochip">🍫 <b id="chocos">0</b> <span class="visually-hidden">chocolates ganados</span></span>
+        <span class="spacer"></span>
+        <span id="remaining"><b>81</b> por llenar</span>
+      </div>
+
+      <main>
+        <div class="board-wrap">
+          <!-- role="group", not role="grid": a grid has to own role="row" children, and
+            the 81 cells are appended straight into this element. Each cell already
+            names its own row and column in its aria-label, so the grid role bought
+            nothing except an invalid tree (Lighthouse aria-required-children). -->
+          <div
+            class="board"
+            id="board"
+            role="group"
+            aria-label="Tablero de sudoku"
+          ></div>
+          <div
+            class="veil"
+            id="veil"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="veilTitle"
+          >
+            <p id="veilTitle">EN PAUSA</p>
+            <button
+              class="newgame"
+              style="width:auto;padding:10px 26px"
+              id="resumeBtn"
+            >
+              <svg
+                class="ico"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <use href="#i-play_arrow"/>
+              </svg>
+              Seguir
+            </button>
+          </div>
+          <div
+            class="stamp"
+            id="stamp"
+            aria-hidden="true"
+          >
+            <div class="big">解</div>
+            <div class="small">¡BUENA!</div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="pad" id="pad"></div>
+          <div class="tools">
+            <button class="tool" id="undoBtn">
+              <svg
+                class="ico"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <use href="#i-undo"/>
+              </svg>
+              Deshacer <span class="k">Z</span>
+            </button>
+            <button class="tool" id="eraseBtn">
+              <svg
+                class="ico"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <use href="#i-ink_eraser"/>
+              </svg>
+              Borrar <span class="k">⌫</span>
+            </button>
+            <button
+              class="tool"
+              id="notesBtn"
+              aria-pressed="false"
+              aria-describedby="notesHint"
+            >
+              <svg
+                class="ico"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <use href="#i-stylus_note"/>
+              </svg>
+              Notas <span class="k">N</span>
+            </button>
+            <button class="tool" id="hintBtn">
+              <svg
+                class="ico"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <use href="#i-lightbulb"/>
+              </svg>
+              Pista <span class="k">H</span>
+            </button>
+          </div>
+          <!-- What "Notas" does was guessable from the icon and nothing else. Kept
+            out of sight until the mode is on, so the board is not carrying an
+            instruction nobody is reading, but always in the accessibility tree
+            as the button's description, where it is read on focus either way. -->
+          <p class="toolhint visually-hidden" id="notesHint">Anota candidatos: el número queda chico. Tócalo de nuevo para borrarlo.</p>
+          <button class="newgame" id="newBtn">
+            <svg
+              class="ico"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <use href="#i-refresh"/>
+            </svg>
+            Nueva partida
+          </button>
+        </div>
+      </main>
+    </div>
+
+    <!-- Outside .app, and that is the whole point. Every overlay sets appEl.inert,
+      which drops everything inside .app from the accessibility tree, so a live
+      region kept in there is silent for exactly the actions that happen with a
+      dialog open: redeeming announces through #srStatus and the record dialog is
+      the only place the redeem buttons exist. -->
+    <span
+      id="srStatus"
+      class="visually-hidden"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    ></span>
+    <span
+      id="srAlert"
+      class="visually-hidden"
+      role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+    ></span>
+
+    <div class="overlay" id="startOverlay">
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="startTitle"
+      >
+        <div class="seal" aria-hidden="true">数</div>
+        <h2 id="startTitle">SUDOKU</h2>
+        <p class="lede">Llena la cuadrícula: cada fila, columna y cuadrante con los números del 1 al 9, sin repetir.</p>
+        <div class="diffs">
+          <button class="diff" data-d="easy"></button>
+          <button class="diff" data-d="medium"></button>
+          <button class="diff" data-d="hard"></button>
+          <button class="diff" data-d="expert"></button>
+        </div>
+        <!-- Generation happens in a worker and takes long enough to notice on the
+          hardest tiers, so it is announced rather than left as a dead dialog.
+          role=status is polite: a screen reader hears it after whatever it was
+          already saying, which is the difficulty button that was just pressed.
+          Empty rather than hidden, and empty rather than pre-filled: see the
+          .genstatus:empty rule for why both matter. -->
+        <p
+          class="genstatus"
+          id="genStatus"
+          role="status"
+        ></p>
+        <button class="quiet" id="recordBtn">Ver mi registro</button>
+        <button
+          class="quiet"
+          id="cancelNew"
+          hidden
+        >Seguir jugando</button>
       </div>
     </div>
-    <div class="clock">
-      <div class="time" id="time">0:00</div>
-      <button class="iconbtn" id="pauseBtn" aria-label="Pausar"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-pause"/></svg></button>
-    </div>
-  </header>
 
-  <div class="status">
-    <span class="chip" id="diffLabel">Normal</span>
-    <span class="warn">Errores <b id="mistakes">0</b></span>
-    <span>Pistas <b id="hints">0</b></span>
-    <span class="prize" id="frychip">🍟 <b id="fries">0</b> <span class="visually-hidden">papas fritas ganadas</span></span>
-    <span class="prize" id="chocochip">🍫 <b id="chocos">0</b> <span class="visually-hidden">chocolates ganados</span></span>
-    <span class="spacer"></span>
-    <span id="remaining"><b>81</b> por llenar</span>
-  </div>
-
-  <main>
-    <div class="board-wrap">
-      <!-- role="group", not role="grid": a grid has to own role="row" children, and
-           the 81 cells are appended straight into this element. Each cell already
-           names its own row and column in its aria-label, so the grid role bought
-           nothing except an invalid tree (Lighthouse aria-required-children). -->
-      <div class="board" id="board" role="group" aria-label="Tablero de sudoku"></div>
-      <div class="veil" id="veil" role="dialog" aria-modal="true" aria-labelledby="veilTitle">
-        <p id="veilTitle">EN PAUSA</p>
-        <button class="newgame" style="width:auto;padding:10px 26px" id="resumeBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-play_arrow"/></svg> Seguir</button>
-      </div>
-      <div class="stamp" id="stamp" aria-hidden="true">
-        <div class="big">解</div>
-        <div class="small">¡BUENA!</div>
-      </div>
-    </div>
-
-    <div class="controls">
-      <div class="pad" id="pad"></div>
-      <div class="tools">
-        <button class="tool" id="undoBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-undo"/></svg>Deshacer <span class="k">Z</span></button>
-        <button class="tool" id="eraseBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-ink_eraser"/></svg>Borrar <span class="k">⌫</span></button>
-        <button class="tool" id="notesBtn" aria-pressed="false" aria-describedby="notesHint"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-stylus_note"/></svg>Notas <span class="k">N</span></button>
-        <button class="tool" id="hintBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-lightbulb"/></svg>Pista <span class="k">H</span></button>
-      </div>
-      <!-- What "Notas" does was guessable from the icon and nothing else. Kept
-           out of sight until the mode is on, so the board is not carrying an
-           instruction nobody is reading, but always in the accessibility tree
-           as the button's description, where it is read on focus either way. -->
-      <p class="toolhint visually-hidden" id="notesHint">Anota candidatos: el número queda chico. Tócalo de nuevo para borrarlo.</p>
-      <button class="newgame" id="newBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg> Nueva partida</button>
-    </div>
-  </main>
-</div>
-
-<!-- Outside .app, and that is the whole point. Every overlay sets appEl.inert,
-     which drops everything inside .app from the accessibility tree, so a live
-     region kept in there is silent for exactly the actions that happen with a
-     dialog open: redeeming announces through #srStatus and the record dialog is
-     the only place the redeem buttons exist. -->
-<span id="srStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></span>
-<span id="srAlert" class="visually-hidden" role="alert" aria-live="assertive" aria-atomic="true"></span>
-
-<div class="overlay" id="startOverlay">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="startTitle">
-    <div class="seal" aria-hidden="true">数</div>
-    <h2 id="startTitle">SUDOKU</h2>
-    <p class="lede">Llena la cuadrícula: cada fila, columna y cuadrante con los números del 1 al 9, sin repetir.</p>
-    <div class="diffs">
-      <button class="diff" data-d="easy"></button>
-      <button class="diff" data-d="medium"></button>
-      <button class="diff" data-d="hard"></button>
-      <button class="diff" data-d="expert"></button>
-    </div>
-    <!-- Generation happens in a worker and takes long enough to notice on the
-         hardest tiers, so it is announced rather than left as a dead dialog.
-         role=status is polite: a screen reader hears it after whatever it was
-         already saying, which is the difficulty button that was just pressed.
-         Empty rather than hidden, and empty rather than pre-filled: see the
-         .genstatus:empty rule for why both matter. -->
-    <p class="genstatus" id="genStatus" role="status"></p>
-    <button class="quiet" id="recordBtn">Ver mi registro</button>
-    <button class="quiet" id="cancelNew" hidden>Seguir jugando</button>
-  </div>
-</div>
-
-<div class="overlay" id="winOverlay">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="winTitle">
-    <div class="seal" aria-hidden="true">解</div>
-    <h2 id="winTitle">¡SECA!</h2>
-    <p class="lede" id="winLede">Una cuadrícula limpia.</p>
-    <div class="stats">
-      <div class="stat"><b id="wTime">0:00</b><i>Tiempo</i></div>
-      <div class="stat"><b id="wMist">0</b><i>Errores</i></div>
-      <div class="stat"><b id="wHint">0</b><i>Pistas</i></div>
-    </div>
-    <div class="frybanner" id="fryBanner">🍟</div>
-    <!-- What the board really was and the seed that rebuilds it. The technique
-         is the honest difficulty, and the code is here so a board worth talking
-         about can be found again. -->
-    <p class="code" id="wCodeLine">Técnica: <b id="wGrade">directas</b>. Código: <b id="wCode">0</b></p>
-    <button class="newgame" id="againBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg> Otra al tiro</button>
-  </div>
-</div>
-
-<!-- The record: games played and won, best times, the flawless streak, and the
-     wallet with somewhere for the prizes to go. The totals used to only ever
-     rise, with no way to say a prize had actually been handed over. -->
-<div class="overlay" id="recordOverlay">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recordTitle">
-    <h2 id="recordTitle">TU REGISTRO</h2>
-    <p class="lede" id="streakLine">Sin partidas todavía.</p>
-    <table class="record">
-      <thead><tr><th>Nivel</th><th>Jugadas</th><th>Ganadas</th><th>Mejor</th></tr></thead>
-      <tbody id="recordRows"></tbody>
-    </table>
-    <div class="purse">
-      <div class="purseRow">
-        <span>🍟 <b id="purseFries">0</b> <span class="visually-hidden">papas fritas por canjear</span></span>
-        <button class="quiet redeem" id="redeemFries" data-k="fries">Canjear</button>
-      </div>
-      <div class="purseRow">
-        <span>🍫 <b id="purseChoco">0</b> <span class="visually-hidden">chocolates por canjear</span></span>
-        <button class="quiet redeem" id="redeemChoco" data-k="choco">Canjear</button>
+    <div class="overlay" id="winOverlay">
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="winTitle"
+      >
+        <div class="seal" aria-hidden="true">解</div>
+        <h2 id="winTitle">¡SECA!</h2>
+        <p class="lede" id="winLede">Una cuadrícula limpia.</p>
+        <div class="stats">
+          <div class="stat"><b id="wTime">0:00</b><i>Tiempo</i></div>
+          <div class="stat"><b id="wMist">0</b><i>Errores</i></div>
+          <div class="stat"><b id="wHint">0</b><i>Pistas</i></div>
+        </div>
+        <div class="frybanner" id="fryBanner">🍟</div>
+        <!-- What the board really was and the seed that rebuilds it. The technique
+          is the honest difficulty, and the code is here so a board worth talking
+          about can be found again. -->
+        <p class="code" id="wCodeLine">Técnica: <b id="wGrade">directas</b>. Código: <b id="wCode">0</b></p>
+        <button class="newgame" id="againBtn">
+          <svg
+            class="ico"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <use href="#i-refresh"/>
+          </svg>
+          Otra al tiro
+        </button>
       </div>
     </div>
-    <ul class="ledger" id="ledgerList"></ul>
-    <button class="newgame" id="closeRecord" data-autofocus>Listo</button>
-  </div>
-</div>
-<script>
+
+    <!-- The record: games played and won, best times, the flawless streak, and the
+      wallet with somewhere for the prizes to go. The totals used to only ever
+      rise, with no way to say a prize had actually been handed over. -->
+    <div class="overlay" id="recordOverlay">
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="recordTitle"
+      >
+        <h2 id="recordTitle">TU REGISTRO</h2>
+        <p class="lede" id="streakLine">Sin partidas todavía.</p>
+        <table class="record">
+          <thead>
+            <tr>
+              <th>Nivel</th>
+              <th>Jugadas</th>
+              <th>Ganadas</th>
+              <th>Mejor</th>
+            </tr>
+          </thead>
+          <tbody id="recordRows"></tbody>
+        </table>
+        <div class="purse">
+          <div class="purseRow">
+            <span>🍟 <b id="purseFries">0</b> <span class="visually-hidden">papas fritas por canjear</span></span>
+            <button
+              class="quiet redeem"
+              id="redeemFries"
+              data-k="fries"
+            >Canjear</button>
+          </div>
+          <div class="purseRow">
+            <span>🍫 <b id="purseChoco">0</b> <span class="visually-hidden">chocolates por canjear</span></span>
+            <button
+              class="quiet redeem"
+              id="redeemChoco"
+              data-k="choco"
+            >Canjear</button>
+          </div>
+        </div>
+        <ul class="ledger" id="ledgerList"></ul>
+        <button
+          class="newgame"
+          id="closeRecord"
+          data-autofocus
+        >Listo</button>
+      </div>
+    </div>
+    <script>
 /* ============ GENERATOR CLIENT ============
    The generator moved to generator.js and runs in a worker. What is left here
    is the part that asks for a board and waits for it, which is the whole reason
@@ -1897,6 +2080,6 @@ if('serviceWorker' in navigator){
     navigator.storage.persist().catch(()=>{});
   }
 }
-</script>
-</body>
+    </script>
+  </body>
 </html>

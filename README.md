@@ -53,10 +53,36 @@ set a few points below what the suite measures today so it catches a regression
 rather than rounding noise. It only sees files a test actually loads, so it will
 not notice a brand new script that nothing imports.
 
+## Linting
+
+```sh
+npm run lint:oxlint     # oxlint, the whole tree in milliseconds
+npm run lint:eslint     # ESLint, which is also what lints the HTML
+npm run lint:fix        # both, applying every fix they can make themselves
+```
+
+Two linters that are configured not to overlap. [oxlint](https://oxc.rs) runs
+its `correctness` rules, the category it reserves for code that is simply wrong.
+[ESLint](https://eslint.org) takes what oxlint does not: the markup of
+`index.html` and `404.html`, through
+[html-eslint](https://html-eslint.org), and the scope analysis that has to know
+whether a file is a node module, a classic worker script or a service worker.
+
+`eslint.config.mjs` reads `.oxlintrc.json` and switches off the 68 ESLint rules
+oxlint already covers, so nothing is reported twice and both tools share one
+ignore list. Change what either reads in `.oxlintrc.json`.
+
+`npm run lint:fix` reformats the two HTML files, at the two space indent
+`.editorconfig` asks for. It does not touch the CSS or the JavaScript inside
+`index.html`: html-eslint treats the body of a `<style>` or `<script>` element
+as opaque text, and lints the markup around it. Nothing in this repository lints
+the game's own JavaScript, which is why the unit and e2e suites carry it.
+
 ## Git hooks
 
-Optional but recommended. The hooks lint the workflow files and run the unit
-suite before a commit lands, which is faster than finding out from CI.
+Optional but recommended. The hooks lint the workflow files, run both linters
+and run the unit suite before a commit lands, which is faster than finding out
+from CI.
 
 ```sh
 npm ci --ignore-scripts
@@ -66,8 +92,8 @@ npx prek install         # writes .git/hooks/pre-commit
 No separate install: prek is a devDependency, so `npm ci` already put it in
 `node_modules/.bin`. Then commits run
 [actionlint](https://github.com/rhysd/actionlint) for workflow validity,
-[zizmor](https://docs.zizmor.sh) for workflow security, and the unit suite. To
-run everything once without committing:
+[zizmor](https://docs.zizmor.sh) for workflow security, oxlint, ESLint and the
+unit suite. To run everything once without committing:
 
 ```sh
 npm run lint
@@ -83,8 +109,8 @@ twenty seconds and is cached in `~/.cache/prek` afterwards.
 None of this is load bearing: `git commit --no-verify` skips it, and the `Lint`
 job in CI runs the same hooks over every file on every pull request.
 
-One trap. The unit test hook needs `npm` on the `PATH`, and a desktop git client
-or an editor commit button does not load your shell profile, so a version
-manager like nvm will not be set up for it. The hook then fails with
+One trap. The lint and unit test hooks need `npm` on the `PATH`, and a desktop
+git client or an editor commit button does not load your shell profile, so a
+version manager like nvm will not be set up for it. The hook then fails with
 `No such file or directory (os error 2)`, which does not look like what it is.
 Commit from a terminal, or point the client at a shell that loads node.

@@ -7,15 +7,24 @@
     "build": "node scripts/build.mjs",
     "icons": "node scripts/icons.mjs",
     "lint": "prek run --all-files",
+    "lint:eslint": "eslint .",
+    "lint:fix": "oxlint --fix && eslint . --fix",
+    "lint:oxlint": "oxlint",
     "preview": "node scripts/build.mjs && node e2e/static-server.mjs",
     "test": "node --test --test-timeout=30000",
     "test:coverage": "node --test --test-timeout=30000 --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=88 --test-coverage-functions=90",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@html-eslint/eslint-plugin": "^0.64.0",
     "@j178/prek": "^0.4.11",
     "@playwright/test": "^1.62.0",
+    "eslint": "^10.8.0",
+    "eslint-plugin-oxlint": "^1.76.0",
+    "globals": "^17.8.0",
     "html-minifier-terser": "^7.2.0",
+    "oxlint": "^1.76.0",
     "terser": "^5.49.0"
   }
 }
