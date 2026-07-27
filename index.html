@@ -315,7 +315,23 @@
   @media (max-width:719px){
     body{padding:14px 10px 30px}
     main{grid-template-columns:1fr;gap:16px}
-    .board{max-width:520px;margin:0 auto}
+    /* The board is the only thing in this column that can give up space, so it
+       is what yields when the viewport is short. A browser tab spends about
+       140px on the URL bar and the toolbar that the installed app keeps, and
+       that is the whole difference between the page fitting and the header
+       scrolling up underneath the URL bar: measured on a 393 wide iPhone, the
+       column is 698px against 800px of standalone viewport and 660px of tab.
+
+       dvh, not vh: on iOS vh is the large viewport, the one that pretends the
+       toolbars are not there, which is exactly what needs compensating for.
+       330px is the rest of the column, header, status, pad, tools, button and
+       the body padding, measured at 325 and rounded up.
+
+       The floor matters as much as the cap. Without it a 560px viewport asks
+       for a 230px board, whose cells are 25px, and a cell too small to hit is
+       worse than a page that scrolls. At 288px they are 32px and the page
+       scrolls again, which is where this started. */
+    .board{max-width:min(520px,100%,max(288px,calc(100dvh - 330px)));margin:0 auto}
     .controls{max-width:520px;margin:0 auto;width:100%}
     .tools{grid-template-columns:repeat(4,1fr)}
     .tool .k{display:none}
