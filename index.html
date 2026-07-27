@@ -295,7 +295,7 @@
      the descenders of "Técnica" and "Código". 8px leaves the ring its 4px and
      4px of air. */
   .modal .code{margin:14px 0 8px;font-size:11px;color:var(--ink-soft);letter-spacing:.04em}
-  #streakIcon{margin-right:5px}
+  #streakCounts b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
   .modal .code b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
 
   /* ---------- the record ---------- */
@@ -314,6 +314,10 @@
   .modal .redeem.arm{color:var(--vermilion);text-decoration-thickness:2px}
   .ledger{list-style:none;font-size:11px;color:var(--ink-soft);text-align:left;max-height:132px;overflow-y:auto}
   .ledger li{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-top:1px solid var(--line)}
+  .ledger .chip{margin-right:10px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  /* One dot per grade, Piola one through Brígido four, in place of the tier's
+     name. Letter-spaced so four of them read as four rather than as a blur. */
+  .ledger .tier{letter-spacing:.18em;font-size:8px;vertical-align:.18em;opacity:.75}
   .ledger li:first-child{border-top:none}
   .ledger time{font-variant-numeric:tabular-nums;white-space:nowrap}
 
@@ -404,9 +408,6 @@
             </symbol>
             <symbol id="i-leaderboard" viewBox="0 -960 960 960">
                 <path d="M160-200h160v-320H160v320Zm240 0h160v-560H400v560Zm240 0h160v-240H640v240ZM80-120v-480h240v-240h320v320h240v400H80Z"/>
-            </symbol>
-            <symbol id="i-local_fire_department" viewBox="0 -960 960 960">
-                <path d="M240-400q0 52 21 98.5t60 81.5q-1-5-1-9v-9q0-32 12-60t35-51l113-111 113 111q23 23 35 51t12 60v9q0 4-1 9 39-35 60-81.5t21-98.5q0-50-18.5-94.5T648-574q-20 13-42 19.5t-45 6.5q-62 0-107.5-41T401-690q-39 33-69 68.5t-50.5 72Q261-513 250.5-475T240-400Zm240 52-57 56q-11 11-17 25t-6 29q0 32 23.5 55t56.5 23q33 0 56.5-23t23.5-55q0-16-6-29.5T537-292l-57-56Zm0-492v132q0 34 23.5 57t57.5 23q18 0 33.5-7.5T622-658l18-22q74 42 117 117t43 163q0 134-93 227T480-80q-134 0-227-93t-93-227q0-129 86.5-245T480-840Z"/>
             </symbol>
             <symbol id="i-lightbulb" viewBox="0 -960 960 960">
                 <path d="M422.5-103.5Q399-127 399-161h162q0 34-23.5 57.5T480-80q-34 0-57.5-23.5ZM318-223v-60h324v60H318Zm5-121q-66-43-104.5-107.5T180-597q0-122 89-211t211-89q122 0 211 89t89 211q0 81-38 145.5T637-344H323Zm22-60h271q48-32 76-83t28-110q0-99-70.5-169.5T480-837q-99 0-169.5 70.5T240-597q0 59 28 110t77 83Zm135 0Z"/>
@@ -727,22 +728,19 @@
                 aria-labelledby="recordTitle"
             >
                 <h2 id="recordTitle">TU REGISTRO</h2>
-                <!-- The flame is hidden at a streak of zero, because an icon that
-                    means "you are on a run" beside the number 0 says the opposite of
-                    what it draws. It inherits currentColor like every other sprite
-                    icon, so it stays the muted grey of this line rather than
-                    competing with the prize emoji below. -->
+                <!-- Emoji and a count, no words, matching the prize chips in the
+                    status bar. The words are not gone, they moved: emoji carry nothing
+                    to a screen reader, so the sentence lives in the hidden span and is
+                    the only thing read aloud. The counts are aria-hidden so it is not
+                    read twice. -->
                 <p class="lede" id="streakLine">
-                    <svg
-                        class="ico"
-                        id="streakIcon"
+                    <span
+                        id="streakCounts"
                         aria-hidden="true"
-                        focusable="false"
                         hidden
-                    >
-                        <use href="#i-local_fire_department"/>
-                    </svg>
-                    <span id="streakText">Sin partidas todavía.</span>
+                    >🔥 <b id="streakNow">0</b> 🏆 <b id="streakBest">0</b></span><span
+                        id="streakText"
+                    >Sin partidas todavía.</span>
                 </p>
                 <table class="record">
                     <thead>
