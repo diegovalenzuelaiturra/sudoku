@@ -574,12 +574,21 @@ function saveGame() {
         seconds,
         diffKey,
         solved,
-        /* Both new, and neither needs a SAVE_VERSION bump. loadGame() reads them
-         through the same defensive path as every other scalar and falls back to
-         the difficulty's own grade, so a save written before they existed still
-         restores instead of being thrown away. */
-        grade: puzzleGrade,
-        seed: puzzleSeed,
+        /* Neither needs a SAVE_VERSION bump. loadGame() reads them through the
+         same defensive path as every other scalar and falls back to the
+         difficulty's own grade, so a save written before they existed still
+         restores instead of being thrown away.
+
+         Written only when the board was actually measured, which is the whole
+         point of puzzleMeasured. Writing them unconditionally laundered the
+         placeholders into facts: resuming a save from before seeding gave
+         puzzleSeed 0 and puzzleMeasured false, correctly hiding the code, and
+         then the first move wrote seed 0 and the fallback grade straight back
+         out. The next session read that 0, and Number.isInteger(0) && 0 >= 0 is
+         true, so the board came back "measured" and the win screen offered
+         Código: 0, a code that rebuilds a different puzzle. Reported from a
+         real save. Omitting the keys leaves the save saying what it knows. */
+        ...(puzzleMeasured ? { grade: puzzleGrade, seed: puzzleSeed } : {}),
       }),
     );
   } catch {
@@ -777,10 +786,13 @@ function paintRecord() {
      as played: a player who resumed a game from before the record existed and
      won it was shown "Sin partidas todavía." beside a row reading one win and a
      real best time. */
-  $('streakLine').textContent =
+  $('streakText').textContent =
     played === 0 && won === 0
       ? 'Sin partidas todavía.'
       : `Racha de secas: ${stats.streak}. La mejor: ${stats.bestStreak}.`;
+  /* Only while a run is actually going. A flame beside "Racha de secas: 0"
+     illustrates the opposite of what the number says. */
+  $('streakIcon').hidden = stats.streak <= 0;
 
   $('purseFries').textContent = friesTotal;
   $('purseChoco').textContent = chocoTotal;
@@ -1261,28 +1273,47 @@ function undo() {
   render();
   saveGame();
 }
+/* Where a hint is worth most: the cell that needed the least to work out. The
+   candidates are counted against what is on the board right now, so a cell with
+   one is a naked single, which is the whole of the easiest tier. This replaced
+   a random pick, which was as likely to hand over the hardest cell on the board
+   as the obvious one, and a hint that skips the reasoning teaches nothing.
+
+   Deterministic on ties, lowest index first, for the reason the seeds exist:
+   the same board in the same state gives the same hint, so a test can assert it
+   and a player can be told what happened. Returns -1 when the board is done. */
+function easiestOpen() {
+  let best = -1;
+  let fewest = 10;
+  for (let i = 0; i < 81; i++) {
+    if (values[i] === solution[i]) continue;
+    const taken = new Set();
+    for (const p of PEERS[i]) if (values[p]) taken.add(values[p]);
+    const candidates = 9 - taken.size;
+    if (candidates < fewest) {
+      fewest = candidates;
+      best = i;
+    }
+  }
+  return best;
+}
 function hint() {
   if (!playing || paused) return;
-  /* A given, and nothing else. Givens are selectable so the row, column and box
-     highlighting can follow them, so a stray H while looking at one used to fall
-     through to the random branch below and spend the bonus on a cell nobody
-     asked about, which Deshacer no longer refunds. Refusing every ineligible
-     cell instead is worse: values[sel]===solution[sel] is where sel sits after
-     every correct entry, so that turns the Pista button inert on a share of the
-     board that grows to all of it. Those still fall through, which is the press
-     that means "help me somewhere". Announced rather than silently ignored: a
-     key that does nothing and says nothing reads as one that never registered. */
-  if (sel >= 0 && fixed[sel]) {
-    srAction = 'Esa casilla ya viene dada.';
-    render();
-    return;
-  }
+  /* Every press reveals something. Asking on a cell that cannot take a hint,
+     a given or one a hint already filled, used to refuse and say so through
+     #srStatus alone, which is visually-hidden: a sighted player pressed Pista
+     and nothing happened at all, which reads as a broken button rather than as
+     a rule. Reported by a player in exactly those words.
+
+     So an ineligible cell redirects instead of refusing. What made the old
+     random branch bad was not that it moved, it was that it moved somewhere
+     unannounced; the selection follows the hint now, so the board shows where
+     it went. */
   let i = sel >= 0 && !fixed[sel] && values[sel] !== solution[sel] ? sel : -1;
   if (i < 0) {
-    const open = [];
-    for (let k = 0; k < 81; k++) if (values[k] !== solution[k]) open.push(k);
-    if (open.length === 0) return;
-    i = open[(Math.random() * open.length) | 0];
+    i = easiestOpen();
+    if (i < 0) return;
+    srAction = fixed[sel] ? 'Esa casilla ya viene dada, pista en otra.' : 'Pista en otra casilla.';
   }
   snapshot();
   values[i] = solution[i];
