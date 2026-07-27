@@ -136,6 +136,68 @@ test('a win with a mistake pays papas fritas at face value and no chocolate', as
   expect(problems).toEqual([]);
 });
 
+/* The bonus is gated on mistakes===0&&hints===0, and undo used to put both
+   counters back, so guessing a digit and pressing Z when it turned out wrong
+   paid the flawless win. At most nine tries a cell brute-forced a whole board
+   reading zero errors, and the chocolates a clean solve exists to reserve were
+   paid for guessing. Deshacer still rolls the board back. It no longer rolls
+   back what the player did. */
+test('a mistake undone still costs the flawless bonus', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  const target = await page.evaluate(() => values.findIndex((v, k) => !fixed[k]));
+  const cell = page.locator('#board .cell').nth(target);
+
+  await spoil(page);
+  await expect(page.locator('#mistakes')).toHaveText('1');
+
+  /* Both entry points, because the button and the key are wired separately. */
+  await page.locator('#undoBtn').click();
+  await expect(cell.locator('.v'), 'undo left the wrong digit on the board').toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('1');
+
+  await spoil(page);
+  await expect(page.locator('#mistakes')).toHaveText('2');
+  await page.keyboard.press('z');
+  await expect(cell.locator('.v')).toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('2');
+
+  /* The save agrees, so a reload cannot hand the rewind back. */
+  expect(JSON.parse(await readRaw(page, SAVE_KEY)).mistakes).toBe(2);
+
+  await solve(page);
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries));
+  await expect(page.locator('#chocos')).toHaveText('0');
+  expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
+  expect(problems).toEqual([]);
+});
+
+/* The cheaper half of the same hole, and the reason hints are monotonic too:
+   press H, read the answer off the screen, press Z, and the hint was off the
+   record while the digit was still in the player's head. Undo can clear a cell.
+   It cannot un-see an answer. */
+test('a hint undone still costs the flawless bonus', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  await page.keyboard.press('h');
+  await expect(page.locator('#hints')).toHaveText('1');
+
+  await page.keyboard.press('z');
+  await expect(page.locator('#hints')).toHaveText('1');
+
+  await solve(page);
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries));
+  await expect(page.locator('#chocos')).toHaveText('0');
+  expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
+  expect(problems).toEqual([]);
+});
+
 test('the totals survive the reload that used to reset them', async ({ page }) => {
   const problems = await boot(page);
   await startGame(page);

@@ -656,8 +656,18 @@ for(let d=1;d<=9;d++){
 /* ---- helpers ---- */
 const pad2=n=>String(n).padStart(2,'0');
 const fmt=s=>s<3600?`${(s/60)|0}:${pad2(s%60)}`:`${(s/3600)|0}:${pad2(((s/60)|0)%60)}:${pad2(s%60)}`;
+/* Board state only, deliberately. The counters used to ride along in here and be
+   put back by undo(), which meant Deshacer erased the very mistake it was
+   undoing: the marcador rewound, saveGame() persisted the rewound number, and
+   because the flawless bonus is gated on mistakes===0&&hints===0, guessing a
+   digit and undoing it when wrong paid double papas plus the chocolates a clean
+   solve exists to reserve. At most nine tries a cell brute-forced a whole board
+   reading zero errors. Hints were the cheaper cheat: press H, read the answer,
+   press Z, and the hint was off the record while the digit was still on screen.
+   Undo restores a board. It cannot un-see an answer or un-make a mistake, so
+   what the player did is not its to rewrite. */
 function snapshot(){
-  undoStack.push({values:values.slice(),fixed:fixed.slice(),notes:notes.map(s=>[...s]),mistakes,hints});
+  undoStack.push({values:values.slice(),fixed:fixed.slice(),notes:notes.map(s=>[...s])});
   if(undoStack.length>300)undoStack.shift();
 }
 /* Board geometry, needed here as well as in generator.js: this side of the wall
@@ -1459,7 +1469,6 @@ function undo(){
   values=s.values;
   fixed=s.fixed;
   notes=s.notes.map(a=>new Set(a));
-  mistakes=s.mistakes;hints=s.hints;
   render();
   saveGame();
 }
