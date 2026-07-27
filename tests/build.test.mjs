@@ -238,11 +238,18 @@ test('the test:coverage script still asks node to enforce a coverage floor', () 
   /* The numbers this repository already meets. Raising one in package.json is
      expected and passes here; lowering one to buy a green run is the move this
      stops, and deleting the flag outright is the one nothing else would
-     notice. */
+     notice.
+
+     These were 85/75/85 while the report was computed over the two build
+     scripts alone, generator.js having been evaluated from a string that V8
+     attributed to no file. Now that it is required and counted, the suite
+     measures 93.91 lines, 92.16 branches and 94.55 functions, and floors left
+     at the old numbers would sit far enough below that to let the generator
+     rot without tripping. */
   for (const [metric, floor] of [
-    ['lines', 85],
-    ['branches', 75],
-    ['functions', 85],
+    ['lines', 90],
+    ['branches', 88],
+    ['functions', 90],
   ]) {
     /* Both spellings node accepts, "--flag=85" and "--flag 85", so reformatting
        the script does not fail this test with a message claiming the flag was

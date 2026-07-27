@@ -9,7 +9,7 @@
     "lint": "prek run --all-files",
     "preview": "node scripts/build.mjs && node e2e/static-server.mjs",
     "test": "node --test --test-timeout=30000",
-    "test:coverage": "node --test --test-timeout=30000 --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=75 --test-coverage-functions=85",
+    "test:coverage": "node --test --test-timeout=30000 --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=88 --test-coverage-functions=90",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
