@@ -823,23 +823,21 @@ function paintRecord() {
     const li = document.createElement('li');
     const what = document.createElement('span');
     /* Emoji and a signed count, no words. The sign is what separates a prize
-       won from one spent, which is what "canjeadas" used to say, and the tier
-       is the dots, which is what "en Piola" used to say: one per grade, so
-       Piola is one and Brígido is four.
+       won from one spent, which is what "canjeadas" used to say.
 
-       describeEntry() is still the whole sentence and is still what a screen
-       reader gets, because none of the above carries to one. The visible half
-       is aria-hidden so the line is not read twice. */
+       The difficulty is not shown. It was dots for a while, one per grade, and
+       the first question anyone asked was what they meant: a mark that has to
+       be explained is not iconography, it is a cipher with no key on screen.
+       describeEntry() still names the tier, so it is not lost, it is only
+       unspoken to the eye.
+
+       That sentence is still what a screen reader gets, because none of this
+       carries to one. The visible half is aria-hidden so the line is not read
+       twice. */
     const glyphs = document.createElement('span');
     glyphs.setAttribute('aria-hidden', 'true');
     if (e.f) glyphs.append(chipSpan('🍟', e.f));
     if (e.c) glyphs.append(chipSpan('🍫', e.c));
-    if (e.k !== 'redeem' && e.d && DIFF[e.d]) {
-      const tier = document.createElement('span');
-      tier.className = 'tier';
-      tier.textContent = '●'.repeat(DIFF[e.d].grade);
-      glyphs.append(tier);
-    }
     const said = document.createElement('span');
     said.className = 'visually-hidden';
     said.textContent = describeEntry(e);
