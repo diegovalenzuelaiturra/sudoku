@@ -604,12 +604,21 @@
     return {
       puzzle: best.puzzle,
       solution: best.solution,
-      clues: best.puzzle.filter((v) => v !== 0).length,
+      clues: best.clues,
       grade: best.grade,
       gradeName: GRADE_NAMES[best.grade],
-      seed: best.seed,
+      /* The seed of the whole search, not of the attempt that won it. Those are
+         the same number only when the loop broke on target. A near miss spends
+         all sixteen attempts, so replaying the winning attempt's seed rebuilds
+         that board at t=0, finds it still off target, and carries on through a
+         sequence the first run never walked, returning a different puzzle:
+         measured, 2 of 25 near misses over 1000 boards came back as a different
+         board, and a near miss is exactly the board whose grade is odd enough
+         to be worth quoting. The base seed replays the search itself, which is
+         deterministic, so the code always rebuilds what was played. */
+      seed: baseSeed,
       /* The seed the player sees and could quote back, kept short. */
-      code: best.seed.toString(36),
+      code: baseSeed.toString(36),
     };
   }
 

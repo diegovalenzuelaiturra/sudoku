@@ -247,6 +247,11 @@
   .diff[disabled],.modal .quiet[disabled]{opacity:.5;cursor:default}
   .diff[disabled]:hover{border-color:var(--line);color:var(--ink)}
   .genstatus{margin-top:12px;font-size:11.5px;color:var(--ink-soft);letter-spacing:.06em}
+  /* Never hidden, only emptied. A live region announces a change made while it
+     is already in the accessibility tree; the hidden attribute is display:none,
+     which takes it out, so text written before unhiding is text no screen
+     reader ever hears. Empty it is zero height and costs nothing. */
+  .genstatus:empty{margin-top:0}
   .modal .code{margin-top:14px;font-size:11px;color:var(--ink-soft);letter-spacing:.04em}
   .modal .code b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
 
@@ -349,8 +354,6 @@
     <span class="prize" id="chocochip">🍫 <b id="chocos">0</b> <span class="visually-hidden">chocolates ganados</span></span>
     <span class="spacer"></span>
     <span id="remaining"><b>81</b> por llenar</span>
-    <span id="srStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></span>
-    <span id="srAlert" class="visually-hidden" role="alert" aria-live="assertive" aria-atomic="true"></span>
   </div>
 
   <main>
@@ -388,6 +391,14 @@
   </main>
 </div>
 
+<!-- Outside .app, and that is the whole point. Every overlay sets appEl.inert,
+     which drops everything inside .app from the accessibility tree, so a live
+     region kept in there is silent for exactly the actions that happen with a
+     dialog open: redeeming announces through #srStatus and the record dialog is
+     the only place the redeem buttons exist. -->
+<span id="srStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></span>
+<span id="srAlert" class="visually-hidden" role="alert" aria-live="assertive" aria-atomic="true"></span>
+
 <div class="overlay" id="startOverlay">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="startTitle">
     <div class="seal" aria-hidden="true">数</div>
@@ -402,8 +413,10 @@
     <!-- Generation happens in a worker and takes long enough to notice on the
          hardest tiers, so it is announced rather than left as a dead dialog.
          role=status is polite: a screen reader hears it after whatever it was
-         already saying, which is the difficulty button that was just pressed. -->
-    <p class="genstatus" id="genStatus" role="status" hidden>Generando tablero...</p>
+         already saying, which is the difficulty button that was just pressed.
+         Empty rather than hidden, and empty rather than pre-filled: see the
+         .genstatus:empty rule for why both matter. -->
+    <p class="genstatus" id="genStatus" role="status"></p>
     <button class="quiet" id="recordBtn">Ver mi registro</button>
     <button class="quiet" id="cancelNew" hidden>Seguir jugando</button>
   </div>
@@ -423,7 +436,7 @@
     <!-- What the board really was and the seed that rebuilds it. The technique
          is the honest difficulty, and the code is here so a board worth talking
          about can be found again. -->
-    <p class="code">Técnica: <b id="wGrade">directas</b>. Código: <b id="wCode">0</b></p>
+    <p class="code" id="wCodeLine">Técnica: <b id="wGrade">directas</b>. Código: <b id="wCode">0</b></p>
     <button class="newgame" id="againBtn"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg> Otra al tiro</button>
   </div>
 </div>
@@ -467,6 +480,12 @@
    same file is injected as a plain script and the same makePuzzle() runs here
    on the main thread: slower and blocking, but a game rather than an error. */
 const GENERATOR_URL='./generator.js';
+/* A board costs about 115ms in the worst case measured, so this only ever fires
+   on a worker that is gone. It has to exist: a worker can be reclaimed by the
+   browser without dispatching `error`, and a request that never settles leaves
+   the difficulty buttons and "Seguir jugando" disabled with no way out of the
+   dialog and no way back to the game underneath it. */
+const GENERATOR_TIMEOUT=10000;
 let genWorker=null,genJobs=new Map(),genNextId=1,genScript=null;
 
 function generatorWorker(){
@@ -479,7 +498,10 @@ function generatorWorker(){
       if(!job)return;
       genJobs.delete(reply.id);
       if(reply.ok)job.resolve(reply);
-      else job.reject(new Error(reply.error||'the generator failed'));
+      /* Marked, because the fallback below must not run for this one: the
+         worker ran and could not answer, so the same call on the main thread
+         fails the same way, after freezing the page for the whole search. */
+      else job.reject(Object.assign(new Error(reply.error||'the generator failed'),{ranAndFailed:true}));
     });
     /* A worker that dies takes every request waiting on it down too, so they
        are rejected here rather than left pending forever: the caller then falls
@@ -505,7 +527,17 @@ function loadGeneratorScript(){
     const el=document.createElement('script');
     el.src=GENERATOR_URL;
     el.addEventListener('load',resolve);
-    el.addEventListener('error',()=>reject(new Error('could not load '+GENERATOR_URL)));
+    el.addEventListener('error',()=>{
+      /* The memo is dropped along with the element, so a failure is forgotten
+         rather than cached. A rejected promise kept here made the only thing
+         the player is told to do, "probá de nuevo", impossible to follow: one
+         request that lost the network took the fallback out for the life of the
+         page, and every later press answered instantly from the same rejection
+         without touching the network again. */
+      el.remove();
+      genScript=null;
+      reject(new Error('could not load '+GENERATOR_URL));
+    });
     document.head.appendChild(el);
   });
   return genScript;
@@ -518,11 +550,27 @@ function generateOnThisThread(request){
 function requestPuzzle(request){
   const worker=generatorWorker();
   if(worker===false)return generateOnThisThread(request);
+  const id=genNextId++;
   return new Promise((resolve,reject)=>{
-    const id=genNextId++;
     genJobs.set(id,{resolve,reject});
+    /* The deadline, and it also clears the job: a postMessage that throws
+       rejects this promise without ever removing what the line above put in
+       genJobs, and nothing else would. */
+    setTimeout(()=>{
+      if(!genJobs.has(id))return;
+      genJobs.delete(id);
+      genWorker=false;
+      reject(new Error('the generator worker did not answer'));
+    },GENERATOR_TIMEOUT);
     worker.postMessage({clues:request.clues,grade:request.grade,seed:request.seed,id});
-  }).catch(()=>generateOnThisThread(request));
+  }).catch(error=>{
+    /* Only a worker that could not be reached is worth retrying here. One that
+       ran and threw is a deterministic failure: re-running it on the main
+       thread costs the player the freeze this file moved the generator off the
+       main thread to remove, and then fails anyway. */
+    if(error&&error.ranAndFailed)throw error;
+    return generateOnThisThread(request);
+  });
 }
 /* ========== END GENERATOR CLIENT ========== */
 
@@ -558,6 +606,12 @@ let undoStack=[],diffKey='medium',friesTotal=0,chocoTotal=0,winTimers=[],pausedB
    grade it was measured at and the seed it was built from. Both are shown to
    the player at the end, and the seed is what makes a board reproducible. */
 let puzzleGrade=1,puzzleSeed=0;
+/* Whether those two came from the generator or were guessed at. A save written
+   before grading existed carries neither, and the fallbacks below are a tier
+   nothing measured and a seed that rebuilds a different board, so the end of
+   game summary has to stay quiet about both rather than state them with the
+   same confidence as a board that was actually measured. */
+let puzzleMeasured=false;
 const reduceMotion=matchMedia('(prefers-reduced-motion:reduce)');
 /* persistence: bump SAVE_VERSION and loadGame()'s shape checks together if this payload shape ever changes */
 const SAVE_KEY='sudoku:save',SAVE_VERSION=1;
@@ -625,6 +679,10 @@ const PEERS=Array.from({length:81},(_,i)=>peers(i));
 /* ---- overlays ---- */
 const appEl=document.querySelector('.app');
 const controlsEl=document.querySelector('.controls');
+/* The record dialog opens on top of the start dialog, so both functions below
+   ask every overlay rather than the two they used to: closing the one in front
+   must not hand the board back while the one behind it is still up. */
+const OVERLAYS=['startOverlay','winOverlay','recordOverlay'];
 function showOverlay(el){
   el.classList.add('show');
   appEl.inert=true;
@@ -650,15 +708,23 @@ function showOverlay(el){
      disabled outright when there is nothing to redeem, and a focus() on a
      disabled button silently does nothing: focus stayed on the body and the
      next Tab started again from the top of the page. */
+  /* The overlays are siblings of .app, not children, so inerting .app does
+     nothing to the dialog behind this one. Without this, Tab out of the record
+     dialog walks straight into the difficulty buttons of the start dialog it is
+     covering, and Enter there starts a game underneath it: hideOverlay then
+     keeps .app inert because the record is still up, so the clock runs on a
+     board the player cannot touch. */
+  for(const id of OVERLAYS)$(id).inert=$(id)!==el;
   const first=el.querySelector('[data-autofocus]')||el.querySelector('button:not([hidden]):not([disabled])');
   if(first)first.focus();
 }
-/* The record dialog opens on top of the start dialog, so this asks every
-   overlay rather than the two it used to: closing the one in front must not
-   hand the board back while the one behind it is still up. */
-const OVERLAYS=['startOverlay','winOverlay','recordOverlay'];
 function hideOverlay(el){
   el.classList.remove('show');
+  /* Cleared on every overlay, because whatever was behind this one is in front
+     now. Done before the caller does anything else: closeRecord() focuses
+     #recordBtn straight after this, and focus() on an inert element silently
+     does nothing. */
+  for(const id of OVERLAYS)$(id).inert=false;
   if(!OVERLAYS.some(id=>$(id).classList.contains('show')))appEl.inert=false;
 }
 
@@ -703,18 +769,30 @@ let generating=false;
    now: the buttons are genuinely unavailable while a board is being built. */
 function setGenerating(busy){
   generating=busy;
-  /* Reset on the way in rather than on the way out, so a failure message from
-     the previous attempt is cleared exactly when a new one starts. */
-  if(busy)$('genStatus').textContent='Generando tablero...';
-  $('genStatus').hidden=!busy;
+  /* Emptied on the way out and written on the way in, so a failure message from
+     the previous attempt is cleared exactly when a new one starts, and so the
+     live region is never carrying text it entered the tree with. */
+  $('genStatus').textContent=busy?'Generando tablero...':'';
   document.querySelectorAll('.diff').forEach(b=>{b.disabled=busy});
   $('cancelNew').disabled=busy;
+  /* The record button lives in this dialog too. Left alive, it opens the record
+     over a picker that is about to be replaced: the board then arrives and
+     startGame lays it out underneath, where hideOverlay keeps .app inert
+     because the record is still up, and the clock runs on a board nobody can
+     reach. */
+  $('recordBtn').disabled=busy;
 }
 
 async function newGame(key){
   /* A second click while the first board is still being built would start two
      games and lay out whichever came back last. */
   if(generating)return;
+  /* Killed here rather than in startGame, which is where they used to die when
+     this function was synchronous and the click cleared them before returning.
+     Waiting for a board is a window they would otherwise survive: the win
+     dialog's own timer would open it on top of the difficulty picker, taking
+     focus with it, while the next board is still being built. */
+  winTimers.forEach(clearTimeout);winTimers=[];
   setGenerating(true);
   let made=null;
   try{
@@ -729,10 +807,11 @@ async function newGame(key){
        the difficulty buttons are, rather than failing silently or throwing
        inside a click handler where nothing would report it.
 
-       Written after setGenerating(false) and not before: that call hides this
-       element, so a message set first was cleared before anyone could read it. */
+       Written after setGenerating(false) and not before: that call empties this
+       element, so a message set first was cleared before anyone could read it.
+       Written into a region that has been in the accessibility tree the whole
+       time, which is what makes it a change a screen reader announces. */
     $('genStatus').textContent='No se pudo armar el tablero. Probá de nuevo.';
-    $('genStatus').hidden=false;
     return;
   }
   /* Outside the try: a failure to lay out a board that did arrive is a bug in
@@ -754,6 +833,7 @@ function startGame(key,made){
      keeps the end of game summary honest. */
   puzzleGrade=made.grade;
   puzzleSeed=made.seed;
+  puzzleMeasured=true;
   recordPlayed(key);
   values=generated.slice();
   fixed=generated.map(v=>v!==0);
@@ -774,7 +854,12 @@ function startGame(key,made){
   $('srAlert').textContent='';
   hideOverlay($('startOverlay'));
   hideOverlay($('winOverlay'));
-  setPaused(false); /* resets veil, pause glyph + aria-label, and restarts the timer */
+  /* Not setPaused(false): laying the board out is no longer the same task as
+     the click that asked for it, so the tab can be in the background by the
+     time it happens. visibilitychange fired while `playing` was still false and
+     setPaused returned early, so an unconditional false started the clock on a
+     board nobody was looking at, and the minutes went into the best time. */
+  setPaused(document.hidden); /* resets veil, pause glyph + aria-label, and starts or holds the timer */
   /* a fresh puzzle starts from zero: don't let the tracker read it as progress */
   srLast={mistakes:0,hints:0,remaining:null};
   render();
@@ -934,13 +1019,18 @@ function paintWallet(){
   $('fries').textContent=friesTotal;
   $('chocos').textContent=chocoTotal;
 }
+/* One rule for the chocolate plural, because the win announcement and the
+   ledger line describe the same event and used to disagree: a flawless Piola
+   pays one chocolate, announced as "1 chocolate" and written down in the
+   history as "+1 chocolates". */
+const chocoWord=n=>`${n} chocolate${Math.abs(n)===1?'':'s'}`;
 /* One ledger line as a sentence. Words rather than the emoji the chips use:
    this is a history somebody reads, and an emoji is nothing at all to a screen
    reader without a label beside it. */
 function describeEntry(e){
   const bits=[];
   if(e.f)bits.push(`${e.f>0?'+':''}${e.f} papas`);
-  if(e.c)bits.push(`${e.c>0?'+':''}${e.c} chocolates`);
+  if(e.c)bits.push(`${e.c>0?'+':''}${chocoWord(e.c)}`);
   const what=bits.join(', ');
   if(e.k==='redeem')return`${what} canjeadas`;
   return`${what}${e.d?` en ${DIFF[e.d].label}`:''}`;
@@ -956,10 +1046,11 @@ function describeEntry(e){
 function paintRecord(){
   const rows=$('recordRows');
   rows.textContent='';
-  let played=0;
+  let played=0,won=0;
   for(const key of Object.keys(DIFF)){
     const row=stats.d[key];
     played+=row.played;
+    won+=row.won;
     const tr=document.createElement('tr');
     /* The best time is left blank rather than filled with a placeholder when
        nothing has been won: the zero in the column beside it already says why.
@@ -972,7 +1063,11 @@ function paintRecord(){
     }
     rows.appendChild(tr);
   }
-  $('streakLine').textContent=played===0
+  /* Wins as well as games, because only a game started on this build is counted
+     as played: a player who resumed a game from before the record existed and
+     won it was shown "Sin partidas todavía." beside a row reading one win and a
+     real best time. */
+  $('streakLine').textContent=played===0&&won===0
     ?'Sin partidas todavía.'
     :`Racha de secas: ${stats.streak}. La mejor: ${stats.bestStreak}.`;
 
@@ -994,7 +1089,12 @@ function paintRecord(){
     /* A timestamp out of Date's range is still a finite number, so this is
        checked rather than trusted: an invalid date renders as "Invalid Date". */
     if(!Number.isNaN(at.getTime())){
-      when.dateTime=at.toISOString();
+      /* Both halves from the same local calendar day. toISOString() is UTC, so
+         a prize won after eight in the evening in Chile carried a dateTime one
+         day ahead of the day printed beside it. The year is in the dateTime and
+         not in the text, which is where a forty entry history spanning a new
+         year would otherwise show two indistinguishable "5/1" lines. */
+      when.dateTime=`${at.getFullYear()}-${pad2(at.getMonth()+1)}-${pad2(at.getDate())}`;
       when.textContent=`${at.getDate()}/${at.getMonth()+1}`;
     }
     li.append(what,when);
@@ -1027,6 +1127,14 @@ function popChip(id){
 function redeem(kind){
   const raw=walletRaw();
   const stored=readWallet(raw);
+  /* Bytes this build cannot read belong to another build, most likely a newer
+     one the player still has cached, and saveWallet() would write over them.
+     bankPrize() carries on in memory when that happens because a credit that is
+     not written down is only a credit lost. Here the writing down is the whole
+     act: emptying the balance in memory and announcing the payout would tell
+     the player their prizes had been handed over, and the next reload would put
+     them all back. Refused instead, and said so. */
+  if(stored===null&&raw!==null)return null;
   const base=stored||{fries:friesTotal,choco:chocoTotal,ledger};
   const choco=kind==='choco';
   const amount=choco?base.choco:base.fries;
@@ -1036,7 +1144,9 @@ function redeem(kind){
   if(amount<=0)return 0;
   if(choco)chocoTotal=0;else friesTotal=0;
   ledger=logEntry(base.ledger,{t:Date.now(),k:'redeem',f:choco?0:-amount,c:choco?-amount:0,d:''});
-  if(stored||raw===null)saveWallet();
+  /* Unconditional now: the one case this used to guard against returns null
+     above, so anything reaching here is a wallet that was written. */
+  saveWallet();
   return amount;
 }
 
@@ -1077,25 +1187,44 @@ function saveStats(){
 function loadStats(){
   stats=readStats()||blankStats();
 }
+/* Read back before every write, for the reason bankPrize() does it: saveStats()
+   serialises the whole object, so a tab that mutates the copy it read at boot
+   overwrites every game the other tab has finished since. Measured on the
+   wallet before it did this, two tabs, 20 papas then 50, left 50 stored instead
+   of 70; the record had the storage listener but neither write side of that
+   fix. Anything unreadable leaves this tab counting into what it already had,
+   which is the same fallback readStats() already applies at boot. */
+function freshStats(){
+  return readStats()||stats;
+}
 function recordPlayed(key){
+  stats=freshStats();
   stats.d[key].played++;
   saveStats();
 }
 /* The streak counts flawless wins in a row. A plain win streak would say
    nothing here: there is no way to lose, so every game that ends, ends in a
    win, and the streak would just be the number of wins over again. */
+/* Returns whether this win beat a time there was one to beat, which is the only
+   caller that needs it and the only place the comparison can be made safely:
+   done outside, it has to run before this function moves the count, and moving
+   the call one line later silently turned every first win into a personal best
+   against nothing. */
 function recordWin(key,time,flawless){
+  stats=freshStats();
   const row=stats.d[key];
   /* Read before the count moves, and asked of the count rather than of the time
      itself. A zero here means "never won", and a best time of zero is a real if
      unlikely value, so testing `row.best===0` treated an instant win as no win
      and left the column blank forever after. */
   const first=row.won===0;
+  const beat=!first&&time<row.best;
   row.won++;
   if(first||time<row.best)row.best=time;
   stats.streak=flawless?stats.streak+1:0;
   if(stats.streak>stats.bestStreak)stats.bestStreak=stats.streak;
   saveStats();
+  return beat;
 }
 
 /* Reads the wallet at boot. Anything unreadable, corrupt or from a version
@@ -1171,10 +1300,19 @@ function loadGame(){
   hints=Number(s.hints)||0;
   seconds=Number(s.seconds)||0;
   diffKey=s.diffKey;
+  /* hasOwnProperty for the same reason the DIFF lookup above uses it: every
+     name on Object.prototype answers truthy to GRADE_WORDS[key], so a save
+     claiming grade:'constructor' passed this test, made puzzleGrade NaN, and
+     put "Técnica: undefined" on the win screen before saveGame() wrote the NaN
+     back out as null. */
+  const graded=Object.prototype.hasOwnProperty.call(GRADE_WORDS,s.grade);
+  const seeded=Number.isInteger(s.seed)&&s.seed>=0;
   /* A save from before grading falls back to the tier its difficulty asks for,
-     which is the best available guess and never worse than showing nothing. */
-  puzzleGrade=GRADE_WORDS[s.grade]?Number(s.grade):DIFF[s.diffKey].grade;
-  puzzleSeed=Number.isInteger(s.seed)&&s.seed>=0?s.seed:0;
+     which is the best available guess, and puzzleMeasured is what stops the win
+     screen presenting the guess as a measurement. */
+  puzzleGrade=graded?Number(s.grade):DIFF[s.diffKey].grade;
+  puzzleSeed=seeded?s.seed:0;
+  puzzleMeasured=graded&&seeded;
   solved=false;playing=true;notesMode=false;pausedByDialog=false;undoStack=[];
   winTimers.forEach(clearTimeout);winTimers=[];
   $('notesBtn').setAttribute('aria-pressed','false');
@@ -1220,7 +1358,6 @@ function win(){
   const flawless=mistakes===0&&hints===0;
   const earned=DIFF[diffKey].fries*(flawless?2:1);
   const chocoEarned=flawless?DIFF[diffKey].choco:0;
-  const chocoWord=n=>n===1?'1 chocolate':n+' chocolates';
   /* assertive: the win is the one event worth interrupting for, and the modal
      it belongs to only appears after ~2s of animation. The prize goes in here
      too: showOverlay() focuses the dialog's button, not the banner, so this is
@@ -1232,8 +1369,12 @@ function win(){
      who closes the tab during the animation has still won the prize. The record
      is written on the same principle and for the same reason. */
   bankPrize(earned,chocoEarned);
-  const beatBest=stats.d[diffKey].won===0||finalTime<stats.d[diffKey].best;
-  recordWin(diffKey,finalTime,flawless);
+  /* Asked of recordWin rather than computed beside it, which had two copies of
+     the same test that only agreed while this line stayed above the call. A
+     first win no longer counts: there was no time to beat, and claiming one
+     stole the message from every first flawless win, which is the rarer thing
+     and the one worth saying. */
+  const beatBest=recordWin(diffKey,finalTime,flawless);
   /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow=reduceMotion.matches?0:1;
   if(!reduceMotion.matches){
@@ -1260,8 +1401,15 @@ function win(){
        that rebuilds it. Both are textContent: the code is a number in base 36
        and the technique comes from a fixed table, but neither has any business
        being parsed as markup. */
-    $('wGrade').textContent=GRADE_WORDS[puzzleGrade];
-    $('wCode').textContent=puzzleSeed.toString(36);
+    /* Dropped entirely for a board this build never measured, which is any game
+       resumed from a save written before grading existed: the tier would be the
+       one the difficulty asked for, which is the lie the grade exists to stop
+       telling, and the code would be 0, which rebuilds a different board. */
+    $('wCodeLine').hidden=!puzzleMeasured;
+    if(puzzleMeasured){
+      $('wGrade').textContent=GRADE_WORDS[puzzleGrade];
+      $('wCode').textContent=puzzleSeed.toString(36);
+    }
     /* What you just won, as icons. The sentence this replaced said the same
        thing three times over, and the running totals it repeated are the chips
        in the status bar, one dismissal away. The words survive for a screen
@@ -1464,9 +1612,15 @@ document.querySelectorAll('.redeem').forEach(button=>{
     }
     const amount=redeem(kind);
     disarmRedeem();
+    /* Before the repaint, which disables the button that has focus the moment
+       its balance hits zero, and a disabled element is blurred: focus fell to
+       the body from inside an open dialog and the next Tab restarted from the
+       top of the page. */
+    $('closeRecord').focus();
     paintWallet();
     paintRecord();
-    $('srStatus').textContent=amount>0?`Canjeaste ${amount} ${word}.`:`No hay ${word} para canjear.`;
+    $('srStatus').textContent=amount===null?`No se pudo canjear: hay premios guardados que esta versión no entiende.`
+      :amount>0?`Canjeaste ${amount} ${word}.`:`No hay ${word} para canjear.`;
   });
 });
 /* The buttons advertise the technique, not the clue count, because the
@@ -1534,6 +1688,11 @@ addEventListener('storage',e=>{
   if(e.key!==WALLET_KEY)return;
   const w=readWallet();
   if(!w)return;
+  /* The armed press was a confirmation of a number that has just changed, and
+     redeem() reads storage rather than this tab's copy: left armed, the second
+     press handed over a total the player never agreed to, and paintRecord()
+     below would leave the button reading "¿Seguro?" while disabling it. */
+  disarmRedeem();
   friesTotal=w.fries;chocoTotal=w.choco;ledger=w.ledger;
   paintWallet();
   paintRecord();

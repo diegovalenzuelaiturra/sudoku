@@ -84,6 +84,34 @@ test('the record opens over the start dialog and hands focus back on the way out
   expect(problems).toEqual([]);
 });
 
+test('the difficulty buttons cannot be reached from behind the record', async ({ page }) => {
+  /* The overlays are siblings of .app, so inerting .app leaves the dialog
+     underneath fully live. Tab used to walk out of the record and into the
+     picker it is covering, where Enter started a game: hideOverlay then kept
+     .app inert because the record was still up, and the clock ran on a board
+     the player could not touch or see. */
+  const problems = await boot(page);
+  await openRecord(page);
+  await expect(page.locator('#closeRecord')).toBeFocused();
+
+  for (let press = 0; press < 4; press++) {
+    await page.keyboard.press('Tab');
+    const escaped = await page.evaluate(
+      () => document.activeElement !== null && document.activeElement.closest('#startOverlay') !== null,
+    );
+    expect(escaped, 'Tab reached the dialog behind the record').toBe(false);
+  }
+
+  /* And the record cannot be opened over a picker that is mid generation, which
+     is the same ending reached with the pointer instead of the keyboard. */
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#recordOverlay')).toBeHidden();
+  await startGame(page);
+  await expect(page.locator('#recordOverlay')).toBeHidden();
+  await expect(page.locator('.app')).not.toHaveJSProperty('inert', true);
+  expect(problems).toEqual([]);
+});
+
 test('a fresh player has a record that says so', async ({ page }) => {
   const problems = await boot(page);
   await openRecord(page);
