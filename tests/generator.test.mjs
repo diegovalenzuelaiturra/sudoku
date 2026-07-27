@@ -16,26 +16,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const source = readFileSync(join(root, 'generator.js'), 'utf8');
 const html = readFileSync(join(root, 'index.html'), 'utf8');
 
-/* The evaluated string is this repository's own committed generator.js, run by
-   a test inside that repository's CI. Anyone able to change it could change
-   this file just as easily, so evaluating it adds no attack surface, and
-   running the shipped code is the whole point: a hand copied generator would
-   silently drift from the one players actually run.
+/* Required rather than evaluated from a string, because the coverage report is
+   the point. `new Function` compiles an anonymous script that V8 attributes to
+   no file at all, so every line of the generator counted as nothing and the
+   floor `npm run test:coverage` enforces was being measured over the two build
+   scripts alone. Requiring the file gives it a real filename, so the code these
+   tests actually drive is the code the report is computed from.
 
-   generator.js exports onto whatever `self` is, so it is handed an object to
-   export onto rather than being let near this process's globals. That is also
-   what keeps the worker wiring at the bottom of it dormant here: it is behind a
-   WorkerGlobalScope check, and node has no such thing. */
-const exported = {};
-new Function('self', source)(exported);
-const { makePuzzle, gradePuzzle, countSolutions, GRADE_NAMES } = exported.SudokuGenerator;
+   It is still this repository's own committed generator.js, run by a test
+   inside that repository's CI. Anyone able to change it could change this file
+   just as easily, so loading it adds no attack surface, and running the shipped
+   code is the whole point: a hand copied generator would silently drift from
+   the one players actually run.
+
+   generator.js is a classic script that exports onto `self` where there is one
+   and `globalThis` otherwise. Node has no `self`, so loading it here puts a
+   single name on the global object, which is read once and then deleted: the
+   process is left no dirtier than the sandboxed object this replaced. What kept
+   the worker wiring at the bottom of the file dormant is unchanged, because it
+   is behind a WorkerGlobalScope check and node has no such thing. */
+const require = createRequire(import.meta.url);
+require(join(root, 'generator.js'));
+const { makePuzzle, gradePuzzle, countSolutions, GRADE_NAMES } = globalThis.SudokuGenerator;
+delete globalThis.SudokuGenerator;
 
 /* Kept in sync with the DIFF map in index.html, which the last test here checks
    rather than trusts. `hits` is what was measured over the 24 seeds below, and
