@@ -1,55 +1,11 @@
 {
-  // This file has two readers. oxlint is the obvious one. The other is
-  // eslint.config.mjs, which hands it to eslint-plugin-oxlint and switches off
-  // every ESLint rule oxlint already covers, so no single problem is reported
-  // twice by two tools. Adding a rule here therefore also changes what ESLint
-  // stops checking, which is the point: the fast linter takes what it can and
-  // ESLint keeps the rest.
-  //
-  // Comments are legal in this file and are why .pre-commit-config.yaml
-  // excludes it from check-json, which parses with Python's strict json module
-  // and refuses them. The guard that hook provides is not lost, it moves:
-  // oxlint parses this file on every run and a malformed one exits 1 naming the
-  // line, measured against the oxlint in this lockfile rather than assumed. The
-  // reader that stays quiet is eslint-plugin-oxlint, which given the same
-  // broken file returns as though nothing were wrong, so ESLint would go back
-  // to reporting oxlint's findings a second time. That is noise rather than a
-  // hole, and oxlint fails the run before anyone reads it.
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-
-  // "oxlint --init" also writes "typescript" here. There is no TypeScript in
-  // this repository, so those rules would load and never fire.
   "plugins": ["unicorn", "oxc"],
-
-  // correctness is the category oxlint reserves for code that is simply wrong,
-  // and it is the only one enabled. The others were run over this tree before
-  // being left out rather than dismissed: suspicious adds 33 findings, perf 22,
-  // pedantic 202, restriction 341 and style 1403, and the ones that are not
-  // pure opinion are false positives here. Two worth naming, so they are not
-  // rediscovered and mistaken for bugs: no-unmodified-loop-condition flags the
-  // "while (left > 0)" search in generator.js, where left is decremented by a
-  // helper the rule cannot see through, and require-post-message-target-origin
-  // flags the same file's worker replies, where a target origin does not exist
-  // to be passed.
   "categories": {
     "correctness": "error"
   },
-
   "rules": {
-    // All 33 sites this fired on are new Array(n).fill(x), where the ambiguity
-    // the rule exists to catch, whether the argument is a length or a lone
-    // element, is answered by the very next call.
     "unicorn/no-new-array": "off"
   },
-
-  // One ignore list for both tools: eslint-plugin-oxlint turns these into
-  // ESLint's global ignores, so a directory named here is skipped by both.
-  //
-  // .claude is the entry that is not merely tidy. It holds git worktrees, so
-  // from the main checkout a linter that descends into it reads a full second
-  // copy of this repository for every branch anyone has open, and reports on
-  // files that belong to another branch. tests/typography.test.mjs skips it for
-  // the same reason. The rest is build and test output, which oxlint already
-  // skips by reading .gitignore and ESLint does not.
   "ignorePatterns": [".claude/**", "_site/**", "test-results/**", "playwright-report/**"]
 }

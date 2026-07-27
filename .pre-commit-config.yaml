@@ -132,17 +132,13 @@ repos:
       # Matching by extension rather than by exact name means a second manifest
       # added later is covered without another edit.
       #
-      # .oxlintrc.json is excluded because it holds comments, which oxlint and
-      # eslint-plugin-oxlint both accept and this hook, parsing with Python's
-      # strict json module, does not. The check is not given up, it moves: the
-      # oxlint hook below parses that file on every run and a malformed one
-      # exits 1 naming the line. Measured against the oxlint in this lockfile,
-      # not assumed. The exclusion is anchored to that one name so a second
-      # .json file added later is still parsed.
+      # .oxlintrc.json is in scope like any other .json. oxlint would accept
+      # comments in it, and it deliberately carries none: a config file every
+      # JSON tool can parse is worth more than the comments, and the reasons
+      # those comments would have held are in eslint.config.mjs and README.md.
       - id: check-json
         types: [file]
         files: \.(json|webmanifest)$
-        exclude: ^\.oxlintrc\.json$
 
       # A conflict marker committed by hand survives all the way to whatever
       # loads the file, and the unit suite reads almost none of these files, so

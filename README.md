@@ -48,7 +48,7 @@ npm run test:coverage   # the same suite, with the coverage floor CI enforces
 npm run test:e2e        # Playwright, real Chromium and real WebKit
 ```
 
-The coverage floor is 85 percent of lines, 75 of branches and 85 of functions,
+The coverage floor is 90 percent of lines, 88 of branches and 90 of functions,
 set a few points below what the suite measures today so it catches a regression
 rather than rounding noise. It only sees files a test actually loads, so it will
 not notice a brand new script that nothing imports.
@@ -70,9 +70,11 @@ whether a file is a node module, a classic worker script or a service worker.
 
 `eslint.config.mjs` reads `.oxlintrc.json` and switches off the 68 ESLint rules
 oxlint already covers, so nothing is reported twice and both tools share one
-ignore list. Change what either reads in `.oxlintrc.json`.
+ignore list. Change what either reads in `.oxlintrc.json`. That file is plain
+JSON with no comments, so anything that reads JSON can read it; why a rule is on
+or off is recorded at the top of `eslint.config.mjs` instead.
 
-`npm run lint:fix` reformats the two HTML files, at the two space indent
+`npm run lint:fix` reformats the two HTML files, at the four space indent
 `.editorconfig` asks for. It does not touch the CSS or the JavaScript inside
 `index.html`: html-eslint treats the body of a `<style>` or `<script>` element
 as opaque text, and lints the markup around it. Nothing in this repository lints

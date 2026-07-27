@@ -4,6 +4,29 @@
    file's ignorePatterns into ESLint's global ignores, so the two tools share one
    ignore list and never print the same problem twice.
 
+   .oxlintrc.json is plain JSON, with no comments, so that every tool which
+   reads JSON can read it. The three things a reader would otherwise ask it are
+   recorded here instead.
+
+   Why only the correctness category. It is the one oxlint reserves for code
+   that is simply wrong. The others were run over this tree before being left
+   out rather than dismissed: suspicious adds 33 findings, perf 22, pedantic
+   202, restriction 341 and style 1403, and the ones that are not pure opinion
+   are false positives here. Two worth naming so they are not rediscovered and
+   mistaken for bugs: no-unmodified-loop-condition flags the "while (left > 0)"
+   search in generator.js, where left is decremented by a helper the rule cannot
+   see through, and require-post-message-target-origin flags that file's worker
+   replies, where no target origin exists to pass.
+
+   Why unicorn/no-new-array is off. All 33 sites it fired on are
+   new Array(n).fill(x), where the ambiguity it exists to catch, whether the
+   argument is a length or a lone element, is answered by the very next call.
+
+   Why .claude is in ignorePatterns. It holds git worktrees, so from the main
+   checkout a linter that descends into it reads a full second copy of this
+   repository for every branch anyone has open, and reports on files belonging
+   to another branch. tests/typography.test.mjs skips it for the same reason.
+
    What ESLint is here for, then, is the part oxlint does not do: HTML, through
    @html-eslint, and the scope and globals analysis that needs to know which of
    the four environments in this repository a file runs in. There are four, and
@@ -74,12 +97,15 @@ export default defineConfig([
     extends: ['html/recommended'],
     language: 'html/html',
     rules: {
-      /* The plugin's own default is 4. Two is what .editorconfig declares for
-         every file in this repository and what every tracked file already uses,
-         and the whole point of that file is that a tool with different defaults
-         does not get to quietly reindent a file and bury the next real change
-         in noise. This is that tool, so it is told. */
-      'html/indent': ['error', 2],
+      /* Four, which is the plugin's own default and is written out anyway so
+         that this file and .editorconfig say the same number in the same words.
+         HTML is the one exception to the two spaces the rest of the tree uses,
+         because markup nests far deeper than the code does: the board sits
+         eight levels in, and at two spaces the indentation stops being a cue
+         about depth. .editorconfig carries the matching [*.html] block, and the
+         two have to be changed together or an editor and this rule will take
+         turns reformatting the file. */
+      'html/indent': ['error', 4],
     },
   },
 

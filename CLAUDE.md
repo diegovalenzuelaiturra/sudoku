@@ -79,7 +79,8 @@ Two linters, configured not to overlap: oxlint runs its `correctness` rules, and
 already covers. Both share the ignore list in `.oxlintrc.json`.
 
 ESLint owns the HTML, through html-eslint, and reformats `index.html` and
-`404.html` to a two space indent. It does not touch what is inside `<style>` or
+`404.html` to a four space indent, the one place this tree is not on two, which
+`.editorconfig` records as well. It does not touch what is inside `<style>` or
 `<script>`: the body of those elements is opaque text to it, so the game's own
 JavaScript and CSS are linted by nothing and carried entirely by the suites
 above. Editing the markup means running `npm run lint:fix` or watching CI fail
