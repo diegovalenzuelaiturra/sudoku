@@ -164,7 +164,15 @@ test('the job holding the publish credentials runs no third party code', () => {
      does not silently switch the check off. */
   const workflow = readFileSync(join(root, '.github/workflows/deploy-pages.yml'), 'utf8');
 
-  const jobs = [...workflow.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|\Z)/gm)]
+  /* The tail of the lookahead is $(?![\s\S]), not \Z: JavaScript has no \Z, and
+     in a non-unicode pattern it is an identity escape matching a literal "Z".
+     That is not a harmless typo. The lazy body would stop at the first capital
+     Z after a job's key, so one word like "Zero" in a comment above the steps
+     truncates the deploy job's text to its permissions block. jobs.length stays
+     1, the filter below still sees pages: write, and every assertion after it
+     passes because it is reading a body with no steps in it. The guard on the
+     job that holds the publish credentials would go quiet without failing. */
+  const jobs = [...workflow.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|$(?![\s\S]))/gm)]
     .map(([, name, body]) => ({ name, body }))
     .filter(({ body }) => /^ {6}pages:\s*write/m.test(body));
 
