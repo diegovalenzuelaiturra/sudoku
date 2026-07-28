@@ -286,6 +286,98 @@ test('undo restores the board but never the counters', async ({ page }) => {
   await expect(page.locator('#mistakes')).toHaveText('1');
 });
 
+/* The Pista button has to survive the guard above it. Refusing every cell that
+   cannot take a hint also refuses the one sel sits on after every correct entry,
+   which turns the button inert on a share of the board that grows to all of it,
+   so this is the case that must keep working. */
+test('a hint still works on the cell left selected by a correct entry', async ({ page }) => {
+  await page.locator('#startOverlay button.diff[data-d="medium"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  await page.evaluate(() => {
+    const i = values.findIndex((v, k) => !fixed[k]);
+    sel = i;
+    inputDigit(solution[i]);
+  });
+  const before = await page.locator('#remaining').textContent();
+
+  await page.keyboard.press('h');
+  await expect(page.locator('#hints')).toHaveText('1');
+  await expect(page.locator('#remaining'), 'the hint revealed nothing').not.toHaveText(before);
+});
+
+test('a hint asked of a given does nothing, and says so', async ({ page }) => {
+  await page.locator('#startOverlay button.diff[data-d="medium"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  /* Givens are selectable on purpose: that is what drives the row, column and
+     box highlighting, so this is a press a player makes by accident. It used to
+     reveal a random cell elsewhere and spend the bonus on it. */
+  const before = await page.locator('#remaining').textContent();
+  await page.locator('#board .cell.given').first().click();
+  await page.keyboard.press('h');
+
+  await expect(page.locator('#hints')).toHaveText('0');
+  await expect(page.locator('#remaining')).toHaveText(before);
+  /* Said out loud, because a key that does nothing and says nothing reads as one
+     that never registered. */
+  await expect(page.locator('#srStatus')).toHaveText(/Esa casilla ya viene dada\./);
+});
+
+test('a hint undone and asked for again is charged once', async ({ page }) => {
+  await page.locator('#startOverlay button.diff[data-d="medium"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  await page.keyboard.press('h');
+  await expect(page.locator('#hints')).toHaveText('1');
+  const cell = page.locator('#board .cell').nth(await page.evaluate(() => sel));
+  await expect(cell).toHaveClass(/given/);
+
+  await page.keyboard.press('z');
+  await expect(cell).not.toHaveClass(/given/);
+
+  /* hint() leaves sel on the cell it filled and undo() does not restore sel, so
+     this press finds that same cell empty and editable, which is the shape that
+     charged twice for one answer. */
+  await page.keyboard.press('h');
+  await expect(cell).toHaveClass(/given/);
+  await expect(page.locator('#hints')).toHaveText('1');
+});
+
+test('undo says so without silencing the count it moved', async ({ page }) => {
+  await page.locator('#startOverlay button.diff[data-d="medium"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  /* Down to 20 unfilled. render() only speaks when the count crosses a ten, so
+     the next correct digit takes it to 19 and is announced, and undoing that
+     crosses back to 20 and is announced again. That is the case where an
+     announcement written straight to the element ate the one render() had just
+     made, after srLast had already recorded it as said. */
+  await page.evaluate(() => {
+    const unfilled = () => values.filter((v, i) => !v || v !== solution[i]).length;
+    for (let i = 0; i < 81 && unfilled() > 20; i++) {
+      if (fixed[i] || values[i] === solution[i]) continue;
+      sel = i;
+      inputDigit(solution[i]);
+    }
+  });
+  await expect(page.locator('#remaining')).toHaveText('20 por llenar');
+
+  await page.evaluate(() => {
+    const i = values.findIndex((v, k) => !fixed[k] && values[k] !== solution[k]);
+    sel = i;
+    inputDigit(solution[i]);
+  });
+  await expect(page.locator('#srStatus')).toHaveText(/19 celdas por llenar/);
+
+  await page.keyboard.press('z');
+  await expect(page.locator('#srStatus')).toHaveText(/Deshecho\./);
+  await expect(
+    page.locator('#srStatus'),
+    'the undo ate the count it had just moved',
+  ).toHaveText(/20 celdas por llenar/);
+});
+
 test('keyboard focus is painted on the board, a pointer click is not', async ({ page }) => {
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
   await expect(page.locator('#startOverlay')).toBeHidden();
