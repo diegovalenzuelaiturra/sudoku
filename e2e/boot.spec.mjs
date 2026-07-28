@@ -208,7 +208,7 @@ for (const preset of PRESETS) {
     test.skip(
       test.info().project.name !== 'chromium',
       'reads the accessibility tree, which only Chromium exposes over CDP',
-      );
+    );
     const cdp = await context.newCDPSession(page);
     await page.locator(`#startOverlay button.diff[data-d="${preset.key}"]`).click();
 

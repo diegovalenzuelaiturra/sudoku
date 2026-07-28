@@ -294,11 +294,6 @@ test('solving the puzzle clears the save, so the next load starts fresh', async 
   context,
 }) => {
   const problems = await boot(page);
-  test.skip(
-    test.info().project.name !== 'chromium',
-    'reads the accessibility tree, which only Chromium exposes over CDP',
-  );
-  const cdp = await context.newCDPSession(page);
 
   await startGame(page, 'medium');
   expect(await readRawSave(page), 'nothing was saved to clear').not.toBeNull();
@@ -323,6 +318,15 @@ test('solving the puzzle clears the save, so the next load starts fresh', async 
     page.getByRole('dialog', { name: 'SUDOKU' }),
     'the start dialog did not come back after a finished game',
   ).toBeVisible();
+  /* Everything above is what solving does to the save, and it runs on both
+     engines, which is where it belongs: WebKit is what an installed copy runs
+     and its localStorage is the one that gets partitioned and evicted. Only
+     the last assertion is Chromium bound. */
+  test.skip(
+    test.info().project.name !== 'chromium',
+    'reads the accessibility tree, which only Chromium exposes over CDP',
+  );
+  const cdp = await context.newCDPSession(page);
   /* And it is a real modal: the board behind it is inert, so the tree Chrome
      exposes holds none of its cells. */
   await expectExposedCells(cdp, 0);
@@ -365,6 +369,21 @@ for (const [name, payload] of [
     notes: new Array(81).fill([]),
     diffKey: 'imposible',
   })],
+  /* "imposible" above is the honest typo. This one is the difficulty that is not
+     a difficulty: every name on Object.prototype answers truthy to a bare
+     DIFF[key] lookup, so a plain `if(!DIFF[s.diffKey])` accepted this save and
+     restored a playable board with no row behind it. Winning then multiplied
+     undefined, banked NaN, and wrote a wallet of nulls that read back as zero,
+     taking every prize the player had ever earned with it. */
+  ['a difficulty borrowed from Object.prototype', JSON.stringify({
+    v: 1,
+    puzzle: new Array(81).fill(0),
+    solution: new Array(81).fill(1),
+    values: new Array(81).fill(0),
+    fixed: new Array(81).fill(false),
+    notes: new Array(81).fill([]),
+    diffKey: 'constructor',
+  })],
   ['an already-solved game', JSON.stringify({
     v: 1,
     puzzle: new Array(81).fill(0),
@@ -378,11 +397,6 @@ for (const [name, payload] of [
 ]) {
   test(`a save that is ${name} is ignored and the start dialog opens`, async ({ page, context }) => {
     const problems = await boot(page);
-    test.skip(
-      test.info().project.name !== 'chromium',
-      'reads the accessibility tree, which only Chromium exposes over CDP',
-      );
-    const cdp = await context.newCDPSession(page);
 
     /* Planted in the browser's own storage and then reloaded, so the page
        reads it back through the same localStorage a visitor would. */
@@ -401,6 +415,16 @@ for (const [name, payload] of [
     ).toBeVisible();
     await expect(page.getByRole('button', { name: /Normal/ })).toBeVisible();
     await expect(page.locator('#remaining')).toHaveText('81 por llenar');
+
+    /* Everything above is the rejection itself and runs on both engines, which
+       is where it belongs: WebKit is what an installed copy runs, and its
+       localStorage is the one that gets partitioned and evicted. Only the last
+       assertion is Chromium bound. */
+    test.skip(
+      test.info().project.name !== 'chromium',
+      'reads the accessibility tree, which only Chromium exposes over CDP',
+    );
+    const cdp = await context.newCDPSession(page);
     /* Nothing of the rejected board leaked out from behind the dialog. */
     await expectExposedCells(cdp, 0);
   });
