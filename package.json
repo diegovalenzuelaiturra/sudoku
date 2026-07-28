@@ -1,0 +1,12 @@
+{
+  "name": "sudoku",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tests for the self-contained sudoku page. The site itself is a single index.html with no runtime dependencies; nothing here is shipped.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}
