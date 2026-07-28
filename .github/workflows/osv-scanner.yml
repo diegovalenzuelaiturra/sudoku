@@ -1,9 +1,10 @@
 name: OSV-Scanner
 
-# Checks the dependency tree against the OSV database on every pull request.
-# The point is not that this repo has many dependencies, it has three direct
-# ones and all of them are dev-only. The point is the transitive tree behind
-# them, which is where a compromised release actually arrives.
+# Checks the dependency tree against the OSV database when a pull request moves
+# the manifests, and once a week whether anything moved or not. The point is not
+# that this repo has many dependencies, it has three direct ones and all of them
+# are dev-only. The point is the transitive tree behind them, which is where a
+# compromised release actually arrives.
 #
 # What this adds over what already runs here:
 #
@@ -27,28 +28,76 @@ name: OSV-Scanner
 # "selected", and the GitHub-owned and verified-creator checkboxes do not cover
 # a third-party REUSABLE WORKFLOW: those two apply to actions, and a reusable
 # workflow from another repository needs an explicit allowed pattern whoever
-# publishes it. "google/*" is now in that list, which is what lets the job
-# below start at all.
+# publishes it. "google/osv-scanner-action/*" is in that list, which is what
+# lets the pull request job below start at all.
 #
-# One caveat, recorded rather than hidden. Every "uses:" inside the reusable
-# workflow is a full commit SHA, but it bottoms out in an action whose runtime
-# is "image: docker://ghcr.io/google/osv-scanner-action:v2.3.8", an image tag
-# rather than a digest. Pinning the reference below does not pin that image, so
-# this job is the one exception to the repository's otherwise total SHA
-# pinning. Accepted knowingly, in exchange for upstream maintenance and the
-# base-versus-head diffing described below.
-
+# One caveat, recorded rather than hidden, and it applies to that job alone.
+# Every "uses:" inside the reusable workflow it calls is a full commit SHA, but
+# it bottoms out in an action whose runtime is
+# "image: docker://ghcr.io/google/osv-scanner-action:v2.3.8", an image tag
+# rather than a digest. Pinning the reference does not pin that image, so that
+# job is the one exception to the repository's otherwise total SHA pinning.
+# Accepted knowingly, in exchange for upstream maintenance and the
+# base-versus-head diffing described below. The scheduled job makes no such
+# exception, for a reason written down where it is defined.
+#
+# The answer is not a function of package-lock.json alone, which is why there is
+# a schedule as well as a pull request trigger. OSV publishes advisories
+# continuously and retroactively, so a version locked one month can be flagged
+# the next with nothing in the diff to notice, and three dev-only dependencies
+# behind a seven-day cooldown can sit still for a long time. The path filters
+# catch a lockfile as it moves; the schedule re-asks about one that has not.
+#
+# Those filters are only harmless because of what is said above: this is
+# deliberately not a required status check, so a pull request that touches
+# neither manifest skips this workflow, reports nothing, and blocks nothing.
+# Making it required later would have to undo the filters in the same commit,
+# since a required check that never runs leaves the merge waiting for a result
+# that will not arrive.
 on:
   pull_request:
+    paths:
+      - package-lock.json
+      - package.json
+      # This file too, or a pull request rewriting the scan is the one pull
+      # request the scan does not run on. It buys scan-pr and nothing more:
+      # scan-full is gated on the event and still cannot be exercised by a pull
+      # request at all, so a change to that job has to be checked with a
+      # workflow_dispatch run rather than left to first execute unattended on a
+      # Monday cron against the default branch.
+      - .github/workflows/osv-scanner.yml
+  # Mondays at 06:00 UTC. Weekly rather than daily because a re-scan only
+  # changes its answer when OSV publishes something, and the start of the week
+  # puts this beside Dependabot's weekly run rather than five days after it.
+  # dependabot.yml asks for "interval: weekly" without naming a day, and
+  # GitHub's Dependabot options reference does not document which day that
+  # resolves to, so read the alignment as roughly, not exactly, the same
+  # morning. A scheduled run always uses the default branch's copy of this file
+  # and scans the default branch's lockfile, which is the tree that is actually
+  # published.
+  schedule:
+    - cron: "0 6 * * 1"
+  # For re-asking on the spot after an advisory is dealt with, rather than
+  # waiting until Monday to learn whether the fix took.
+  workflow_dispatch:
 
 permissions: {}
 
 concurrency:
   group: osv-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseding is right on a pull request, where only the newest push is worth
+  # an answer, and wrong everywhere else: a scheduled run and a manual one share
+  # the default branch's ref, so left at true whichever started second would
+  # cancel the other and silence an answer nobody asked to discard.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   scan-pr:
+    # Two jobs share this file and every trigger above starts all of it, so each
+    # one names the events it is for or it would run on the others as well.
+    # Written as an equality rather than as "not a schedule" so that a trigger
+    # added later has to be routed to a job on purpose.
+    if: github.event_name == 'pull_request'
     # The PR variant rather than the full-scan one. It scans base and head and
     # reports only what the pull request newly introduces, so a long-lived
     # advisory in a dev-only transitive dependency does not re-flag every
@@ -68,3 +117,83 @@ jobs:
       # the deploy job, and it goes to third-party code, which is why it is
       # scoped to this one job.
       security-events: write
+
+  # Written out by hand rather than calling the full-scan sibling of the
+  # reusable workflow above, which is what a schedule needs: that variant scans
+  # base against head, and on a schedule there is no base to diff against.
+  #
+  # Calling it is not possible here, which was learned by trying. This
+  # repository sets "require actions to be pinned to a full-length commit SHA",
+  # and osv-scanner-reusable.yml contains "uses: actions/download-artifact@v8",
+  # a mutable major tag and the only unpinned reference in either variant. That
+  # policy is evaluated when the workflow graph is resolved, before any job
+  # runs, so the step's "inputs.download-artifact != ''" guard does not help:
+  # the run ends as startup_failure with no jobs created, and it takes the
+  # working scan-pr job in this same file down with it. Measured on this branch
+  # at run 30198856055, against the pull request that introduced the job.
+  #
+  # So the scan is run directly instead. Every reference below is a commit SHA
+  # or a checksum, which removes the exception rather than documenting it, and
+  # this is the shape this repository used before the reusable workflow was
+  # adopted. What is given up is upstream maintenance of the scan invocation.
+  scan-full:
+    name: Scheduled scan
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # No actions: read here, unlike scan-pr. That scope exists for the
+      # reusable workflow's artifact handling, and nothing below reads the
+      # Actions API.
+      contents: read
+      # Publishes findings under Security, Code scanning. Free on public
+      # repositories.
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The release binary, verified against the checksum published in
+      # osv-scanner_SHA256SUMS for this tag rather than trusted because the
+      # download succeeded. A tag on a release asset can be moved; the checksum
+      # is what makes this equivalent to a SHA pin.
+      - name: Install osv-scanner
+        env:
+          OSV_VERSION: v2.4.0
+          OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --strict -
+          chmod +x osv-scanner
+
+      # Recursive from the checkout root, which is the same target the reusable
+      # workflow's default scan-args ("-r ./") would have used, so a manifest
+      # added in a subdirectory later is covered without another edit.
+      #
+      # continue-on-error, because a non-zero exit here means findings, and the
+      # findings still have to reach the Security tab before the run fails. The
+      # step below is what fails it.
+      - name: Scan the dependency tree
+        id: scan
+        continue-on-error: true
+        run: ./osv-scanner scan source --recursive --format=sarif --output-file=osv.sarif .
+
+      - name: Publish findings to code scanning
+        if: ${{ !cancelled() && steps.scan.outcome != 'skipped' }}
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: osv.sarif
+          category: osv-scanner
+
+      # Matches the fail-on-vuln default of the reusable workflow: a standing
+      # advisory turns this job red every Monday until it is dealt with, which
+      # is the whole point of running it on a schedule.
+      - name: Fail if the scan found anything
+        if: steps.scan.outcome == 'failure'
+        run: |
+          echo "osv-scanner reported findings. See the Security tab, Code scanning." >&2
+          exit 1

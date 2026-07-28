@@ -201,3 +201,67 @@ test('the job holding the publish credentials runs no third party code', () => {
     );
   }
 });
+
+test('the test:coverage script still asks node to enforce a coverage floor', () => {
+  /* The floor exists nowhere but that one script line: the flag that turns
+     measurement on, and three thresholds. Both ways of losing it are silent,
+     which was measured against the node in this checkout, v24.18.0, rather than
+     assumed:
+
+     - drop a --test-coverage-* flag and the run still exits 0, having enforced
+       nothing for that metric;
+     - drop --experimental-test-coverage but keep the three thresholds and node
+       accepts them all, prints no coverage report and exits 0, so the entire
+       floor is gone while the script still reads as though it has one.
+
+     Mistyping a flag is the one variant that is loud: node refuses to start,
+     printing "bad option" and exiting 9, so spelling needs no guard here.
+
+     What this proves is only that the thresholds are still asked for, and still
+     at or above the numbers below. It says nothing about whether the suite
+     meets them. That answer comes from running the script, which CI and the
+     pre-commit hook both do. */
+  const { scripts = {} } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const script = scripts['test:coverage'] ?? '';
+
+  assert.match(
+    script,
+    /--experimental-test-coverage\b/,
+    'the "test:coverage" script no longer enables coverage, so node accepts the thresholds ' +
+      'below, measures nothing and exits 0',
+  );
+
+  /* The numbers this repository already meets. Raising one in package.json is
+     expected and passes here; lowering one to buy a green run is the move this
+     stops, and deleting the flag outright is the one nothing else would
+     notice. */
+  for (const [metric, floor] of [
+    ['lines', 85],
+    ['branches', 75],
+    ['functions', 85],
+  ]) {
+    /* Both spellings node accepts, "--flag=85" and "--flag 85", so reformatting
+       the script does not fail this test with a message claiming the flag was
+       dropped. Measured against node v24.18.0: the space form enforces the
+       threshold exactly like the = form.
+
+       Matched globally and read from the LAST occurrence, because that is the
+       one node applies. Also measured: appending "--test-coverage-lines=1" to a
+       script that already asks for 85 exits 0 on a tree at 57% coverage, so the
+       first match is the value node ignores, and reading it would let a floor
+       be lowered by adding to the script rather than by editing it. */
+    const asked = [
+      ...script.matchAll(new RegExp(`--test-coverage-${metric}[= ](\\d+(?:\\.\\d+)?)`, 'g')),
+    ];
+    assert.ok(
+      asked.length > 0,
+      `the "test:coverage" script no longer passes --test-coverage-${metric}, so ${metric} ` +
+        'coverage is measured and then ignored',
+    );
+    const effective = asked.at(-1)[1];
+    assert.ok(
+      Number(effective) >= floor,
+      `--test-coverage-${metric} is ${effective}, below the ${floor} this repository already met`,
+    );
+  }
+});
