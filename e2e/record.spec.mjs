@@ -11,6 +11,7 @@
 import { expect, test } from '@playwright/test';
 
 const WALLET_KEY = 'sudoku:wallet';
+const SAVE_KEY = 'sudoku:save';
 const STATS_KEY = 'sudoku:stats';
 const WALLET_VERSION = 2;
 
@@ -169,6 +170,61 @@ test('a win that is not flawless breaks the streak', async ({ page }) => {
      which is the only streak that says anything in a game with no way to lose. */
   await expect(page.locator('#streakLine')).toHaveText('Racha de secas: 0. La mejor: 1.');
   expect(await recordRow(page, 1)).toMatchObject(['Normal', '2', '2', expect.anything()]);
+  expect(problems).toEqual([]);
+});
+
+/* seconds arrives from the same editable storage as the counters and was read
+   with Number(x)||0. A negative restored, rendered as -15:00, and recordWin()
+   wrote it as that difficulty's best. The next boot sanitised the stored best to
+   0 through count(), and beat=!first&&time<row.best became time<0, so that
+   difficulty could never record a best time again. Clamping on the way in is
+   what stops the record being poisoned in the first place. */
+test('a save with a negative clock cannot poison the best time', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page, 'medium');
+
+  /* A real save with one field edited, so a rejection for something unrelated
+     cannot pass this test by never restoring at all. */
+  await page.evaluate(() => {
+    const i = values.findIndex((v, k) => !fixed[k]);
+    sel = i;
+    inputDigit(solution[i]);
+  });
+  const save = JSON.parse(await readRaw(page, SAVE_KEY));
+  save.seconds = -900;
+  /* Planted through addInitScript so it lands before the page's own scripts:
+     written into the live page, the 250ms coalesced selection save overwrote the
+     edit before the reload could read it. */
+  await page.addInitScript(
+    ([key, value]) => localStorage.setItem(key, value),
+    [SAVE_KEY, JSON.stringify(save)],
+  );
+  await page.reload();
+  await expect(page.locator('#board .cell')).toHaveCount(81);
+
+  /* Never renders a negative, so it never reaches the record as one. */
+  await expect(page.locator('#time')).toHaveText(/^\d+:\d\d$/);
+
+  await solve(page);
+  await page.locator('#againBtn').click();
+  await openRecord(page);
+
+  const [, , , best] = await recordRow(page, 1);
+  expect(best).toMatch(/^\d+:\d\d$/);
+  const stored = JSON.parse(await readRaw(page, STATS_KEY)).d.medium.best;
+  expect(stored, 'a negative time reached the record').toBeGreaterThanOrEqual(0);
+
+  /* The half that made it permanent. With a poisoned best of 0 and a win
+     already counted, time<row.best is time<0 and the column can never move
+     again, so a second win has to still be able to set it. */
+  await page.locator('#closeRecord').click();
+  await startGame(page, 'medium');
+  await solve(page);
+  await page.locator('#againBtn').click();
+  await openRecord(page);
+  const after = JSON.parse(await readRaw(page, STATS_KEY)).d.medium;
+  expect(after).toMatchObject({ played: 2, won: 2 });
+  expect(after.best, 'the best time is frozen').toBeGreaterThanOrEqual(0);
   expect(problems).toEqual([]);
 });
 
