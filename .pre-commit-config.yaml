@@ -82,17 +82,16 @@ repos:
       # 1 MB rather than the 500 KB default, and the number is chosen from both
       # ends. Sizes below are KiB to the nearest whole, matching the getsize()
       # / 1024 this hook itself compares, and they are re-measured when the
-      # commit that moves them lands rather than once. The largest tracked file
-      # is index.html at 59 KB and everything else is under 24 KB, so a
-      # megabyte is roughly seventeen times the biggest thing here and nothing
-      # legitimate is near it. The thing most likely to grow into the old
-      # ceiling is package-lock.json, today 22 KB, which grows with the
-      # dependency tree and would fail the Lint job with a message about a
-      # large file rather than about dependencies. At the other end, what this
-      # exists to catch is well clear of a megabyte: Playwright traces and
-      # videos run to several, and test-results/ and playwright-report/ are
-      # gitignored anyway, so the realistic arrival is a copy of one of those
-      # saved somewhere else.
+      # commit that moves them lands rather than once. The largest tracked files
+      # are package-lock.json at 79 KB, app.js at 73 KB and index.html at 34 KB,
+      # so a megabyte is roughly thirteen times the biggest thing here and
+      # nothing legitimate is near it. package-lock.json is the one most likely
+      # to grow into the ceiling, since it grows with the dependency tree and
+      # would fail the Lint job with a message about a large file rather than
+      # about dependencies. At the other end, what this exists to catch is well
+      # clear of a megabyte: Playwright traces and videos run to several, and
+      # test-results/ and playwright-report/ are gitignored anyway, so the
+      # realistic arrival is a copy of one of those saved somewhere else.
       #
       # --enforce-all is what makes it a tripwire in CI rather than only at
       # commit time. Without it the hook intersects the paths it is handed with
@@ -131,6 +130,10 @@ repos:
       # flag that reads as scoped to the other file set. Measured, not assumed.
       # Matching by extension rather than by exact name means a second manifest
       # added later is covered without another edit.
+      #
+      # .oxlintrc.json and biome.json are in scope like any other .json. Both
+      # would accept comments and carry none, so that every JSON tool can read
+      # them; the reasons live in eslint.config.mjs and README.md.
       - id: check-json
         types: [file]
         files: \.(json|webmanifest)$
@@ -222,6 +225,40 @@ repos:
 
   - repo: local
     hooks:
+      # Three linters, one hook each, so a failure in the first still leaves the
+      # others' findings on screen. Fastest first.
+      #
+      # pass_filenames is false because each tool discovers its own inputs, and
+      # because a hook handed only the staged paths would lint less than the CI
+      # job running the same config over the whole tree. "files" decides whether
+      # the hook runs, not what it reads.
+      #
+      # All three need node on the PATH, with the consequence for desktop git
+      # clients described on the unit test hook below.
+      - id: oxlint
+        name: oxlint
+        entry: npm run --silent lint:oxlint
+        language: system
+        pass_filenames: false
+        files: \.(m?js|html)$|^\.oxlintrc\.json$
+
+      - id: eslint
+        name: eslint
+        entry: npm run --silent lint:eslint
+        language: system
+        pass_filenames: false
+        files: \.(m?js|html)$|^\.oxlintrc\.json$
+
+      # Linter and formatter. The only one of the three that reads the
+      # JavaScript and CSS inside index.html, and the only one that formats
+      # anything but markup. It overlaps the other two on purpose.
+      - id: biome
+        name: biome
+        entry: npm run --silent lint:biome
+        language: system
+        pass_filenames: false
+        files: \.(m?js|html|css)$|^biome\.json$
+
       # The unit suite plus a coverage floor, the same command CI runs. It takes
       # roughly a second and a half, which is cheap enough to pay per commit and
       # is the difference between finding a broken build script now and finding
@@ -250,4 +287,4 @@ repos:
         entry: npm run test:coverage
         language: system
         pass_filenames: false
-        files: ^(scripts/|tests/|e2e/|\.github/workflows/|index\.html|sw\.js|manifest\.webmanifest|404\.html|robots\.txt|package(-lock)?\.json|icons/)
+        files: ^(scripts/|tests/|e2e/|\.github/workflows/|index\.html|app\.js|generator\.js|sw\.js|manifest\.webmanifest|404\.html|robots\.txt|package(-lock)?\.json|icons/)

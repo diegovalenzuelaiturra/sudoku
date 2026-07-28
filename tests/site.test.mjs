@@ -17,9 +17,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = join(import.meta.dirname, '..');
 const siteDir = join(root, '_site');
 const buildScript = join(root, 'scripts', 'build.mjs');
 
@@ -57,11 +56,12 @@ const PRIVATE = new Set([
   'scripts',
 ]);
 
-const ASSET = /\.(?:html|js|mjs|css|json|webmanifest|map|txt|xml|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf)$/i;
+const ASSET =
+  /\.(?:html|js|mjs|css|json|webmanifest|map|txt|xml|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf)$/iu;
 
 /* navigator.serviceWorker.register lives inside an inline script, so it is not
    an attribute and the attribute sweep cannot see it. */
-const REGISTER = /serviceWorker\s*\.\s*register\s*\(\s*['"`]([^'"`\n]+)['"`]/g;
+const REGISTER = /serviceWorker\s*\.\s*register\s*\(\s*['"`]([^'"`\n]+)['"`]/gu;
 
 /* The published HTML is swept for start tags rather than parsed into a DOM.
    That sweep was the only thing this repository ever needed a DOM for, and it
@@ -70,23 +70,24 @@ const REGISTER = /serviceWorker\s*\.\s*register\s*\(\s*['"`]([^'"`\n]+)['"`]/g;
    dropped first, so a path written inside a string literal is not mistaken for
    a reference the browser would resolve, while the start tags themselves stay,
    so <script src> is still swept. */
-const COMMENT = /<!--[\s\S]*?-->/g;
-const RAW_TEXT = /(<(script|style)\b[^>]*>)[\s\S]*?<\/\2\s*>/gi;
-const START_TAG = /<([a-zA-Z][a-zA-Z0-9:-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'`=<>]+))?)*)\s*\/?>/g;
-const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+)))?/g;
+const COMMENT = /<!--[\s\S]*?-->/gu;
+const RAW_TEXT = /(<(script|style)\b[^>]*>)[\s\S]*?<\/\2\s*>/giu;
+const START_TAG =
+  /<([a-zA-Z][a-zA-Z0-9:-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'`=<>]+))?)*)\s*\/?>/gu;
+const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+)))?/gu;
 
 /* Attributes are written escaped and read back decoded, which is the form
    getAttribute() hands over and the form a path has to be checked in. */
-const ENTITY = /&(?:#([0-9]+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z]+));/g;
+const ENTITY = /&(?:#([0-9]+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z]+));/gu;
 const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
 
 /* Array literals holding nothing but strings and commas, which is what a
    precache list looks like. Anything cleverer needs a parser, and anything
    looser starts flagging cache names and header values. An array this misses is
    a check not run; an array it invents is a red build for no reason. */
-const QUOTED = "(?:'[^'\\n]*'|\"[^\"\\n]*\"|`[^`\\n]*`)";
-const STRING_ARRAY = new RegExp(`\\[\\s*(${QUOTED}(?:\\s*,\\s*${QUOTED})*\\s*,?)\\s*\\]`, 'g');
-const QUOTED_ITEM = new RegExp(QUOTED, 'g');
+const QUOTED = '(?:\'[^\'\\n]*\'|"[^"\\n]*"|`[^`\\n]*`)';
+const STRING_ARRAY = new RegExp(`\\[\\s*(${QUOTED}(?:\\s*,\\s*${QUOTED})*\\s*,?)\\s*\\]`, 'gu');
+const QUOTED_ITEM = new RegExp(QUOTED, 'gu');
 
 const show = (file) => relative(root, file).split(sep).join('/');
 
@@ -111,7 +112,7 @@ function decodeEntities(value) {
 /* Every start tag in the document, named in lower case, with its attributes.
    A repeated attribute keeps the first value, the way a browser does. */
 function* startTags(source) {
-  const markup = source.replace(COMMENT, '').replace(RAW_TEXT, (whole, open) => open);
+  const markup = source.replace(COMMENT, '').replace(RAW_TEXT, (_whole, open) => open);
   for (const [, name, written] of markup.matchAll(START_TAG)) {
     const attrs = new Map();
     for (const [, key, quoted, single, bare] of written.matchAll(ATTRIBUTE)) {
@@ -128,7 +129,7 @@ function* startTags(source) {
 function localValue(raw) {
   const value = typeof raw === 'string' ? raw.trim() : '';
   if (value === '' || value.startsWith('#')) return null;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(value)) return null;
   return value;
 }
 
@@ -173,7 +174,7 @@ let cached = null;
 function inspect() {
   if (cached) return cached;
 
-  const pages = walk(siteDir).filter((f) => /\.x?html$/i.test(f));
+  const pages = walk(siteDir).filter((f) => /\.x?html$/iu.test(f));
   const pageRefs = [];
   const manifestFiles = new Set();
   const workerFiles = new Set();
@@ -182,7 +183,7 @@ function inspect() {
     const source = readFileSync(file, 'utf8');
 
     for (const { name: tag, attrs } of startTags(source)) {
-      const relTokens = (attrs.get('rel') ?? '').toLowerCase().split(/\s+/);
+      const relTokens = (attrs.get('rel') ?? '').toLowerCase().split(/\s+/u);
 
       for (const attr of ['src', 'href']) {
         if (!attrs.has(attr)) continue;
@@ -411,7 +412,7 @@ test('the absolute social URLs point at files this site publishes', (t) => {
       const key = attrs.get('property') ?? attrs.get('name');
       if (key !== undefined && !declared.has(key)) declared.set(key, attrs.get('content'));
     }
-    const rel = (attrs.get('rel') ?? '').toLowerCase().split(/\s+/);
+    const rel = (attrs.get('rel') ?? '').toLowerCase().split(/\s+/u);
     if (tag === 'link' && rel.includes('canonical') && !declared.has('canonical')) {
       declared.set('canonical', attrs.get('href') ?? '');
     }
@@ -460,7 +461,7 @@ test('the published page still carries the Apache-2.0 sprite attribution', (t) =
      visitor. */
   assert.match(
     published,
-    /Material Symbols[^]{0,200}Apache/,
+    /Material Symbols[\s\S]{0,200}Apache/u,
     '_site/index.html ships the Apache-2.0 icon sprite with no attribution, which the ' +
       'licence requires to travel with the work. Add the comment to ' +
       'HTML_MINIFY_OPTIONS.ignoreCustomComments in scripts/build.mjs.',
@@ -481,12 +482,12 @@ test('the published service worker carries a substituted cache name', (t) => {
      returning visitor to the copy they already have. */
   assert.doesNotMatch(
     published,
-    /__BUILD__/,
+    /__BUILD__/u,
     '_site/sw.js still holds the build placeholder, so every deploy reuses one cache name',
   );
   assert.match(
     published,
-    /"sudoku-[A-Za-z0-9][A-Za-z0-9._-]*"|'sudoku-[A-Za-z0-9][A-Za-z0-9._-]*'/,
+    /"sudoku-[A-Za-z0-9][A-Za-z0-9._-]*"|'sudoku-[A-Za-z0-9][A-Za-z0-9._-]*'/u,
     '_site/sw.js has no build-stamped cache name',
   );
 });
@@ -500,7 +501,7 @@ test('nothing private leaked into _site', (t) => {
     const leaked = parts.find((part) => PRIVATE.has(part));
     const path = `_site/${parts.join('/')}`;
     if (leaked !== undefined) offences.push(`${path} ships "${leaked}"`);
-    else if (/\.test\.[cm]?js$/.test(parts.at(-1))) offences.push(`${path} is a test file`);
+    else if (/\.test\.[cm]?js$/u.test(parts.at(-1))) offences.push(`${path} is a test file`);
   }
 
   assert.deepEqual(

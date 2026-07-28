@@ -36,7 +36,7 @@ const PORT = Number(process.argv[2] || process.env.PLAYWRIGHT_PORT || 4173);
    something a caller should get by saying nothing; pass '/' to ask for it.
    Normalised to always start and end with a slash, so the prefix arithmetic
    below has one shape to deal with. */
-const BASE = `/${(process.argv[3] ?? 'sudoku').replace(/^\/+|\/+$/g, '')}/`.replace('//', '/');
+const BASE = `/${(process.argv[3] ?? 'sudoku').replace(/^\/+|\/+$/gu, '')}/`.replace('//', '/');
 
 const TYPES = new Map([
   ['.html', 'text/html; charset=utf-8'],

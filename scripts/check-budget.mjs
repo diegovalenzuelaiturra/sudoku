@@ -92,7 +92,9 @@ if (report === null || typeof report !== 'object') {
    runtimeError and the audits absent. Reporting three "not reported" metrics
    for that would read like a bug in this script instead of a broken run. */
 if (report.runtimeError?.code && report.runtimeError.code !== 'NO_ERROR') {
-  abort(`lighthouse run failed: ${report.runtimeError.code} ${report.runtimeError.message ?? ''}`.trim());
+  abort(
+    `lighthouse run failed: ${report.runtimeError.code} ${report.runtimeError.message ?? ''}`.trim(),
+  );
 }
 
 /* Overrides are parsed strictly. NaN loses every comparison it takes part in,
@@ -111,7 +113,9 @@ const breaches = [];
 
 const score = report.categories?.accessibility?.score;
 if (typeof score !== 'number' || !Number.isFinite(score)) {
-  breaches.push('accessibility: the report carries no accessibility category, so the gate could not be checked');
+  breaches.push(
+    'accessibility: the report carries no accessibility category, so the gate could not be checked',
+  );
   rows.push(['A11Y', 'not reported', '100', 'FAIL']);
 } else {
   /* Shown at the precision Lighthouse produced, not rounded to a flat 100,
@@ -134,7 +138,9 @@ for (const check of CHECKS) {
 
   const ok = measured <= budget;
   if (!ok) {
-    breaches.push(`${check.key} was ${check.format(measured)}, over its ${check.format(budget)} budget`);
+    breaches.push(
+      `${check.key} was ${check.format(measured)}, over its ${check.format(budget)} budget`,
+    );
   }
   rows.push([check.key, check.format(measured), check.format(budget), ok ? 'ok' : 'FAIL']);
 }

@@ -5,10 +5,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, extname, join, relative, sep } from 'node:path';
+import { extname, join, relative, sep } from 'node:path';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = join(import.meta.dirname, '..');
 
 /* Written as escapes, not literals, so this file does not trip its own check. */
 const BANNED = [

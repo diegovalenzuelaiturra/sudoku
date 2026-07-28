@@ -24,19 +24,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { build, BUILD_ID_PATTERN, PLACEHOLDER } from '../scripts/build.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = join(import.meta.dirname, '..');
 
-/* A minimal publishable tree: the one required allowlist entry, plus the two
+/* A minimal publishable tree: both required allowlist entries, plus the two
    optional text files whose whole point is to carry the build id. */
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'sudoku-build-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
   writeFileSync(join(dir, 'index.html'), `<!doctype html><meta name=b content=${PLACEHOLDER}>`);
+  /* Required, and carries no placeholder: the build has to publish it either
+     way, which is the case a fixture with only substituted files would miss. */
+  writeFileSync(join(dir, 'generator.js'), 'function makePuzzle() {}\n');
   writeFileSync(join(dir, 'sw.js'), `const CACHE = "sudoku-${PLACEHOLDER}";\n`);
   writeFileSync(join(dir, 'manifest.webmanifest'), `{"name":"s","id":"${PLACEHOLDER}"}`);
   /* Not text, so it must come through byte for byte and never be re-encoded. */
@@ -60,6 +62,7 @@ test('the build id replaces every __BUILD__ in every published text file', (t) =
   const counts = Object.fromEntries(result.files.map((f) => [f.path, f.substitutions]));
   assert.deepEqual(counts, {
     'index.html': 1,
+    'generator.js': 0,
     'manifest.webmanifest': 1,
     'sw.js': 1,
     'icons/app.png': 0,
@@ -97,7 +100,7 @@ test('a build id that could break out of a string literal is refused', (t) => {
     assert.equal(BUILD_ID_PATTERN.test(id), false, `${JSON.stringify(id)} should not match`);
     assert.throws(
       () => build({ root: dir, outDir: out, buildId: id }),
-      /refusing to publish with BUILD_ID/,
+      /refusing to publish with BUILD_ID/u,
       `build accepted ${JSON.stringify(id)}`,
     );
   }
@@ -108,7 +111,7 @@ test('a build id that could break out of a string literal is refused', (t) => {
 
 test('every job that builds the site installs what the build imports', () => {
   const source = readFileSync(join(root, 'scripts', 'build.mjs'), 'utf8');
-  const specifiers = [...source.matchAll(/\bfrom\s+'([^']+)'/g)].map((m) => m[1]);
+  const specifiers = [...source.matchAll(/\bfrom\s+'([^']+)'/gu)].map((m) => m[1]);
 
   assert.ok(specifiers.length > 0, 'found no imports at all, so this check read the wrong file');
   const external = specifiers.filter((s) => !s.startsWith('node:'));
@@ -134,17 +137,17 @@ test('every job that builds the site installs what the build imports', () => {
   const workflows = join(root, '.github', 'workflows');
   for (const name of readdirSync(workflows)) {
     const yaml = readFileSync(join(workflows, name), 'utf8');
-    for (const [, job] of yaml.matchAll(/^ {2}([\w-]+):$/gm)) {
+    for (const [, job] of yaml.matchAll(/^ {2}([\w-]+):$/gmu)) {
       /* Crude on purpose: the job's text is everything from its key to the
          next one at the same indentation. Enough to ask whether the job that
          runs the build also runs the install. */
       const start = yaml.indexOf(`\n  ${job}:`);
-      const next = yaml.slice(start + 1).search(/\n {2}[\w-]+:$/m);
+      const next = yaml.slice(start + 1).search(/\n {2}[\w-]+:$/mu);
       const body = next === -1 ? yaml.slice(start) : yaml.slice(start, start + 1 + next);
-      if (!/run:\s*npm run build/.test(body)) continue;
+      if (!/run:\s*npm run build/u.test(body)) continue;
       assert.match(
         body,
-        /run:\s*npm ci/,
+        /run:\s*npm ci/u,
         `${name}: the "${job}" job runs npm run build but never installs, and the build now ` +
           `imports ${external.join(', ')} from node_modules, so the publish step crashes`,
       );
@@ -172,17 +175,17 @@ test('the job holding the publish credentials runs no third party code', () => {
      1, the filter below still sees pages: write, and every assertion after it
      passes because it is reading a body with no steps in it. The guard on the
      job that holds the publish credentials would go quiet without failing. */
-  const jobs = [...workflow.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|$(?![\s\S]))/gm)]
+  const jobs = [...workflow.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|$(?![\s\S]))/gmu)]
     .map(([, name, body]) => ({ name, body }))
-    .filter(({ body }) => /^ {6}pages:\s*write/m.test(body));
+    .filter(({ body }) => /^ {6}pages:\s*write/mu.test(body));
 
   assert.equal(jobs.length, 1, 'exactly one job should hold pages: write');
 
   const { name, body } = jobs[0];
   for (const [pattern, what] of [
-    [/uses:\s*actions\/checkout/, 'checks out the repository'],
-    [/uses:\s*actions\/setup-node/, 'installs node'],
-    [/run:\s*npm /, 'runs npm'],
+    [/uses:\s*actions\/checkout/u, 'checks out the repository'],
+    [/uses:\s*actions\/setup-node/u, 'installs node'],
+    [/run:\s*npm /u, 'runs npm'],
   ]) {
     assert.ok(
       !pattern.test(body),
@@ -194,7 +197,7 @@ test('the job holding the publish credentials runs no third party code', () => {
 
   /* Every action it does use must be GitHub owned, since anything else would be
      third party code running with those credentials. */
-  for (const [, action] of body.matchAll(/uses:\s*([^@\s]+)@/g)) {
+  for (const [, action] of body.matchAll(/uses:\s*([^@\s]+)@/gu)) {
     assert.ok(
       action.startsWith('actions/'),
       `the "${name}" job uses ${action}, which is not a GitHub owned action`,
@@ -226,7 +229,7 @@ test('the test:coverage script still asks node to enforce a coverage floor', () 
 
   assert.match(
     script,
-    /--experimental-test-coverage\b/,
+    /--experimental-test-coverage\b/u,
     'the "test:coverage" script no longer enables coverage, so node accepts the thresholds ' +
       'below, measures nothing and exits 0',
   );
@@ -234,11 +237,18 @@ test('the test:coverage script still asks node to enforce a coverage floor', () 
   /* The numbers this repository already meets. Raising one in package.json is
      expected and passes here; lowering one to buy a green run is the move this
      stops, and deleting the flag outright is the one nothing else would
-     notice. */
+     notice.
+
+     These were 85/75/85 while the report was computed over the two build
+     scripts alone, generator.js having been evaluated from a string that V8
+     attributed to no file. Now that it is required and counted, the suite
+     measures 93.91 lines, 92.16 branches and 94.55 functions, and floors left
+     at the old numbers would sit far enough below that to let the generator
+     rot without tripping. */
   for (const [metric, floor] of [
-    ['lines', 85],
-    ['branches', 75],
-    ['functions', 85],
+    ['lines', 90],
+    ['branches', 88],
+    ['functions', 90],
   ]) {
     /* Both spellings node accepts, "--flag=85" and "--flag 85", so reformatting
        the script does not fail this test with a message claiming the flag was
@@ -251,7 +261,7 @@ test('the test:coverage script still asks node to enforce a coverage floor', () 
        first match is the value node ignores, and reading it would let a floor
        be lowered by adding to the script rather than by editing it. */
     const asked = [
-      ...script.matchAll(new RegExp(`--test-coverage-${metric}[= ](\\d+(?:\\.\\d+)?)`, 'g')),
+      ...script.matchAll(new RegExp(`--test-coverage-${metric}[= ](\\d+(?:\\.\\d+)?)`, 'gu')),
     ];
     assert.ok(
       asked.length > 0,

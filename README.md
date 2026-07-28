@@ -1,6 +1,23 @@
 # sudoku
 Sudoku :)
 
+## Difficulty
+
+A difficulty is the hardest technique a board needs, not how many numbers it
+starts with. Piola falls to singles, Normal needs locked candidates, Peludo
+needs pairs, and Brígido needs more than any of those. The generator digs a
+board, grades it by solving it without ever guessing, and adjusts until the
+grade matches. The clue count moves to get there, so it is not advertised.
+
+The search is allowed to miss: the pares tier is a narrow band and it lands
+beside it about one board in seven. What it will not do is lie about it. The end
+of game summary reports the grade the board was measured at, along with the seed
+it was built from, and feeding that seed back rebuilds exactly the same puzzle.
+
+Grading and generation run in a worker, so choosing a difficulty no longer
+freezes the page. If a browser refuses to make one, the same file is loaded into
+the page and the board is built there instead.
+
 ## Previewing
 
 ```sh
@@ -31,15 +48,46 @@ npm run test:coverage   # the same suite, with the coverage floor CI enforces
 npm run test:e2e        # Playwright, real Chromium and real WebKit
 ```
 
-The coverage floor is 85 percent of lines, 75 of branches and 85 of functions,
+The coverage floor is 90 percent of lines, 88 of branches and 90 of functions,
 set a few points below what the suite measures today so it catches a regression
 rather than rounding noise. It only sees files a test actually loads, so it will
 not notice a brand new script that nothing imports.
 
+## Linting
+
+```sh
+npm run lint:oxlint     # oxlint, the whole tree in milliseconds
+npm run lint:eslint     # ESLint, which is what lints the markup
+npm run lint:biome      # Biome, lint and format
+npm run lint:fix        # all three, applying every fix they can make themselves
+```
+
+[oxlint](https://oxc.rs) runs its `correctness` rules. [ESLint](https://eslint.org)
+takes the markup of `index.html` and `404.html` through
+[html-eslint](https://html-eslint.org), and the scope analysis that has to know
+whether a file is a node module, a classic worker script or a service worker.
+[Biome](https://biomejs.dev) lints and formats the JavaScript, including the CSS
+and the script inside `index.html`, which the other two read as text. The three
+overlap on purpose: they are fast enough that the overlap costs less than
+deciding which tool owns which rule.
+
+Two formatters touch the HTML, and they agree: html-eslint indents it and Biome
+formats it, both at four spaces, and running them in either order twice changes
+nothing. `.editorconfig`, `biome.json` and `eslint.config.mjs` all carry that
+number and have to keep saying the same one.
+
+`.oxlintrc.json` and `biome.json` are plain JSON with no comments, so anything
+that reads JSON can read them. Why an ESLint or oxlint rule is on or off is at
+the top of `eslint.config.mjs`. Biome has three off: `useArrowFunction`, because
+its fix rewrites the IIFE that keeps `generator.js` to one global, and
+`noImportantStyles` and `useSemanticElements`, because the `!important` rules and
+the `role="group"` board are deliberate.
+
 ## Git hooks
 
-Optional but recommended. The hooks lint the workflow files and run the unit
-suite before a commit lands, which is faster than finding out from CI.
+Optional but recommended. The hooks lint the workflow files, run all three
+linters and run the unit suite before a commit lands, which is faster than finding out
+from CI.
 
 ```sh
 npm ci --ignore-scripts
@@ -49,8 +97,8 @@ npx prek install         # writes .git/hooks/pre-commit
 No separate install: prek is a devDependency, so `npm ci` already put it in
 `node_modules/.bin`. Then commits run
 [actionlint](https://github.com/rhysd/actionlint) for workflow validity,
-[zizmor](https://docs.zizmor.sh) for workflow security, and the unit suite. To
-run everything once without committing:
+[zizmor](https://docs.zizmor.sh) for workflow security, the three linters and
+the unit suite. To run everything once without committing:
 
 ```sh
 npm run lint
@@ -66,8 +114,8 @@ twenty seconds and is cached in `~/.cache/prek` afterwards.
 None of this is load bearing: `git commit --no-verify` skips it, and the `Lint`
 job in CI runs the same hooks over every file on every pull request.
 
-One trap. The unit test hook needs `npm` on the `PATH`, and a desktop git client
-or an editor commit button does not load your shell profile, so a version
-manager like nvm will not be set up for it. The hook then fails with
+One trap. The lint and unit test hooks need `npm` on the `PATH`, and a desktop
+git client or an editor commit button does not load your shell profile, so a
+version manager like nvm will not be set up for it. The hook then fails with
 `No such file or directory (os error 2)`, which does not look like what it is.
 Commit from a terminal, or point the client at a shell that loads node.

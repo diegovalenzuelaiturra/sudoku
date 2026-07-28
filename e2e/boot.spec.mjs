@@ -36,17 +36,22 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
-/* Kept in sync with the DIFF map in index.html. */
+/* Kept in sync with the DIFF map in index.html. The clue count each difficulty
+   used to advertise is deliberately not here: difficulty is the technique a
+   board needs now, and the generator moves the clue count to reach one, so
+   there is no fixed number left to assert. tests/generator.test.mjs owns what
+   the grades mean; what is left for a browser is that the word on the button is
+   the word the game deals. */
 const PRESETS = [
-  { key: 'easy', label: 'Piola', clues: 40 },
-  { key: 'medium', label: 'Normal', clues: 34 },
-  { key: 'hard', label: 'Peludo', clues: 28 },
-  { key: 'expert', label: 'Brígido', clues: 24 },
+  { key: 'easy', label: 'Piola', word: 'directas' },
+  { key: 'medium', label: 'Normal', word: 'bloques' },
+  { key: 'hard', label: 'Peludo', word: 'pares' },
+  { key: 'expert', label: 'Brígido', word: 'avanzado' },
 ];
 
 /* The name render() gives every cell: "Fila 3, columna 7, 4, dada". */
-const CELL_NAME = /^Fila \d, columna \d/;
-const GIVEN_NAME = /^Fila \d, columna \d, [1-9], dada$/;
+const CELL_NAME = /^Fila \d, columna \d/u;
+const GIVEN_NAME = /^Fila \d, columna \d, [1-9], dada$/u;
 
 /* Everything Chrome would hand to assistive tech: ignored nodes are dropped,
    and an inert subtree is ignored wholesale. */
@@ -165,7 +170,7 @@ test('the board is 81 named cells laid out as a nine by nine grid', async ({ pag
   /* Matched on the name Chrome computes, not on the aria-label attribute:
      render() aborting mid-loop leaves cells unnamed, and a cell a screen
      reader cannot name is the failure worth catching. */
-  await expect(page.getByRole('button', { name: /^Fila \d, columna \d, vacía$/ })).toHaveCount(81);
+  await expect(page.getByRole('button', { name: /^Fila \d, columna \d, vacía$/u })).toHaveCount(81);
 
   /* A simulated DOM has no layout, so the old suite could not tell a rendered
      board from 81 elements stacked at 0 by 0. */
@@ -189,19 +194,19 @@ test('the board is 81 named cells laid out as a nine by nine grid', async ({ pag
   await expect(page.locator('#hints')).toHaveText('0');
 });
 
-test('every difficulty button announces its label and the clues it deals', async ({ page }) => {
+test('every difficulty button announces its label and the technique it deals', async ({ page }) => {
   for (const preset of PRESETS) {
     const button = page.locator(`#startOverlay button.diff[data-d="${preset.key}"]`);
     /* The whole name, tied to the key that deals the puzzle: the sentence a
        screen reader reads out, rather than a substring of innerHTML that
        happens to contain the label somewhere. */
-    await expect(button).toHaveAccessibleName(`${preset.label} ${preset.clues} números`);
+    await expect(button).toHaveAccessibleName(`${preset.label} ${preset.word}`);
     await expect(button).toBeVisible();
   }
 });
 
 for (const preset of PRESETS) {
-  test(`starting ${preset.label} deals ${preset.clues} clues and dismisses the dialog`, async ({
+  test(`starting ${preset.label} deals a board and dismisses the dialog`, async ({
     page,
     context,
   }) => {
@@ -212,23 +217,30 @@ for (const preset of PRESETS) {
     const cdp = await context.newCDPSession(page);
     await page.locator(`#startOverlay button.diff[data-d="${preset.key}"]`).click();
 
-    /* Really gone from the page, not merely missing a class name. */
+    /* Really gone from the page, not merely missing a class name. Generation
+       runs in a worker now, so this is also the wait: the dialog stays up, with
+       its buttons disabled, until a board comes back. */
     await expect(page.locator('#startOverlay')).toBeHidden();
 
     /* .app.inert going back to false, asserted by its effect: the board is
        handed back to assistive tech. */
     await expectExposedCells(cdp, CELL_NAME, 81, 'board cells');
-    /* The clues as announced, "dada" being how a given cell introduces
-       itself, next to the class that paints it as one. */
-    await expectExposedCells(cdp, GIVEN_NAME, preset.clues, 'given cells');
-    await expect(page.locator('#board .cell.given')).toHaveCount(preset.clues);
 
-    await expect(page.locator('#remaining')).toHaveText(`${81 - preset.clues} por llenar`);
+    /* The clue count is no longer a fixed number per difficulty, so what is
+       worth pinning is that everything on the page agrees about it: the cells
+       painted as givens, the cells that announce themselves as "dada", and the
+       count of what is left to fill. A board that disagreed with itself is the
+       failure this used to catch by asserting the number directly. */
+    const givens = await page.locator('#board .cell.given').count();
+    expect(givens).toBeGreaterThanOrEqual(17);
+    expect(givens).toBeLessThan(81);
+    await expectExposedCells(cdp, GIVEN_NAME, givens, 'given cells');
+    await expect(page.locator('#remaining')).toHaveText(`${81 - givens} por llenar`);
     await expect(page.locator('#diffLabel')).toHaveText(preset.label);
   });
 }
 
-test('undo restores hint, mistake and given state', async ({ page }) => {
+test('undo restores the board but never the counters', async ({ page }) => {
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
   await expect(page.locator('#startOverlay')).toBeHidden();
 
@@ -240,30 +252,129 @@ test('undo restores hint, mistake and given state', async ({ page }) => {
   expect(index, 'no cell is selected after starting').toBeGreaterThanOrEqual(0);
   const cell = page.locator('#board .cell').nth(index);
 
-  /* Hint fills the cell and marks it given; undo must roll both back, or the
-     cell stays locked holding a value the player can no longer edit. Typed on
-     a real keyboard, so this also covers the document-level handler seeing the
-     key at all. */
+  /* Hint fills the cell and marks it given; undo must roll the board back, or
+     the cell stays locked holding a value the player can no longer edit. Typed
+     on a real keyboard, so this also covers the document-level handler seeing
+     the key at all. */
   await page.keyboard.press('h');
   await expect(page.locator('#hints')).toHaveText('1');
-  await expect(cell).toHaveClass(/given/);
-  await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, [1-9], dada$/);
+  await expect(cell).toHaveClass(/given/u);
+  await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, [1-9], dada$/u);
   const hinted = (await cell.locator('.v').innerText()).trim();
-  expect(hinted).toMatch(/^[1-9]$/);
+  expect(hinted).toMatch(/^[1-9]$/u);
 
   await page.keyboard.press('z');
-  await expect(page.locator('#hints')).toHaveText('0');
-  await expect(cell).not.toHaveClass(/given/);
+  await expect(cell).not.toHaveClass(/given/u);
   /* The undone cell announces itself as empty and editable again, which is the
      player-visible meaning of the class check above. */
-  await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, vacía$/);
+  await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, vacía$/u);
   await expect(cell.locator('.v')).toBeEmpty();
+  /* The board rolled back and the record did not. The answer was on the screen,
+     and pressing Z cannot un-see it. */
+  await expect(page.locator('#hints')).toHaveText('1');
 
-  /* A wrong entry must not strand the mistake counter, which gates the bonus. */
+  /* The same rule for a wrong entry, and this is the half that gates the bonus:
+     rewinding it would make guess-then-undo a free route to a flawless win. */
   await page.keyboard.press(String((Number(hinted) % 9) + 1));
   await expect(page.locator('#mistakes')).toHaveText('1');
   await page.keyboard.press('z');
-  await expect(page.locator('#mistakes')).toHaveText('0');
+  /* The board first, for the same reason the hint half checks it: the counter
+     reads 1 on both sides of the key, so on its own it would pass against an
+     undo that never ran. The line this replaced asserted '0', which at least
+     proved the keypress had arrived. */
+  await expect(cell.locator('.v')).toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('1');
+});
+
+/* The Pista button has to survive the guard above it. Refusing every cell that
+   cannot take a hint also refuses the one sel sits on after every correct entry,
+   which turns the button inert on a share of the board that grows to all of it,
+   so this is the case that must keep working. */
+test('a hint still works on the cell left selected by a correct entry', async ({ page }) => {
+  await page.locator('#startOverlay button.diff[data-d="medium"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  await page.evaluate(() => {
+    const i = values.findIndex((_v, k) => !fixed[k]);
+    sel = i;
+    inputDigit(solution[i]);
+  });
+  const before = await page.locator('#remaining').textContent();
+
+  await page.keyboard.press('h');
+  await expect(page.locator('#hints')).toHaveText('1');
+  await expect(page.locator('#remaining'), 'the hint revealed nothing').not.toHaveText(before);
+});
+
+test('a hint asked of a given does nothing, and says so', async ({ page }) => {
+  await page.locator('#startOverlay button.diff[data-d="medium"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  /* Givens are selectable on purpose: that is what drives the row, column and
+     box highlighting, so this is a press a player makes by accident. It used to
+     reveal a random cell elsewhere and spend the bonus on it. */
+  const before = await page.locator('#remaining').textContent();
+  await page.locator('#board .cell.given').first().click();
+  await page.keyboard.press('h');
+
+  await expect(page.locator('#hints')).toHaveText('0');
+  await expect(page.locator('#remaining')).toHaveText(before);
+  /* Said out loud, because a key that does nothing and says nothing reads as one
+     that never registered. */
+  await expect(page.locator('#srStatus')).toHaveText(/Esa casilla ya viene dada\./u);
+});
+
+test('a hint undone and asked for again is charged once', async ({ page }) => {
+  await page.locator('#startOverlay button.diff[data-d="medium"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  await page.keyboard.press('h');
+  await expect(page.locator('#hints')).toHaveText('1');
+  const cell = page.locator('#board .cell').nth(await page.evaluate(() => sel));
+  await expect(cell).toHaveClass(/given/u);
+
+  await page.keyboard.press('z');
+  await expect(cell).not.toHaveClass(/given/u);
+
+  /* hint() leaves sel on the cell it filled and undo() does not restore sel, so
+     this press finds that same cell empty and editable, which is the shape that
+     charged twice for one answer. */
+  await page.keyboard.press('h');
+  await expect(cell).toHaveClass(/given/u);
+  await expect(page.locator('#hints')).toHaveText('1');
+});
+
+test('undo says so without silencing the count it moved', async ({ page }) => {
+  await page.locator('#startOverlay button.diff[data-d="medium"]').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  /* Down to 20 unfilled. render() only speaks when the count crosses a ten, so
+     the next correct digit takes it to 19 and is announced, and undoing that
+     crosses back to 20 and is announced again. That is the case where an
+     announcement written straight to the element ate the one render() had just
+     made, after srLast had already recorded it as said. */
+  await page.evaluate(() => {
+    const unfilled = () => values.filter((v, i) => !v || v !== solution[i]).length;
+    for (let i = 0; i < 81 && unfilled() > 20; i++) {
+      if (fixed[i] || values[i] === solution[i]) continue;
+      sel = i;
+      inputDigit(solution[i]);
+    }
+  });
+  await expect(page.locator('#remaining')).toHaveText('20 por llenar');
+
+  await page.evaluate(() => {
+    const i = values.findIndex((_v, k) => !fixed[k] && values[k] !== solution[k]);
+    sel = i;
+    inputDigit(solution[i]);
+  });
+  await expect(page.locator('#srStatus')).toHaveText(/19 celdas por llenar/u);
+
+  await page.keyboard.press('z');
+  await expect(page.locator('#srStatus')).toHaveText(/Deshecho\./u);
+  await expect(page.locator('#srStatus'), 'the undo ate the count it had just moved').toHaveText(
+    /20 celdas por llenar/u,
+  );
 });
 
 test('keyboard focus is painted on the board, a pointer click is not', async ({ page }) => {
@@ -375,7 +486,7 @@ async function serveAt(prefix) {
       };
       child.stdout.on('data', (chunk) => {
         printed += chunk;
-        const address = printed.match(/http:\/\/\S+/);
+        const address = printed.match(/http:\/\/\S+/u);
         if (address) settle(null, address[0]);
       });
       child.stderr.on('data', (chunk) => {
