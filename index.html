@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sudoku 数独</title>
+<meta name="description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro. Un solo archivo, sin cuentas ni anuncios.">
+
 <!-- Inline so the site stays a single published file. A 3x3 grid rather than the
      数 seal: pure paths render the same everywhere and stay legible at 16px,
      where a CJK glyph turns to mush and depends on a CJK font being installed. -->
@@ -264,8 +266,8 @@
   <main>
     <div class="board-wrap">
       <div class="board" id="board" role="grid" aria-label="Tablero de sudoku"></div>
-      <div class="veil" id="veil">
-        <p>EN PAUSA</p>
+      <div class="veil" id="veil" role="dialog" aria-modal="true" aria-labelledby="veilTitle">
+        <p id="veilTitle">EN PAUSA</p>
         <button class="newgame" style="width:auto;padding:10px 26px" id="resumeBtn">Seguir</button>
       </div>
       <div class="stamp" id="stamp" aria-hidden="true">
@@ -465,9 +467,15 @@ const PEERS=Array.from({length:81},(_,i)=>peers(i));
 
 /* ---- overlays ---- */
 const appEl=document.querySelector('.app');
+const controlsEl=document.querySelector('.controls');
 function showOverlay(el){
   el.classList.add('show');
   appEl.inert=true;
+  /* This focus() forces a synchronous layout of the freshly built 81-cell
+     board, ~50ms on first load. Reordering it before appEl.inert was measured
+     and changed nothing - the cost is the focus itself, not the inert flag.
+     Deferring it to the next frame would remove the reflow but delay focus
+     reaching the dialog, which is a bad trade for a one-time load cost. */
   const first=el.querySelector('button:not([hidden])');
   if(first)first.focus();
 }
@@ -483,12 +491,23 @@ function startTimer(){
 }
 function setPaused(p){
   if(!playing||solved)return;
+  const veil=$('veil');
+  const wasShown=veil.classList.contains('show');
   paused=p;
-  $('veil').classList.toggle('show',p);
+  veil.classList.toggle('show',p);
   boardEl.classList.toggle('veiled',p);
   $('pauseBtn').textContent=p?'▶':'❚❚';
   $('pauseBtn').setAttribute('aria-label',p?'Seguir':'Pausar');
-  if(p)clearInterval(tick);else startTimer();
+  /* .board.veiled only paints the digits transparent, which hides them from
+     sight and from nobody else: assistive tech still read every solved value
+     and Tab still walked all 81 cells while "paused". Mark the two regions
+     that leak instead - the board holds the values, the controls act on them.
+     appEl cannot be used here the way showOverlay does it, because the veil
+     lives inside .app and would disable its own resume button. */
+  boardEl.inert=p;
+  controlsEl.inert=p;
+  if(p){clearInterval(tick);$('resumeBtn').focus()}
+  else{startTimer();if(wasShown)$('pauseBtn').focus()}
 }
 
 /* ---- game flow ---- */
@@ -701,6 +720,7 @@ document.addEventListener('keydown',e=>{
   /* let browser shortcuts through: only Ctrl/Cmd+Z is ours */
   if((e.ctrlKey||e.metaKey||e.altKey)&&k!=='z')return;
   if(k==='p'){setPaused(!paused);return}
+  if(k==='escape'&&paused){setPaused(false);return}
   if(!playing||paused)return;
   if(e.key>='1'&&e.key<='9'){inputDigit(+e.key);return}
   if(k==='backspace'||k==='delete'||e.key==='0'){e.preventDefault();erase()}

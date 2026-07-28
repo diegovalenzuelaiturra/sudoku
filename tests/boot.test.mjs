@@ -155,6 +155,38 @@ for (const preset of PRESETS) {
   });
 }
 
+test('pausing hides the board from assistive tech, not just from sight', () => {
+  const { window, document, errors, dom } = boot();
+
+  document.querySelector('#startOverlay button.diff[data-d="medium"]').click();
+
+  const veil = document.getElementById('veil');
+  const board = document.getElementById('board');
+  const controls = document.querySelector('.controls');
+
+  assert.equal(veil.getAttribute('role'), 'dialog');
+  assert.equal(veil.getAttribute('aria-modal'), 'true');
+  assert.ok(veil.getAttribute('aria-labelledby'), 'pause dialog has no accessible name');
+
+  document.getElementById('pauseBtn').click();
+
+  /* The regression: .board.veiled only sets color:transparent, so without
+     inert every solved value stayed readable and every cell stayed tabbable. */
+  assert.ok(veil.classList.contains('show'), 'veil did not open');
+  assert.equal(board.inert, true, 'board is reachable by assistive tech while paused');
+  assert.equal(controls.inert, true, 'controls are reachable while paused');
+  assert.equal(document.activeElement, document.getElementById('resumeBtn'));
+
+  /* Escape resumes. */
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!veil.classList.contains('show'), 'Escape did not dismiss the pause veil');
+  assert.notEqual(board.inert, true, 'board stayed inert after resuming');
+  assert.notEqual(controls.inert, true, 'controls stayed inert after resuming');
+
+  assert.deepEqual(errors, []);
+  dom.window.close();
+});
+
 test('undo restores hint, mistake and given state', () => {
   const { window, document, errors, dom } = boot();
 
