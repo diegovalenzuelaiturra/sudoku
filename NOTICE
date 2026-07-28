@@ -1,0 +1,13 @@
+Third-party assets bundled in this repository.
+
+Material Symbols
+Copyright Google LLC
+Licensed under the Apache License, Version 2.0.
+https://www.apache.org/licenses/LICENSE-2.0
+https://github.com/google/material-design-icons
+
+The button icons in index.html are Material Symbols (outlined, weight 400),
+inlined as raw SVG path data into the <symbol> sprite at the top of <body> and
+coloured through CSS. They are otherwise unmodified.
+
+Everything else in this repository is MIT licensed. See LICENSE.

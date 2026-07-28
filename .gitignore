@@ -1,1 +1,6 @@
 node_modules/
+_site/
+lighthouse-report.json
+.lighthouse/
+test-results/
+playwright-report/

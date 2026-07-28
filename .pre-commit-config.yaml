@@ -1,0 +1,250 @@
+# Git hooks for this repo. See CONTRIBUTING notes in README.md.
+#
+# The runner is prek (https://github.com/j178/prek), a Rust reimplementation of
+# pre-commit that reads this exact file format. Plain pre-commit also works if
+# that is what you already have; nothing here depends on prek specifically.
+#
+#   npm ci --ignore-scripts  # prek is a devDependency, so this installs it
+#   npx prek install         # writes .git/hooks/pre-commit
+#   npm run lint             # run everything once, without committing
+#
+# These hooks are a fast local warning, not the gate. Anyone can bypass them
+# with "git commit --no-verify", so CI runs the same set over every file on
+# every pull request. If you change a hook here, that CI job picks it up
+# automatically, because it runs this file rather than a copy of it.
+
+# Raised from 3.0.0 when the hygiene hooks below arrived. Three of them,
+# check-added-large-files, end-of-file-fixer and trailing-whitespace, declare
+# minimum_pre_commit_version 3.2.0 in their own upstream manifest, and
+# pre-commit exits on any hook whose floor is above the installed version.
+# Leaving 3.0.0 here would promise a version this file can no longer run on,
+# and the failure would name one hook rather than the config.
+#
+# That is a statement about plain pre-commit only. prek, the runner this repo
+# installs and the one CI runs, ignores this key and every hook's own floor:
+# measured against the prek in this lockfile, "99.99.0" here still runs every
+# hook and exits 0. So this line records the floor for the other runner and
+# enforces nothing here, which is worth knowing before treating it as a guard.
+minimum_pre_commit_version: "3.2.0"
+
+repos:
+  # Catches what GitHub will only tell you after you push and the run fails:
+  # unknown keys, bad "needs:" references, invalid cron, expressions that do not
+  # typecheck. Scoped by the hook manifest to .github/workflows.
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  # Security review of the workflows themselves: script injection through
+  # untrusted event data, credential persistence, over-broad permissions,
+  # unpinned actions. Complements actionlint rather than repeating it, since
+  # actionlint judges validity and zizmor judges safety.
+  #
+  # --offline is deliberate, and it is the reason this hook gives the same
+  # answer everywhere. Left to itself zizmor uses the network when a GitHub
+  # token happens to be in the environment and stays quietly offline when one
+  # is not, so the same commit could pass on a laptop and fail in CI purely
+  # because of an exported variable. Fixing it offline removes that. The audits
+  # given up are the ones that resolve action references over the API, which
+  # matter least here: every action this repo uses is SHA-pinned and
+  # GitHub-owned, and the repo's Actions policy will not admit anything else.
+  #
+  # --no-progress is from the upstream manifest and has to be repeated here,
+  # because setting args in this file replaces the manifest's args rather than
+  # adding to them.
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.28.0
+    hooks:
+      - id: zizmor
+        args: ["--no-progress", "--offline"]
+
+  # The general hygiene set, from pre-commit's own hooks repository and pinned
+  # to a tag so a fresh checkout runs the implementation that was reviewed here.
+  # None of it is specific to this project. These are the mistakes that break a
+  # file rather than a behaviour, which is precisely the class the unit suite
+  # cannot see: it loads the handful of files it tests and nothing else.
+  #
+  # This is a subset of the same block in the repo the CI setup here was
+  # modelled on. The Python only hooks are left out, along with check-toml and
+  # the two symlink hooks, because this tree has neither TOML nor symlinks.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # Checks first. Nothing in this group writes to a file, so a failure here
+      # leaves the tree exactly as it was and the repair is yours to make.
+      #
+      # This is a tripwire for a Playwright trace, a screenshot, a video or a
+      # build artifact that .gitignore does not happen to name. It is not a
+      # size budget for the site: scripts/check-budget.mjs is that, and it
+      # measures what is served rather than what is committed.
+      #
+      # 1 MB rather than the 500 KB default, and the number is chosen from both
+      # ends. Measured today, the largest tracked file is index.html at 43 KB
+      # and everything else is under 22 KB, so a megabyte is roughly twenty
+      # times the biggest thing here and nothing legitimate is near it. The
+      # thing most likely to grow into the old ceiling is package-lock.json,
+      # today 22 KB, which grows with the dependency tree and would fail the
+      # Lint job with a message about a large file rather than about
+      # dependencies. At the other end, what this exists to catch is well
+      # clear of a megabyte: Playwright traces and videos run to several, and
+      # test-results/ and playwright-report/ are gitignored anyway, so the
+      # realistic arrival is a copy of one of those saved somewhere else.
+      #
+      # --enforce-all is what makes it a tripwire in CI rather than only at
+      # commit time. Without it the hook intersects the paths it is handed with
+      # the files added to the index, and a fresh runner checkout stages
+      # nothing, so "prek run --all-files" reports Passed over a tree holding a
+      # 900 KB blob. Measured against the prek in this lockfile, not assumed:
+      # the same file fails the moment it is staged locally and passes in the
+      # CI shape until this flag is set.
+      - id: check-added-large-files
+        args: [--enforce-all, --maxkb=1024]
+
+      # macOS and Windows checkouts are case insensitive, so two paths that
+      # differ only in case land on one file there and the working tree quietly
+      # stops matching the repository. Linux CI would never notice, which is
+      # what makes it worth a hook rather than a review habit.
+      - id: check-case-conflict
+
+      # package.json and package-lock.json are parsed by "npm ci" before any
+      # test can run, so a stray comma in either turns every job into an install
+      # failure that reads nothing like a syntax error.
+      #
+      # manifest.webmanifest is JSON as well, but its extension is not .json,
+      # and neither identify nor prek's port of that table maps .webmanifest to
+      # the json tag, so the upstream manifest's "types: [json]" walks straight
+      # past it. Checked in both sources rather than inferred from the name.
+      # That file is served to every visitor and is what makes the app
+      # installable, so a parse error in it is a user facing failure rather than
+      # a build one.
+      #
+      # One entry rather than two. Setting types in this file replaces the
+      # manifest's value instead of adding to it, so [file] widens the hook to
+      # everything and the files pattern narrows it back to the two extensions.
+      # A second entry with the same id would also work, but the id is what
+      # "prek run --skip" matches on, so "--skip check-json" would silently take
+      # both entries with it and the webmanifest would stop being parsed by a
+      # flag that reads as scoped to the other file set. Measured, not assumed.
+      # Matching by extension rather than by exact name means a second manifest
+      # added later is covered without another edit.
+      - id: check-json
+        types: [file]
+        files: \.(json|webmanifest)$
+
+      # A conflict marker committed by hand survives all the way to whatever
+      # loads the file, and the unit suite reads almost none of these files, so
+      # nothing else here would report it.
+      #
+      # --assume-in-merge is what makes it report that case. The hook returns 0
+      # immediately unless .git/MERGE_HEAD exists, so without this flag it is
+      # inert on every ordinary commit and on every CI run, which is the whole
+      # window a marker has to arrive through. Measured: a file holding
+      # "<<<<<<< HEAD", a row of equals signs and ">>>>>>> other" passes
+      # "prek run --all-files" without the flag and fails on all three lines
+      # with it. The cost is that a genuine row of seven equals signs in prose
+      # now fails; nothing in this tree has one, and a markdown setext underline
+      # is the only shape that would.
+      - id: check-merge-conflict
+        args: [--assume-in-merge]
+
+      # A GitHub link that cites a line number against a branch name points
+      # somewhere else the moment that branch moves. There is no such link in
+      # the tree today; the hook is here so the first one added is a permalink.
+      - id: check-vcs-permalinks
+
+      # The workflows, Dependabot's config and this file are all YAML that
+      # something else consumes with no chance to complain first. actionlint and
+      # zizmor above judge what the workflows say; this asks only whether the
+      # bytes parse, which is the failure that stops either of them running.
+      - id: check-yaml
+
+      # Protects the two long lived branches from a local commit, mechanically
+      # rather than by remembering which branch is checked out. main and
+      # development, not main and master: this repository has no master. Merges
+      # made on the server are unaffected, so a squash merge into development
+      # and a release into main both still work.
+      #
+      # Two consequences, both read out of the source and the runner logs rather
+      # than assumed. Locally, "npm run lint" now fails on this hook whenever it
+      # is run while sitting on main or development, because it is the same
+      # "prek run --all-files" that CI runs and it cannot tell the two apart.
+      # Work on a branch.
+      #
+      # In CI it depends on the event. The hook shells out to "git symbolic-ref
+      # HEAD" and reports success when that command fails, which is what a
+      # detached HEAD does. On a pull request actions/checkout resolves
+      # refs/pull/N/merge and checks it out detached, so the Lint job is
+      # unaffected; a past run logs "git checkout --progress --force
+      # refs/remotes/pull/16/merge". For a ref under refs/heads, which is what a
+      # push to main or a workflow_dispatch run gives it, the same action logs
+      # "git checkout --progress --force -B main refs/remotes/origin/main" and
+      # leaves HEAD on a real branch, where this hook fails. The Lint job
+      # therefore has to skip it, next to unit-tests-coverage.
+      - id: no-commit-to-branch
+        args: [--branch=main, --branch=development]
+
+      # Fixes: these rewrite the file and stage nothing, so a failure means read
+      # the diff and commit again.
+      #
+      # No exclude for package-lock.json, unlike the lockfile exclude in the
+      # repo this block came from. Every tracked file here, that one included,
+      # is already LF, already ends in a newline and already has no trailing
+      # whitespace, so all three fixers are no-ops today and there is nothing
+      # for a generator and a hook to take turns undoing. That was measured over
+      # the whole tree, not reasoned about. Leaving the lockfile in scope means
+      # a hand edit that introduces CRLF is still caught.
+      - id: end-of-file-fixer
+
+      # .gitattributes already declares "* text=auto eol=lf", so this covers
+      # what that rule cannot: a file written by a tool that bypasses git's
+      # filters, or one that reached the tree before the rule existed.
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+      # Two trailing spaces are a line break in markdown, so keep them there.
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+
+  # A replacement character in a tracked file means something upstream decoded
+  # bytes with the wrong encoding and threw the original away, which cannot be
+  # recovered from the file afterwards. index.html holds every string the app
+  # shows, including the screen reader announcements, so one that lands there
+  # ships to readers. The rest of that repository's hooks are Python or
+  # reStructuredText specific and are left out.
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+      - id: text-unicode-replacement-char
+
+  - repo: local
+    hooks:
+      # The unit suite plus a coverage floor, the same command CI runs. It takes
+      # roughly a second and a half, which is cheap enough to pay per commit and
+      # is the difference between finding a broken build script now and finding
+      # it after a push.
+      #
+      # pass_filenames is false because the runner discovers its own test files;
+      # handing it the staged paths would make it try to execute them as tests.
+      # "files" keeps it from running when a commit only touches documentation.
+      #
+      # .github/workflows/ is in that list because tests/build.test.mjs reads
+      # those files: it is the only place the workflow YAML is asserted on, and
+      # it holds the guard that keeps a checkout, node and npm out of the job
+      # carrying pages: write. Without the entry a commit touching nothing but a
+      # workflow, which is most of what changes here, passed the whole local run
+      # without ever executing that guard.
+      #
+      # This is the one hook that needs something off the PATH. Committing from
+      # an editor or a desktop git client, rather than a terminal, can mean node
+      # is missing, because a version manager like nvm is set up by the shell
+      # profile and nothing loads it for a GUI process. The failure then reads
+      # "No such file or directory (os error 2)", which does not obviously mean
+      # "install node". Commit from a terminal, or give the client a shell that
+      # loads one.
+      - id: unit-tests-coverage
+        name: unit tests with coverage floor
+        entry: npm run test:coverage
+        language: system
+        pass_filenames: false
+        files: ^(scripts/|tests/|e2e/|\.github/workflows/|index\.html|sw\.js|manifest\.webmanifest|404\.html|robots\.txt|package(-lock)?\.json|icons/)
