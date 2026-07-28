@@ -64,12 +64,15 @@ const solve = (page) =>
   });
 
 /* One wrong digit into the first empty cell, which is all it takes to lose the
-   flawless bonus. Solving afterwards overwrites it. */
+   flawless bonus. Solving afterwards overwrites it. It hands back the cell it
+   wrote, so a caller asserting on that cell cannot end up watching a different
+   one. */
 const spoil = (page) =>
   page.evaluate(() => {
     const i = values.findIndex((v, k) => !fixed[k]);
     sel = i;
     inputDigit((solution[i] % 9) + 1);
+    return i;
   });
 
 test('a flawless win pays papas fritas doubled, and chocolates', async ({ page }) => {
@@ -131,6 +134,85 @@ test('a win with a mistake pays papas fritas at face value and no chocolate', as
   /* The chip has to stay at zero, not merely fail to reach two: a chocolate
      paid for a spoiled game is the one thing that would make the count
      meaningless. */
+  await expect(page.locator('#chocos')).toHaveText('0');
+  expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
+  expect(problems).toEqual([]);
+});
+
+/* The bonus is gated on mistakes===0&&hints===0, and undo used to put both
+   counters back, so guessing a digit and pressing Z when it turned out wrong
+   paid the flawless win. At most nine tries a cell brute-forced a whole board
+   reading zero errors, and the chocolates a clean solve exists to reserve were
+   paid for guessing. Deshacer still rolls the board back. It no longer rolls
+   back what the player did. */
+test('a mistake undone still costs the flawless bonus', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  /* Asked of spoil() rather than recomputed here. Two copies of the same
+     findIndex agree only by luck, and the moment they stopped agreeing the
+     toBeEmpty() checks below would run against a cell nobody ever wrote to,
+     which is an assertion that can no longer fail. The bounds check is the
+     other half: nth(-1) resolves to the last cell rather than throwing. */
+  const target = await spoil(page);
+  expect(target, 'the board had no empty cell to spoil').toBeGreaterThanOrEqual(0);
+  const cell = page.locator('#board .cell').nth(target);
+  await expect(cell.locator('.v'), 'the wrong digit never reached the board').not.toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('1');
+
+  /* Both entry points. They delegate to the same undo(), but the click handler
+     is exercised nowhere else in the suite and the key is what a player uses. */
+  await page.locator('#undoBtn').click();
+  await expect(cell.locator('.v'), 'undo left the wrong digit on the board').toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('1');
+
+  await spoil(page);
+  await expect(page.locator('#mistakes')).toHaveText('2');
+  await page.keyboard.press('z');
+  await expect(cell.locator('.v')).toBeEmpty();
+  await expect(page.locator('#mistakes')).toHaveText('2');
+
+  /* The save agrees, so a reload cannot hand the rewind back. Read the way
+     readWallet reads: JSON.parse(null) is null, so an absent save would die on
+     the property access instead of reporting that nothing was written. */
+  const saved = await readRaw(page, SAVE_KEY);
+  expect(saved, 'the undo wrote no save').not.toBeNull();
+  expect(JSON.parse(saved).mistakes).toBe(2);
+
+  await solve(page);
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries));
+  await expect(page.locator('#chocos')).toHaveText('0');
+  expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
+  expect(problems).toEqual([]);
+});
+
+/* The cheaper half of the same hole, and the reason hints are monotonic too:
+   press H, read the answer off the screen, press Z, and the hint was off the
+   record while the digit was still in the player's head. Undo can clear a cell.
+   It cannot un-see an answer. */
+test('a hint undone still costs the flawless bonus', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page);
+
+  await page.keyboard.press('h');
+  await expect(page.locator('#hints')).toHaveText('1');
+  const cell = page.locator('#board .cell').nth(await page.evaluate(() => sel));
+  await expect(cell).toHaveClass(/given/);
+
+  await page.keyboard.press('z');
+  /* The board first, and this is the half that makes the test falsifiable: the
+     counter reads 1 either side of the key, so on the counter alone this passed
+     with undo() gutted to a bare return, which is all a broken Z looks like. */
+  await expect(cell).not.toHaveClass(/given/);
+  await expect(cell.locator('.v')).toBeEmpty();
+  await expect(page.locator('#hints')).toHaveText('1');
+
+  await solve(page);
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries));
   await expect(page.locator('#chocos')).toHaveText('0');
   expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
   expect(problems).toEqual([]);
