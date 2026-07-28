@@ -542,3 +542,42 @@ test('a save survives a reload the service worker serves from cache', async ({ p
   );
   expect(problems).toEqual([]);
 });
+
+/* A save written before boards carried a seed has neither a seed nor a grade,
+   and resuming it is meant to leave the end of game summary quiet about both:
+   the grade would be the tier the difficulty asked for rather than one anything
+   measured, and the code would be 0, which rebuilds a different board.
+
+   saveGame() used to write both keys unconditionally, so the first move after
+   such a resume wrote the placeholders straight back out as though they were
+   facts. The next session read seed 0, and Number.isInteger(0) && 0 >= 0 is
+   true, so the board came back "measured" and the win screen offered
+   Código: 0. Reported from a real save, which is what every player who had one
+   before this shipped was carrying. */
+test('a save from before seeding never becomes a measured board', async ({ page, context }) => {
+  await boot(page);
+  await startGame(page);
+  const save = await readSave(page);
+  delete save.seed;
+  delete save.grade;
+
+  /* Planted before any app code runs, because the coalesced autosave would
+     otherwise overwrite it between the write and the reload. */
+  await context.addInitScript(
+    ([key, raw]) => localStorage.setItem(key, raw),
+    [SAVE_KEY, JSON.stringify(save)],
+  );
+  await page.goto('./');
+  await expect(page.locator('#board .cell')).toHaveCount(81);
+  expect(await page.evaluate(() => puzzleMeasured), 'a pre-seed save is not measured').toBe(false);
+
+  /* One move, which is what rewrites the save. */
+  await page.evaluate(() => {
+    const i = values.findIndex((v, k) => !v && !fixed[k]);
+    sel = i;
+    inputDigit(solution[i]);
+  });
+  const rewritten = await readSave(page);
+  expect(rewritten.seed, 'a placeholder seed was written back out').toBeUndefined();
+  expect(rewritten.grade, 'a guessed grade was written back out').toBeUndefined();
+});
