@@ -740,6 +740,14 @@ const chocoWord = (n) => `${n} chocolate${Math.abs(n) === 1 ? '' : 's'}`;
 /* One ledger line as a sentence. Words rather than the emoji the chips use:
    this is a history somebody reads, and an emoji is nothing at all to a screen
    reader without a label beside it. */
+/* One prize on a ledger line: the emoji, then the count with its sign kept, so
+   a spend reads as a spend without a word for it. */
+function chipSpan(emoji, n) {
+  const span = document.createElement('span');
+  span.className = 'chip';
+  span.textContent = `${emoji} ${n > 0 ? '+' : ''}${n}`;
+  return span;
+}
 function describeEntry(e) {
   const bits = [];
   if (e.f) bits.push(`${e.f > 0 ? '+' : ''}${e.f} papas`);
@@ -786,13 +794,21 @@ function paintRecord() {
      as played: a player who resumed a game from before the record existed and
      won it was shown "Sin partidas todavía." beside a row reading one win and a
      real best time. */
-  $('streakText').textContent =
-    played === 0 && won === 0
-      ? 'Sin partidas todavía.'
-      : `Racha de secas: ${stats.streak}. La mejor: ${stats.bestStreak}.`;
-  /* Only while a run is actually going. A flame beside "Racha de secas: 0"
-     illustrates the opposite of what the number says. */
-  $('streakIcon').hidden = stats.streak <= 0;
+  /* Two counts and two emoji on screen, the sentence for a screen reader only.
+     Emoji are decorative to assistive tech, so dropping the words from the
+     markup would have dropped them from the accessibility tree as well: the
+     hidden span is what keeps the line meaning anything without sight of it.
+
+     Before the first game there is no count worth showing, so the sentence is
+     the visible content in that one case and the counts stay hidden. */
+  const noGames = played === 0 && won === 0;
+  $('streakNow').textContent = stats.streak;
+  $('streakBest').textContent = stats.bestStreak;
+  $('streakCounts').hidden = noGames;
+  $('streakText').classList.toggle('visually-hidden', !noGames);
+  $('streakText').textContent = noGames
+    ? 'Sin partidas todavía.'
+    : `Racha de secas: ${stats.streak}. La mejor: ${stats.bestStreak}.`;
 
   $('purseFries').textContent = friesTotal;
   $('purseChoco').textContent = chocoTotal;
@@ -806,7 +822,26 @@ function paintRecord() {
   for (const e of ledger.slice().reverse()) {
     const li = document.createElement('li');
     const what = document.createElement('span');
-    what.textContent = describeEntry(e);
+    /* Emoji and a signed count, no words. The sign is what separates a prize
+       won from one spent, which is what "canjeadas" used to say.
+
+       The difficulty is not shown. It was dots for a while, one per grade, and
+       the first question anyone asked was what they meant: a mark that has to
+       be explained is not iconography, it is a cipher with no key on screen.
+       describeEntry() still names the tier, so it is not lost, it is only
+       unspoken to the eye.
+
+       That sentence is still what a screen reader gets, because none of this
+       carries to one. The visible half is aria-hidden so the line is not read
+       twice. */
+    const glyphs = document.createElement('span');
+    glyphs.setAttribute('aria-hidden', 'true');
+    if (e.f) glyphs.append(chipSpan('🍟', e.f));
+    if (e.c) glyphs.append(chipSpan('🍫', e.c));
+    const said = document.createElement('span');
+    said.className = 'visually-hidden';
+    said.textContent = describeEntry(e);
+    what.append(glyphs, said);
     const when = document.createElement('time');
     const at = new Date(e.t);
     /* A timestamp out of Date's range is still a finite number, so this is
