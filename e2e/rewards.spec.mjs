@@ -267,6 +267,35 @@ test('a tab that never hears about the other one still cannot erase it', async (
   expect(deafProblems).toEqual([]);
 });
 
+/* A total this build cannot add to is not a total. The version here is current,
+   so the wallet is read rather than left alone, and it is the number itself that
+   has to be refused: JSON has no Infinity literal but 1e400 parses to one, and
+   Number(Infinity)||0 kept it. The chip then read "Infinity", JSON.stringify
+   wrote it back as null, and the next boot read that null as 0, which is the
+   whole wallet gone by exactly the route the prototype difficulty took. */
+test('a stored total too large to add to is refused, not carried', async ({ page }) => {
+  await page.addInitScript(
+    (key) => localStorage.setItem(key, '{"v":1,"fries":1e400,"choco":1e17}'),
+    WALLET_KEY,
+  );
+
+  const problems = await boot(page);
+  /* Infinity refused outright. 1e17 is finite, but it is past MAX_SAFE_INTEGER,
+     where adding a prize stops changing the number at all, so it is refused too
+     rather than becoming a total that silently absorbs every win from here on.
+     A merely large total below that line is left alone: it still adds up. */
+  await expect(page.locator('#fries')).toHaveText('0');
+  await expect(page.locator('#chocos')).toHaveText('0');
+
+  await startGame(page);
+  await solve(page);
+  await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
+  expect(await readWallet(page), 'the win banked against a total it could not add to').toMatchObject(
+    { fries: NORMAL.fries * 2, choco: NORMAL.choco },
+  );
+  expect(problems).toEqual([]);
+});
+
 /* A wallet this build cannot read belongs to some other build, very likely a
    newer one the player still has cached. Zeroing it would be worse than
    showing nothing, so it is read as absent and left where it is. */

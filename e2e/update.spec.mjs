@@ -112,6 +112,71 @@ test('coming back to the app asks whether a newer worker exists', async ({ page 
   expect(problems).toEqual([]);
 });
 
+/* The case the throttle exists to survive, and the one it used to get wrong in
+   opposite directions on the two engines. Offline, registration.update() is not
+   the same call twice over: measured on the built page, WebKit rejects and
+   Chromium resolves without having reached the network. So an implementation
+   that reacted to the rejection did nothing at all on Chromium, and on WebKit
+   handed the whole throttle back on every resume. Refusing before the call is
+   spent is the only version that behaves the same on both. */
+test('a resume with no connectivity spends nothing, and the next one still asks', async ({
+  page,
+  context,
+}) => {
+  const problems = watch(page);
+  await page.goto('./');
+  await expect(page.locator('#board .cell')).toHaveCount(81);
+  await controlled(page);
+  await countUpdateChecks(page);
+
+  await context.setOffline(true);
+  /* Asserted rather than assumed: if the emulation ever stopped reaching
+     navigator.onLine this test would otherwise pass for the wrong reason. */
+  expect(await page.evaluate(() => navigator.onLine), 'the page still believes it is online').toBe(
+    false,
+  );
+  await resume(page);
+  expect(await updateChecks(page), 'an offline resume tried to check anyway').toBe(0);
+
+  await context.setOffline(false);
+  await resume(page);
+  expect(
+    await updateChecks(page),
+    'the offline resume spent the hour, so coming back online checked nothing',
+  ).toBe(1);
+  expect(problems).toEqual([]);
+});
+
+/* An sw.js that 404s, times out or fails to parse rejects every time. Handing
+   the throttle back on each failure turns every installed copy into a fetch per
+   app switch, indefinitely, which is worst exactly when the network is worst. */
+test('a failing check backs off instead of firing on every switch', async ({ page }) => {
+  const problems = watch(page);
+  await page.goto('./');
+  await expect(page.locator('#board .cell')).toHaveCount(81);
+  await controlled(page);
+
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    window.__updates = 0;
+    registration.update = () => {
+      window.__updates++;
+      return Promise.reject(new Error('sw.js is unreachable'));
+    };
+  });
+
+  await resume(page);
+  expect(await updateChecks(page), 'the first resume checked nothing').toBe(1);
+
+  /* Well inside the retry gap, so every one of these must be refused. */
+  for (let i = 0; i < 5; i++) await resume(page);
+  expect(
+    await updateChecks(page),
+    'a failed check handed the throttle back, so every switch now fetches sw.js',
+  ).toBe(1);
+  expect(problems).toEqual([]);
+});
+
 /* Installed apps are exempt from idle eviction but not from eviction under
    storage pressure, and both the saved game and the prize totals live in
    localStorage. Asking to keep them is one call, but in a browser tab it is a
