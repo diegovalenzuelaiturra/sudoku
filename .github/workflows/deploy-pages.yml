@@ -32,10 +32,10 @@ jobs:
     outputs:
       # Handed to the deploy job, which has no checkout to enumerate from.
       assets: ${{ steps.assets.outputs.list }}
-    # A hung job otherwise runs to GitHub's 360-minute default. 15 rather than
-    # the previous 10, because the chromium download below is a few minutes on
-    # a cold cache.
-    timeout-minutes: 15
+    # A hung job otherwise runs to GitHub's 360-minute default. 20 rather than
+    # the previous 15, because there are two engines to download on a cold
+    # cache now, and the suite runs against both.
+    timeout-minutes: 20
     steps:
       # Actions are pinned to full commit SHAs. A tag like v7 is mutable, so
       # pinning by tag would let a moved tag swap the action out from under us.
@@ -64,7 +64,7 @@ jobs:
           BUILD_ID: ${{ github.sha }}
         run: npm run build
 
-      # The unit suite, the chromium download and the browser suite run on
+      # The unit suite, the browser downloads and the browser suite run on
       # !cancelled() rather than on the implicit success(): a failing unit suite
       # would otherwise skip the browser suite, and the run would report one
       # broken thing while hiding whether the other is broken too. The download
@@ -73,7 +73,7 @@ jobs:
       # in node_modules: after a failed install they would report on nothing
       # while burying the failure that caused it. The browser suite names the
       # download rather than the install, which implies it: a skipped or failed
-      # install leaves steps.chromium.outcome at "skipped".
+      # install leaves steps.browsers.outcome at "skipped".
       #
       # The gating deliberately stops here. Every step below rebuilds _site,
       # enumerates it or uploads it, and those keep their implicit success() so
@@ -86,10 +86,10 @@ jobs:
 
       # --ignore-scripts also blocks Playwright's postinstall browser download,
       # so the browser is fetched explicitly here.
-      - name: Install chromium for Playwright
-        id: chromium
+      - name: Install browsers for Playwright
+        id: browsers
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       # Names the same second dependency the Test job in ci.yml names. With no
       # browser on disk, playwright test exits on a missing executable and says
@@ -98,7 +98,7 @@ jobs:
       # alone covered a skipped download and not a failed one, which is the
       # case that actually happens.
       - name: Run Playwright tests
-        if: ${{ !cancelled() && steps.chromium.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
         run: npm run test:e2e
 
       # Rebuilt here, after the browser suite, and deliberately not before it.
