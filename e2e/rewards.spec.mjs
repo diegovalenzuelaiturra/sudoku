@@ -69,7 +69,7 @@ const solve = (page) =>
    one. */
 const spoil = (page) =>
   page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     sel = i;
     inputDigit((solution[i] % 9) + 1);
     return i;
@@ -113,7 +113,7 @@ test('a flawless win pays papas fritas doubled, and chocolates', async ({ page }
      button rather than the banner, so this is the announcement that carries
      it to a screen reader. */
   expect(await page.locator('#srAlert').textContent()).toMatch(
-    new RegExp(`${NORMAL.fries * 2} papas fritas y ${NORMAL.choco} chocolates`),
+    new RegExp(`${NORMAL.fries * 2} papas fritas y ${NORMAL.choco} chocolates`, 'u'),
   );
 
   /* And on screen. The banner is icons and numbers, so what is asserted is the
@@ -215,13 +215,13 @@ test('a hint undone still costs the flawless bonus', async ({ page }) => {
   await page.keyboard.press('h');
   await expect(page.locator('#hints')).toHaveText('1');
   const cell = page.locator('#board .cell').nth(await page.evaluate(() => sel));
-  await expect(cell).toHaveClass(/given/);
+  await expect(cell).toHaveClass(/given/u);
 
   await page.keyboard.press('z');
   /* The board first, and this is the half that makes the test falsifiable: the
      counter reads 1 either side of the key, so on the counter alone this passed
      with undo() gutted to a bare return, which is all a broken Z looks like. */
-  await expect(cell).not.toHaveClass(/given/);
+  await expect(cell).not.toHaveClass(/given/u);
   await expect(cell.locator('.v')).toBeEmpty();
   await expect(page.locator('#hints')).toHaveText('1');
 
@@ -246,7 +246,7 @@ test('a save that starts the mistake counter below zero cannot buy the bonus', a
      written blob that might be rejected for an unrelated reason and pass this
      test by never restoring at all. */
   await page.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k]);
+    const i = values.findIndex((_v, k) => !fixed[k]);
     sel = i;
     inputDigit(solution[i]);
   });
@@ -305,7 +305,7 @@ test('a second tab cannot reset the counters the bonus is gated on', async ({ pa
   /* The second tab, still holding 0 in memory, writes. This is the keystroke
      that used to erase the mistake from storage entirely. */
   await other.evaluate(() => {
-    const i = values.findIndex((v, k) => !fixed[k] && values[k] === 0);
+    const i = values.findIndex((_v, k) => !fixed[k] && values[k] === 0);
     sel = i;
     inputDigit(solution[i]);
   });
@@ -483,9 +483,10 @@ test('a stored total too large to add to is refused, not carried', async ({ page
   await startGame(page);
   await solve(page);
   await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries * 2));
-  expect(await readWallet(page), 'the win banked against a total it could not add to').toMatchObject(
-    { fries: NORMAL.fries * 2, choco: NORMAL.choco },
-  );
+  expect(
+    await readWallet(page),
+    'the win banked against a total it could not add to',
+  ).toMatchObject({ fries: NORMAL.fries * 2, choco: NORMAL.choco });
   expect(problems).toEqual([]);
 });
 
@@ -498,10 +499,10 @@ test('a wallet from an unknown version is ignored, not overwritten', async ({ pa
      at a literal, this test quietly stopped meaning anything the moment the
      wallet gained a ledger and version 2 became readable. */
   const planted = { v: WALLET_VERSION + 1, fries: 99, choco: 9 };
-  await page.addInitScript(
-    ({ key, wallet }) => localStorage.setItem(key, JSON.stringify(wallet)),
-    { key: WALLET_KEY, wallet: planted },
-  );
+  await page.addInitScript(({ key, wallet }) => localStorage.setItem(key, JSON.stringify(wallet)), {
+    key: WALLET_KEY,
+    wallet: planted,
+  });
 
   const problems = await boot(page);
   await expect(page.locator('#fries')).toHaveText('0');
@@ -581,7 +582,7 @@ test('a game in progress keeps no prize total of its own', async ({ page }) => {
 
   const saved = JSON.parse(await readRaw(page, SAVE_KEY));
   expect(
-    Object.keys(saved).filter((key) => /fries|choco/i.test(key)),
+    Object.keys(saved).filter((key) => /fries|choco/iu.test(key)),
     'the game save carries a prize total again, and winning deletes that save',
   ).toEqual([]);
   expect(problems).toEqual([]);

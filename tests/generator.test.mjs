@@ -17,11 +17,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const html = readFileSync(join(root, 'index.html'), 'utf8');
+const root = join(import.meta.dirname, '..');
+/* The game is app.js, which the build inlines into the published page. */
+const app = readFileSync(join(root, 'app.js'), 'utf8');
 
 /* Required rather than evaluated from a string, because the coverage report is
    the point. `new Function` compiles an anonymous script that V8 attributes to
@@ -187,29 +187,29 @@ test('a board is graded by technique, not by how many clues it shows', () => {
   );
 });
 
-test('the grade words index.html shows come from the generator', () => {
-  /* index.html is inline and generator.js has to run in a worker, so the table
-     is written twice. This is what stops the two drifting: a tier renamed in
+test('the grade words the game shows come from the generator', () => {
+  /* app.js is inlined into the page and generator.js has to run in a worker, so
+     the table is written twice. This is what stops the two drifting: a tier renamed in
      one and not the other would put a word on the difficulty buttons that no
      board is ever graded with. */
-  const literal = html.match(/const GRADE_WORDS=\{([^}]*)\}/);
+  const literal = app.match(/const GRADE_WORDS\s*=\s*\{([^}]*)\}/u);
   assert.ok(literal, 'GRADE_WORDS is not where this test expects to find it');
 
   const shown = {};
-  for (const [, key, word] of literal[1].matchAll(/(\d+):'([^']+)'/g)) shown[key] = word;
+  for (const [, key, word] of literal[1].matchAll(/(\d+):\s*'([^']+)'/gu)) shown[key] = word;
 
-  assert.deepEqual(shown, GRADE_NAMES, 'the grade words in index.html and generator.js disagree');
+  assert.deepEqual(shown, GRADE_NAMES, 'the grade words in app.js and generator.js disagree');
   assert.equal(Object.keys(shown).length, 4, 'there are not four tiers any more');
 });
 
 test('every difficulty asks for a grade, and harder ones ask for more', () => {
-  const literal = html.match(/const DIFF=\{(.+)\};/);
+  const literal = app.match(/const DIFF\s*=\s*\{([\s\S]*?)\n\};/u);
   assert.ok(literal, 'the DIFF table is not where this test expects to find it');
 
   const rows = new Map();
-  for (const [, key, body] of literal[1].matchAll(/(\w+):\{([^}]*)\}/g)) {
-    const grade = body.match(/grade:(\d+)/);
-    const clues = body.match(/clues:(\d+)/);
+  for (const [, key, body] of literal[1].matchAll(/(\w+):\s*\{([^}]*)\}/gu)) {
+    const grade = body.match(/grade:\s*(\d+)/u);
+    const clues = body.match(/clues:\s*(\d+)/u);
     rows.set(key, {
       grade: grade === null ? null : Number(grade[1]),
       clues: clues === null ? null : Number(clues[1]),
@@ -223,7 +223,11 @@ test('every difficulty asks for a grade, and harder ones ask for more', () => {
   );
   for (const preset of PRESETS) {
     const row = rows.get(preset.key);
-    assert.equal(row.grade, preset.grade, `${preset.label} no longer asks for grade ${preset.grade}`);
+    assert.equal(
+      row.grade,
+      preset.grade,
+      `${preset.label} no longer asks for grade ${preset.grade}`,
+    );
     assert.equal(row.clues, preset.clues, `${preset.label} starts its search somewhere else now`);
     assert.ok(GRADE_NAMES[row.grade], `${preset.label} asks for a grade with no name`);
   }
