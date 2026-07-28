@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { dirname, extname, join, relative } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -23,15 +23,49 @@ const BANNED = [
 const SKIP_DIRS = new Set(['node_modules', '.git', '_site']);
 const SKIP_FILES = new Set(['package-lock.json']);
 
+/* Binary files hold no prose, so there is nothing here for them to fail on, and
+   reading one as text is actively harmful. readFileSync(file, 'utf8') does not
+   throw on bytes that are not valid utf8: it substitutes, and along the way a
+   deflate stream can emit C2 B7, which decodes to a real MIDDLE DOT. The icon
+   PNGs are a few KB of deflate output each, so that is a coincidence with odds
+   worth taking seriously, not a theoretical one, and it would fail the build
+   over an image nobody can edit. Skipped by extension rather than by sniffing
+   the bytes: the extension is what a reader can check at a glance, and a text
+   file misnamed .png is not a failure mode this repository has. */
+const BINARY_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.ico',
+  '.webp',
+  '.avif',
+  '.woff',
+  '.woff2',
+  '.ttf',
+  '.otf',
+  '.zip',
+  '.gz',
+  '.pdf',
+  '.mp3',
+  '.mp4',
+  '.wav',
+  '.webm',
+]);
+
+const isBinary = (name) => BINARY_EXTENSIONS.has(extname(name).toLowerCase());
+
 function walk(dir) {
   const out = [];
   for (const entry of readdirSync(dir)) {
+    /* Skipped by name before it is stat'd. tests/site.test.mjs runs the build,
+       which removes and recreates _site, and node --test runs test files in
+       parallel processes, so statting an entry this walk was going to discard
+       anyway can throw ENOENT and fail this unrelated test. */
+    if (SKIP_DIRS.has(entry) || SKIP_FILES.has(entry) || isBinary(entry)) continue;
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      if (!SKIP_DIRS.has(entry)) out.push(...walk(full));
-    } else if (!SKIP_FILES.has(entry)) {
-      out.push(full);
-    }
+    if (statSync(full).isDirectory()) out.push(...walk(full));
+    else out.push(full);
   }
   return out;
 }

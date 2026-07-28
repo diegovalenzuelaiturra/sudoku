@@ -2,11 +2,17 @@
   "name": "sudoku",
   "version": "0.0.0",
   "private": true,
-  "description": "Tests for the self-contained sudoku page. The site itself is a single index.html with no runtime dependencies; nothing here is shipped.",
+  "description": "Tests for the sudoku page. The site is static, has no runtime dependencies, and ships from the repo root; nothing in here is published.",
   "scripts": {
-    "test": "node --test"
+    "build": "node scripts/build.mjs",
+    "icons": "node scripts/icons.mjs",
+    "preview": "node scripts/build.mjs && node e2e/static-server.mjs",
+    "test": "node --test --test-timeout=30000",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "jsdom": "^29.1.1"
+    "@playwright/test": "^1.62.0",
+    "html-minifier-terser": "^7.2.0",
+    "terser": "^5.49.0"
   }
 }
