@@ -53,6 +53,34 @@ being reintroduced, and they record measurements that were expensive to take.
 The published copy is stripped by the minifier, so keeping them costs nothing.
 Explain why, not what.
 
+## Branches and releases
+
+Feature work branches off `development`, arrives by pull request and is squash
+merged, so `development` stays a flat chain of one commit per pull request.
+
+**A release is a merge commit, never a squash.** The release pull request takes
+`development` into `main`, and its second parent is the only thing that makes
+the individual commits ancestors of `main`. Release #27 was squash merged by
+mistake, flattening six commits into one that nothing pointed at. That diverged
+the two branches, cost a repair pull request (#36) whose entire job was to graft
+the ancestry back while changing no files, and left one opaque lump in main's
+history that cannot be undone now. The `main protection` ruleset allows only the
+merge method, so the button can no longer get this wrong.
+
+**After a release merges, fast-forward `development` onto `main`.**
+
+```sh
+git switch development && git merge --ff-only main && git push origin development
+```
+
+Both branches then sit on the same commit and the next release starts from
+common ground. Skipping this is what turned one mis-click into three releases of
+drift: once the branches had diverged the fast-forward was impossible, so it
+stopped happening, and `development` trailed `main` by every release merge.
+Development's ruleset deliberately has no pull request rule, because that would
+demand a pull request for this push, and a fast-forward cannot be delivered
+through one.
+
 ## How the game is put together
 
 Difficulty is the hardest technique a board needs, not its clue count. The
