@@ -278,14 +278,19 @@ test('a new game replaces the previous save immediately, before any move', async
   expect(raw, 'the previous puzzle is still the save').not.toBe(stale);
   const fresh = JSON.parse(raw);
   expect(fresh.diffKey).toBe('hard');
-  expect(fresh.puzzle.filter((v) => v !== 0)).toHaveLength(28);
+  /* A difficulty no longer deals a fixed number of clues: it asks for a grade
+     and the generator moves the count to reach one. So the count is taken from
+     the payload and used as the expectation below, rather than written here. */
+  const givens = fresh.puzzle.filter((v) => v !== 0).length;
+  expect(givens).toBeGreaterThanOrEqual(17);
+  expect(givens).toBeLessThan(81);
   expect(problems).toEqual([]);
 
   await page.reload();
   await expect(page.locator('#diffLabel')).toHaveText('Peludo');
   /* The clue count on screen, not only in the payload: a stale restore would
-     put the 34 givens of the abandoned Normal puzzle back on the board. */
-  await expect(page.locator('#board .cell.given')).toHaveCount(28);
+     put the givens of the abandoned Normal puzzle back on the board. */
+  await expect(page.locator('#board .cell.given')).toHaveCount(givens);
   expect(problems).toEqual([]);
 });
 

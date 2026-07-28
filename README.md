@@ -1,6 +1,23 @@
 # sudoku
 Sudoku :)
 
+## Difficulty
+
+A difficulty is the hardest technique a board needs, not how many numbers it
+starts with. Piola falls to singles, Normal needs locked candidates, Peludo
+needs pairs, and Brígido needs more than any of those. The generator digs a
+board, grades it by solving it without ever guessing, and adjusts until the
+grade matches. The clue count moves to get there, so it is not advertised.
+
+The search is allowed to miss: the pares tier is a narrow band and it lands
+beside it about one board in seven. What it will not do is lie about it. The end
+of game summary reports the grade the board was measured at, along with the seed
+it was built from, and feeding that seed back rebuilds exactly the same puzzle.
+
+Grading and generation run in a worker, so choosing a difficulty no longer
+freezes the page. If a browser refuses to make one, the same file is loaded into
+the page and the board is built there instead.
+
 ## Previewing
 
 ```sh
