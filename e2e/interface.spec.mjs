@@ -740,9 +740,7 @@ async function playInto(page, wrong) {
   return target;
 }
 
-test('a mistake buzzes, a correct digit does not, and the switch turns it off', async ({
-  page,
-}) => {
+test('a mistake buzzes and a correct digit does not', async ({ page }) => {
   await stubVibrate(page);
   await page.goto('./');
   await startGame(page);
@@ -756,25 +754,28 @@ test('a mistake buzzes, a correct digit does not, and the switch turns it off', 
     40, 30, 40,
   ]);
 
-  /* Off, and it stays off across a reload: a player who switched it off did not
-     mean only until the page was closed. */
+  /* The switch is out of sight for now, so nothing in the record offers it. */
   await openRecord(page);
-  await expect(page.locator('#buzzRow')).toBeVisible();
-  await page.locator('#buzzToggle').uncheck();
-  await page.locator('#closeRecord').click();
-  /* The record opens over the difficulty picker, which is still up behind it and
-     holds the board inert until the game is resumed. */
-  await page.locator('#cancelNew').click();
-  await expect(page.locator('#startOverlay')).toBeHidden();
+  await expect(page.locator('#buzzRow')).toBeHidden();
+});
+
+/* The row is down but the preference behind it is still read, so a stored no is
+   still a no. This is what makes putting the row back on screen the only thing
+   that would take. */
+test('a stored preference silences the buzz with no switch on screen', async ({ page }) => {
+  await stubVibrate(page);
+  await page.addInitScript(() =>
+    localStorage.setItem('sudoku:prefs', JSON.stringify({ v: 1, buzz: false })),
+  );
+  await page.goto('./');
+  await startGame(page);
 
   await playInto(page, true);
-  expect(await buzzes(page), 'it buzzed after being switched off').toBe(1);
-
-  await page.reload();
-  await expect(page.locator('#board .cell')).toHaveCount(81);
+  expect(await page.evaluate(() => mistakes), 'the move did not land').toBe(1);
+  expect(await buzzes(page), 'it buzzed with the preference set to no').toBe(0);
   expect(
     await page.evaluate(() => document.getElementById('buzzToggle').checked),
-    'the switch forgot it was off',
+    'the switch does not carry the stored answer, so putting it back would show the wrong one',
   ).toBe(false);
 });
 

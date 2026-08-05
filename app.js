@@ -290,6 +290,11 @@ const fmt = (s) =>
   s < 3600
     ? `${(s / 60) | 0}:${pad2(s % 60)}`
     : `${(s / 3600) | 0}:${pad2(((s / 60) | 0) % 60)}:${pad2(s % 60)}`;
+/* The running clock, padded where every other time on the page is not. It is the
+   one that changes every second, so the minutes carrying a leading zero is what
+   stops the whole header sliding sideways as it crosses 9:59, and a stopped time
+   in a table has nothing to hold still for. */
+const clockText = (s) => (s < 3600 ? `${pad2((s / 60) | 0)}:${pad2(s % 60)}` : fmt(s));
 /* The counters used to ride along in here and be put back by undo(), which meant
    Deshacer erased the very mistake it was undoing: the marcador rewound,
    saveGame() persisted the rewound number, and because the flawless bonus is
@@ -388,7 +393,7 @@ function startTimer() {
   clearInterval(tick);
   tick = setInterval(() => {
     seconds++;
-    $('time').textContent = fmt(seconds);
+    $('time').textContent = clockText(seconds);
   }, 1000);
 }
 function setPaused(p) {
@@ -586,7 +591,7 @@ function startGame(key, made) {
      was banked, until something else repainted them or the page reloaded. */
   paintWallet();
   $('diffLabel').textContent = DIFF[key].label;
-  $('time').textContent = '0:00';
+  $('time').textContent = '00:00';
   $('stamp').classList.remove('show');
   $('srStatus').textContent = '';
   $('srAlert').textContent = '';
@@ -1475,7 +1480,7 @@ function loadGame() {
   winTimers = [];
   setNotes(false);
   $('diffLabel').textContent = DIFF[diffKey].label;
-  $('time').textContent = fmt(seconds);
+  $('time').textContent = clockText(seconds);
   $('stamp').classList.remove('show');
   /* seed the announcement tracker with the restored counters, so resuming a
      game with mistakes on the board does not announce them as fresh ones */
@@ -2141,10 +2146,10 @@ loadWallet();
 loadStats();
 loadHistory();
 loadPrefs();
-/* The switch is offered only where there is something to switch. Read once at
-   boot rather than on every repaint: a platform does not grow a vibration motor
-   between two renders. */
-$('buzzRow').hidden = typeof navigator.vibrate !== 'function';
+/* The switch stays down, and the preference behind it is still honoured: a
+   stored false silences the buzz whether or not there is a row to set it with.
+   Checked from the stored value all the same, so the row shows the truth the
+   moment it is put back on screen. */
 $('buzzToggle').checked = prefs.buzz;
 paintWallet();
 paintRecord();

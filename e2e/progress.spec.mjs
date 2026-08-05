@@ -242,6 +242,9 @@ test('a seeded history tells the player which way the times are going', async ({
   await expect(page.locator('#progressLevel')).toHaveText('Normal');
   await expect(page.locator('#progressLede')).toHaveText('Vas 48% más rápido.');
 
+  /* Three claims, three lines: run together they were one paragraph that wrapped
+     mid sentence, and a reader had to take all of it apart to find the number
+     they came for. */
   await expect(page.locator('#progressSpread')).toBeVisible();
   await expect(page.locator('#progressMedian'), 'the headline is not the median').toHaveText(
     '8:03',
@@ -249,9 +252,9 @@ test('a seeded history tells the player which way the times are going', async ({
   await expect(page.locator('#progressP25')).toHaveText('6:31');
   await expect(page.locator('#progressP75')).toHaveText('9:09');
   await expect(page.locator('#progressP90')).toHaveText('9:43');
-  await expect(page.locator('#progressSpread')).toHaveText(
-    'Típico 8:03. La mayoría entre 6:31 y 9:09, casi siempre bajo 9:43.',
-  );
+  await expect(page.locator('#progressSpread')).toHaveText('Típico 8:03.');
+  await expect(page.locator('#progressBand')).toHaveText('La mayoría entre 6:31 y 9:09.');
+  await expect(page.locator('#progressCap')).toHaveText('Casi siempre bajo 9:43.');
 
   /* The last of these twelve games cost an error, so the run of clean games is
      zero and the line is absent. A run of none is not a sentence worth writing
@@ -293,7 +296,11 @@ test('the progress sentences are what a screen reader is handed', async ({ page,
      are transformed. The level is in the heading and in no sentence under it. */
   expect(spoken).toContain('CÓMO VAS EN NORMAL');
   expect(spoken).toContain('Vas 48% más rápido.');
-  expect(spoken).toContain('Típico 8:03. La mayoría entre 6:31 y 9:09, casi siempre bajo 9:43.');
+  /* Each claim reaches the tree whole, with the number inside it rather than in
+     a heap at the end, which is what the walk down childIds is for. */
+  expect(spoken).toContain('Típico 8:03.');
+  expect(spoken).toContain('La mayoría entre 6:31 y 9:09.');
+  expect(spoken).toContain('Casi siempre bajo 9:43.');
   expect(problems).toEqual([]);
 });
 

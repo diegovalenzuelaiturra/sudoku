@@ -207,7 +207,10 @@ test('a game in progress survives a reload', async ({ page, context }) => {
   /* The restored clock resumes running, so this allows the seconds that pass
      while it is read on a slow runner, but not a reset to 0:00 and not a lost
      minute. */
-  await expect(page.locator('#time')).toHaveText(/^0:[45]\d$/u);
+  /* Padded, unlike every other time on the page: the running clock is the only
+     one that changes every second, and the leading zero is what stops the header
+     sliding sideways as it crosses 9:59. */
+  await expect(page.locator('#time')).toHaveText(/^00:[45]\d$/u);
   expect(await page.evaluate(() => playing), 'restored game is not playable').toBe(true);
 });
 
@@ -514,7 +517,7 @@ test('pausing captures the clock', async ({ page }) => {
      the next load. Tolerant of the seconds that pass while it is read, since
      the restored clock starts running again. */
   await page.reload();
-  await expect(page.locator('#time')).toHaveText(/^2:[01]\d$/u);
+  await expect(page.locator('#time')).toHaveText(/^02:[01]\d$/u);
 });
 
 test('a save survives a reload the service worker serves from cache', async ({ page }) => {

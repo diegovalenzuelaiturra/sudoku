@@ -542,7 +542,7 @@
                     on the icon, the start dialog and the win stamp, which is where a
                     player meets them; a board in play does not need to be told what game
                     it is, and the room they took belongs to the four targets opposite. -->
-                <div class="time" id="time">0:00</div>
+                <div class="time" id="time">00:00</div>
                 <!-- Ordered by how easy each one should be to hit, least first. A thumb
                     holding a phone swings from the bottom corner on its own side, so the
                     hard end of a top row is the far side of the screen and the easy end
@@ -962,7 +962,12 @@
                 >
                     <h3 class="micro">Cómo vas en <span id="progressLevel">Normal</span></h3>
                     <p class="lede" id="progressLede"></p>
-                    <p class="code" id="progressSpread">Típico <b id="progressMedian">0:00</b>. La mayoría entre <b id="progressP25">0:00</b> y <b id="progressP75">0:00</b>, casi siempre bajo <b id="progressP90">0:00</b>.</p>
+                    <!-- Three claims, three lines. Run together they were one paragraph
+                        that wrapped mid sentence, and a reader had to take the whole of it
+                        apart to find the one number they came for. -->
+                    <p class="code" id="progressSpread">Típico <b id="progressMedian">0:00</b>.</p>
+                    <p class="code" id="progressBand">La mayoría entre <b id="progressP25">0:00</b> y <b id="progressP75">0:00</b>.</p>
+                    <p class="code" id="progressCap">Casi siempre bajo <b id="progressP90">0:00</b>.</p>
                     <p class="code" id="progressClean"></p>
                     <p
                         class="code offer"
@@ -991,16 +996,20 @@
                     </div>
                 </div>
                 <ul class="ledger" id="ledgerList"></ul>
-                <!-- Hidden where the platform has no vibration at all, which is every
-                    iPhone: WebKit has never shipped the API and Chrome there is WebKit
-                    too. A switch for hardware that is not present is a switch that does
-                    nothing, and offering it is worse than not mentioning it. -->
+                <!-- Out of sight for now. The record is a page about what a player has
+                    done, and a settings line in the middle of it is neither that nor
+                    worth the room. The preference behind it is still read and still
+                    honoured, so showing this row again is the only thing that would take.
+
+                    It has a second reason to stay down: every iPhone has no vibration at
+                    all, since WebKit never shipped the API and Chrome there is WebKit
+                    too, and a switch for absent hardware is worse than no switch. -->
                 <div
                     class="prefs"
                     id="buzzRow"
                     hidden
                 >
-                    <label for="buzzToggle">Vibrar al equivocarse</label>
+                    <label for="buzzToggle">Vibrar</label>
                     <input
                         type="checkbox"
                         id="buzzToggle"
