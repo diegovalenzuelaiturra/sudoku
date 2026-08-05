@@ -32,6 +32,7 @@
   "files": {
     "includes": [
       "app.js",
+      "stats.js",
       "generator.js",
       "sw.js",
       "index.html",

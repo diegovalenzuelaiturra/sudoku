@@ -62,6 +62,17 @@ export default defineConfig([
     rules: { 'no-implicit-globals': ['error', { lexicalBindings: true }] },
   },
 
+  /* The statistics engine. A classic script for the same reason generator.js is
+     one: the build folds it into the page beside app.js, where a second top
+     level binding of a shared name is a SyntaxError. Pure arithmetic, so the
+     only browser name in it is the `self` its export line tests for. */
+  {
+    files: ['stats.js'],
+    extends: [js.configs.recommended],
+    languageOptions: { sourceType: 'script', globals: { self: 'readonly' } },
+    rules: { 'no-implicit-globals': ['error', { lexicalBindings: true }] },
+  },
+
   /* No no-implicit-globals here: a service worker has a global scope of its own
      with no other script in it. */
   {
@@ -78,7 +89,7 @@ export default defineConfig([
     extends: [js.configs.recommended],
     languageOptions: {
       sourceType: 'script',
-      globals: { ...globals.browser, SudokuGenerator: 'readonly' },
+      globals: { ...globals.browser, SudokuGenerator: 'readonly', SudokuStats: 'readonly' },
     },
     rules: { 'no-empty': ['error', { allowEmptyCatch: true }] },
   },

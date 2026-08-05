@@ -138,6 +138,12 @@ const DIFF = {
    because this file is inline and that one has to run in a worker; the pair is
    pinned together by tests/generator.test.mjs. */
 const GRADE_WORDS = { 1: 'directas', 2: 'bloques', 3: 'pares', 4: 'avanzado' };
+/* Which difficulty row a measured grade belongs to. The statistics stratify on
+   the grade a board was measured at, and the only name a player has for a tier
+   is the label on the button that starts it. Derived from DIFF rather than
+   written out again. */
+const GRADE_KEYS = {};
+for (const key of Object.keys(DIFF)) GRADE_KEYS[DIFF[key].grade] = key;
 const $ = (id) => document.getElementById(id);
 const boardEl = $('board'),
   padEl = $('pad');
@@ -156,6 +162,14 @@ let notesMode = false,
   paused = false,
   solved = false,
   playing = false;
+/* A board is minutes of reading the screen without touching it, which the
+   display timeout counts as idle: the phone dims mid puzzle. The platform lock
+   costs battery, so it is held only while the clock actually runs. Safari
+   shipped this in 16.4 and the floor here is 15.4, so a missing
+   navigator.wakeLock is the ordinary case rather than a failure. */
+let wakeLock = null,
+  wakeLockWanted = false,
+  wakeLockPending = false;
 /* Which cells have had their answer shown. Counters stopped rewinding with the
    undo stack, which is right for a mistake but charged twice for one revealed
    digit: hint() leaves sel on the cell it filled and undo() does not restore
@@ -212,6 +226,27 @@ const STATS_KEY = 'sudoku:stats',
   STATS_VERSION = 1;
 let ledger = [],
   stats = null;
+/* Finished games, one row each, as a bounded ring. Raw rows rather than derived
+   averages: a best time only ever moves one way, so it cannot show a decline,
+   and a stored row lets a later build compute a number nobody has asked for yet
+   without a migration. Its own key rather than a STATS_VERSION bump, because
+   readStats() answers null on any version it does not know and the next
+   saveStats() would write a blank over every player's counters.
+
+   Follows the wallet rule, not the stats rule: bytes this build cannot read are
+   left where they are. A lost streak is not a lost prize, but a game that was
+   played cannot be played again. */
+const HISTORY_KEY = 'sudoku:history',
+  HISTORY_VERSION = 1;
+let games = [];
+/* What the player has switched off. Its own key for the same reason the others
+   have one, and it follows the record's rule rather than the wallet's: a
+   setting that cannot be read is a setting to ask for again, not a thing that
+   was earned. Defaults to on, because a player who has never been asked has not
+   said no. */
+const PREFS_KEY = 'sudoku:prefs',
+  PREFS_VERSION = 1;
+let prefs = { buzz: true };
 
 /* ---- build DOM once ---- */
 const cells = [];
@@ -255,6 +290,11 @@ const fmt = (s) =>
   s < 3600
     ? `${(s / 60) | 0}:${pad2(s % 60)}`
     : `${(s / 3600) | 0}:${pad2(((s / 60) | 0) % 60)}:${pad2(s % 60)}`;
+/* The running clock, padded where every other time on the page is not. It is the
+   one that changes every second, so the minutes carrying a leading zero is what
+   stops the whole header sliding sideways as it crosses 9:59, and a stopped time
+   in a table has nothing to hold still for. */
+const clockText = (s) => (s < 3600 ? `${pad2((s / 60) | 0)}:${pad2(s % 60)}` : fmt(s));
 /* The counters used to ride along in here and be put back by undo(), which meant
    Deshacer erased the very mistake it was undoing: the marcador rewound,
    saveGame() persisted the rewound number, and because the flawless bonus is
@@ -353,7 +393,7 @@ function startTimer() {
   clearInterval(tick);
   tick = setInterval(() => {
     seconds++;
-    $('time').textContent = fmt(seconds);
+    $('time').textContent = clockText(seconds);
   }, 1000);
 }
 function setPaused(p) {
@@ -377,6 +417,17 @@ function setPaused(p) {
      lives inside .app and would disable its own resume button. */
   boardEl.inert = p;
   controlsEl.inert = p;
+  /* These two used to be inside .controls and went quiet with it. They are in
+     the header now, which pause does not touch because the resume button lives
+     up there: Pista would otherwise reveal a cell on a board nobody can see,
+     and both would still take Tab while the game is stopped. Marked one at a
+     time rather than by their container, which also holds the resume button. */
+  $('newBtn').inert = p;
+  $('hintBtn').inert = p;
+  /* render() is what decides whether this one is offered at all, and pausing
+     does not render: without this it would keep whatever it was showing over a
+     board nobody can see. */
+  $('settleBtn').inert = p;
   if (p) {
     clearInterval(tick);
     saveGame();
@@ -385,6 +436,53 @@ function setPaused(p) {
     startTimer();
     if (wasShown) $('pauseBtn').focus();
   }
+  syncWakeLock();
+}
+
+/* Idempotent, and the live flags are the only truth: setPaused is called
+   repeatedly with the same value, and the request below spans a task boundary
+   the player can pause, win or background the tab across. */
+function syncWakeLock() {
+  if (!navigator.wakeLock?.request) return;
+  wakeLockWanted = playing && !paused && !solved && !document.hidden;
+  if (!wakeLockWanted) {
+    const held = wakeLock;
+    wakeLock = null;
+    if (held) held.release().catch(() => {});
+    return;
+  }
+  if (wakeLock || wakeLockPending) return;
+  /* Flagged before the request goes out: pausing and resuming faster than one
+     round trip would otherwise ask twice and leak the first sentinel, which
+     nothing afterwards holds a reference to and so nothing can release. */
+  wakeLockPending = true;
+  navigator.wakeLock
+    .request('screen')
+    .then((sentinel) => {
+      wakeLockPending = false;
+      if (!wakeLockWanted) {
+        sentinel.release().catch(() => {});
+        return;
+      }
+      wakeLock = sentinel;
+      /* The platform revokes this on its own for low battery and power save,
+         and a released sentinel cannot be reused. Dropping the reference is
+         what lets a later call ask for a fresh one, and saveGame() is what
+         makes that call arrive: the other three callers are a pause, a win and
+         a backgrounded tab, so a player who solves a board without pausing
+         would otherwise finish it with the display timeout back. */
+      sentinel.addEventListener('release', () => {
+        if (wakeLock === sentinel) wakeLock = null;
+      });
+    })
+    /* NotAllowedError is the only name this rejects with, and it covers a
+       hidden document, a blocking permissions policy and a battery the platform
+       will not spend: nothing a player can act on. Swallowed rather than logged,
+       because an unhandled rejection is a console error and the browser suite
+       fails the run on one. */
+    .catch(() => {
+      wakeLockPending = false;
+    });
 }
 
 /* ---- game flow ----
@@ -447,7 +545,7 @@ async function newGame(key) {
        element, so a message set first was cleared before anyone could read it.
        Written into a region that has been in the accessibility tree the whole
        time, which is what makes it a change a screen reader announces. */
-    $('genStatus').textContent = 'No se pudo armar el tablero. Probá de nuevo.';
+    $('genStatus').textContent = 'No se pudo armar el tablero. Prueba de nuevo.';
     return;
   }
   /* Outside the try: a failure to lay out a board that did arrive is a bug in
@@ -483,19 +581,17 @@ function startGame(key, made) {
   seconds = 0;
   solved = false;
   playing = true;
-  notesMode = false;
   pausedByDialog = false;
   revealed = new Set();
   sel = values.indexOf(0);
-  $('notesBtn').setAttribute('aria-pressed', 'false');
-  showNotesHint();
+  setNotes(false);
   /* The win paints the chips on a timer, and every win timer was cleared at the
      top of this function. Starting the next puzzle during the payout animation
      would otherwise leave both totals reading what they said before the prize
      was banked, until something else repainted them or the page reloaded. */
   paintWallet();
   $('diffLabel').textContent = DIFF[key].label;
-  $('time').textContent = '0:00';
+  $('time').textContent = '00:00';
   $('stamp').classList.remove('show');
   $('srStatus').textContent = '';
   $('srAlert').textContent = '';
@@ -557,6 +653,12 @@ function adoptCounters() {
 }
 function saveGame() {
   if (!playing || solved) return;
+  /* Re-arms the screen lock the platform is allowed to take back mid board.
+     Driven by a player action rather than by the sentinel's own release event,
+     which would spin against a platform that revokes as fast as it grants.
+     Costs nothing while the lock is held: syncWakeLock() returns at its first
+     branch. */
+  syncWakeLock();
   adoptCounters();
   try {
     localStorage.setItem(
@@ -756,6 +858,35 @@ function describeEntry(e) {
   if (e.k === 'redeem') return `${what} canjeadas`;
   return `${what}${e.d ? ` en ${DIFF[e.d].label}` : ''}`;
 }
+/* One sentence for how the last level played is going, addressed to the player
+   and never naming the level: the heading over the block names it once, and
+   repeating it in every line made three sentences that all opened the same way.
+
+   Improvement is stated plainly and carries its number. A slower run carries no
+   number at all, which is not a rounding of the truth but a choice about which
+   of the two is a verdict: there is no leaderboard here, a plateau is what a
+   practice curve does, and the largest figure in the interface should not be
+   the one attached to the only bad news.
+
+   Only ever called with a level that has games enough to answer. A block that
+   counts up to the games it needs is bookkeeping about itself and says nothing
+   about the player, so paintRecord hides the whole thing until there is a
+   number in it. */
+function progressLine(here) {
+  if (here.verdict === 'few') return 'Todavía no se nota si el ritmo cambió.';
+  if (here.verdict === 'better') return `Vas ${here.pct}% más rápido.`;
+  if (here.verdict === 'worse') return 'Vas más lento que antes. Nada grave, pasa.';
+  if (here.verdict === 'layoff')
+    return `Volviste después de ${here.layoffDays} días. El ritmo se acomoda solo.`;
+  return 'Vas parejo.';
+}
+/* The run of flawless games at this level, or nothing. Zero is not a sentence
+   worth writing: a player who just made one mistake does not need to be told
+   they are on a run of none. */
+function cleanRunLine(run) {
+  if (run === 1) return 'La última te salió sin errores ni pistas.';
+  return `Llevas ${run} partidas seguidas sin errores ni pistas.`;
+}
 /* Everything the record dialog shows, rebuilt from `stats` and the wallet. Also
    called when another tab writes either, so the numbers behind a closed dialog
    are never stale by the time it opens.
@@ -778,6 +909,10 @@ function paintRecord() {
        nothing has been won: the zero in the column beside it already says why.
        Driven by the win count, not by the time, so a win clocked at zero is
        still a time rather than a blank. */
+    /* No marker on the best time. A trophy beside the number said the record
+       was set in this session, which is a fact about the tab rather than about
+       the player, and it read as though the time itself were a trophy. The win
+       dialog is where a record is announced, and it is announced once. */
     for (const text of [
       DIFF[key].label,
       String(row.played),
@@ -809,6 +944,44 @@ function paintRecord() {
   $('streakText').textContent = noGames
     ? 'Sin partidas todavía.'
     : `Racha de secas: ${stats.streak}. La mejor: ${stats.bestStreak}.`;
+
+  /* The trend, at the level the last measured board was actually graded at.
+     One level rather than four: the sentence is only true of one of them, and
+     four rows of medians and bands do not fit 292px of dialog. Times are never
+     pooled across difficulty, because a player improving inside every level
+     while drifting toward harder boards shows a rising pooled average.
+
+     Everything here is derived from storage anything on this origin can write,
+     so all of it goes through textContent into holes the markup owns. */
+  const view = SudokuStats.report(games);
+  const here = view.top ? view.grades[view.top] : null;
+  /* The whole block goes, heading included, until there is a number to put in
+     it. A player who has finished one board is told nothing by a line counting
+     up to the five it takes to say something, and the record above already
+     holds everything that is true at that point. */
+  const enough = here !== null && here.median !== null;
+  $('progressBox').hidden = !enough;
+  if (enough) {
+    /* The one place the level is named. Every sentence under it is written to
+       the player instead, so the block reads as one thought about one level. */
+    $('progressLevel').textContent = DIFF[GRADE_KEYS[view.top]].label;
+    $('progressLede').textContent = progressLine(here);
+    $('progressMedian').textContent = fmt(here.median);
+    $('progressP25').textContent = fmt(here.p25);
+    $('progressP75').textContent = fmt(here.p75);
+    $('progressP90').textContent = fmt(here.p90);
+    $('progressClean').hidden = here.run === 0;
+    if (here.run > 0) $('progressClean').textContent = cleanRunLine(here.run);
+  }
+  /* Nested inside the offer's own gate rather than the block's: the invitation
+     needs twelve games at a level and the block needs five, so an offer without
+     a block around it cannot happen. The level it leaves behind is the one in
+     the heading, so only the one being offered is named. */
+  $('progressOffer').hidden = view.offer === null;
+  if (view.offer) {
+    $('progressOffer').textContent =
+      `Ya te queda chico. Prueba con ${DIFF[GRADE_KEYS[view.offer.to]].label}.`;
+  }
 
   $('purseFries').textContent = friesTotal;
   $('purseChoco').textContent = chocoTotal;
@@ -859,11 +1032,40 @@ function paintRecord() {
     list.append(li);
   }
 }
-/* On screen only while the mode is on. Not hidden with the hidden attribute:
-   aria-describedby has to keep resolving to it, and a hidden element is dropped
-   from the accessibility tree, taking the button's description with it. */
-function showNotesHint() {
-  $('notesHint').classList.toggle('visually-hidden', !notesMode);
+/* The one place the mode is set, so the four things that have to agree about it
+   cannot drift: the flag the digit entry reads, the two radios, and the keypad
+   itself. The keypad is in there because the control is a row below the eye
+   line of somebody looking at the board, and a mode you have to remember is a
+   mode that writes answers where notes were meant.
+
+   Nothing here changes the height of anything. The description of the mode used
+   to be revealed on screen when it came on, which pushed the keypad down 33px:
+   the keys moved under the thumb at the exact moment the player was about to
+   use them. The column has no room to hold that line open either, so it stays
+   where the reader who needs it can still reach it and out of the layout. */
+function setNotes(on) {
+  notesMode = on;
+  $('penBtn').setAttribute('aria-checked', String(!on));
+  $('notesBtn').setAttribute('aria-checked', String(on));
+  /* Only the checked radio is tabbable, which is what a radiogroup does: one
+     stop for the group, and the arrows move within it. */
+  $('penBtn').tabIndex = on ? -1 : 0;
+  $('notesBtn').tabIndex = on ? 0 : -1;
+  padEl.classList.toggle('noting', on);
+}
+/* The pencil marks a cell is carrying, as the tail of its label, or nothing.
+   Without this a cell announced itself as empty while showing the player their
+   own candidates: the marks are painted into spans the label does not gather,
+   so the one reader with nothing else to go on was told the cell held nothing.
+
+   Ascending, and joined the way the marks are read rather than the way a list
+   is punctuated: "notas 3, 6 y 9". */
+function noteList(set) {
+  if (set.size === 0) return '';
+  const marks = [];
+  for (let d = 1; d <= 9; d++) if (set.has(d)) marks.push(d);
+  if (marks.length === 1) return `, nota ${marks[0]}`;
+  return `, notas ${marks.slice(0, -1).join(', ')} y ${marks[marks.length - 1]}`;
 }
 /* Restarts the pop even if the chip is already mid-animation: removing the
    class is not enough on its own, the reflow between is what replays it. */
@@ -995,11 +1197,17 @@ function recordPlayed(key) {
 /* The streak counts flawless wins in a row. A plain win streak would say
    nothing here: there is no way to lose, so every game that ends, ends in a
    win, and the streak would just be the number of wins over again. */
-/* Returns whether this win beat a time there was one to beat, which is the only
-   caller that needs it and the only place the comparison can be made safely:
-   done outside, it has to run before this function moves the count, and moving
-   the call one line later silently turned every first win into a personal best
-   against nothing. */
+/* Which runs are worth interrupting a win for. Once a player is on their
+   longest run ever, every game after it extends the record again, so a shower
+   on each one turns the rarest celebration in the game into the most frequent:
+   ten in a row rained nine times. The third is the first run worth the name,
+   and after that every fifth. The best streak itself still moves on every one
+   of them, and the record dialog shows it; this decides only what is announced. */
+const streakMilestone = (run) => run === 3 || (run >= 5 && run % 5 === 0);
+/* Returns the two records this win could have broken, which is the only place
+   either comparison can be made safely: done outside, both have to run before
+   this function moves the counts, and moving the call one line later silently
+   turned every first win into a personal best against nothing. */
 function recordWin(key, time, flawless) {
   stats = freshStats();
   const row = stats.d[key];
@@ -1011,10 +1219,143 @@ function recordWin(key, time, flawless) {
   const beat = !first && time < row.best;
   row.won++;
   if (first || time < row.best) row.best = time;
+  /* Read before the streak moves, for the same reason. A best of zero is a
+     player who has never strung two together, and the first flawless win of all
+     takes it from 0 to 1: that is a record against nothing, exactly like a
+     first win's time, and announcing it would spend the celebration on the
+     cheapest event in the game. */
+  const held = stats.bestStreak;
   stats.streak = flawless ? stats.streak + 1 : 0;
   if (stats.streak > stats.bestStreak) stats.bestStreak = stats.streak;
   saveStats();
-  return beat;
+  return {
+    time: beat,
+    streak: held > 0 && stats.bestStreak > held && streakMilestone(stats.streak),
+  };
+}
+
+/* ---- what the player switched off ---- */
+function readPrefs() {
+  let raw;
+  try {
+    raw = localStorage.getItem(PREFS_KEY);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  let p;
+  try {
+    p = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!p || typeof p !== 'object' || p.v !== PREFS_VERSION) return null;
+  /* Only an explicit false turns it off. Anything else stored under the flag,
+     including a version of this build that never wrote one, is a player who has
+     not said no. */
+  return { buzz: p.buzz !== false };
+}
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ v: PREFS_VERSION, buzz: prefs.buzz }));
+  } catch {
+    /* a setting that cannot be written is not worth failing a game over */
+  }
+}
+function loadPrefs() {
+  prefs = readPrefs() || { buzz: true };
+}
+/* A short double knock, and only for a mistake. It is the one event where the
+   answer arrives at the finger before the eye: the error is drawn in the cell
+   and counted in a bar the player is not looking at while their thumb is on the
+   keypad. Everything else the game does is already on screen where they are
+   looking, and a buzz on every digit is fifty of them a board.
+
+   Behind the same reduced motion gate as the prize rain: a player who asked for
+   no movement did not mean only the movement they can see. Missing on iPhone
+   entirely, where WebKit has never shipped the Vibration API, and Chrome there
+   is WebKit too, so the detection is the ordinary case and not a failure. */
+const MISTAKE_BUZZ = [40, 30, 40];
+function buzz(pattern) {
+  if (!prefs.buzz || reduceMotion.matches || typeof navigator.vibrate !== 'function') return;
+  try {
+    navigator.vibrate(pattern);
+  } catch {
+    /* a refused buzz is not worth losing the move it belonged to */
+  }
+}
+
+/* ---- the games themselves ----
+   One row per finished board, so a statistic can be worked out at read time
+   from what actually happened. The field names are one letter because a
+   hundred and twenty rows are stored at once. */
+function saveHistory() {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify({ v: HISTORY_VERSION, games }));
+  } catch {
+    /* as with the autosave: a history that cannot be written is not worth failing a win over */
+  }
+}
+/* The bytes under the key, or null when there are none and when storage itself
+   is gone. Separate from readHistory() so recordGame() can tell an empty key
+   from bytes this build refused, which is the difference between writing and
+   leaving them where they are. */
+function historyRaw() {
+  try {
+    return localStorage.getItem(HISTORY_KEY);
+  } catch {
+    return null;
+  }
+}
+/* The stored rows, or null when there is nothing readable and current under the
+   key. Refuses a version this build has never heard of and leaves those bytes
+   alone, which is the wallet's rule: a game that was played cannot be played
+   again. Every field is clamped inside SudokuStats.readRows, since all of it
+   comes back from storage the player can edit. */
+function readHistory(raw = historyRaw()) {
+  if (raw === null) return null;
+  let h;
+  try {
+    h = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!h || typeof h !== 'object' || h.v !== HISTORY_VERSION) return null;
+  return SudokuStats.readRows(h.games, Object.keys(DIFF));
+}
+/* Appends to the ring that is about to be written, oldest off the end. */
+function logGame(base, row) {
+  return base.concat([row]).slice(-SudokuStats.HISTORY_MAX);
+}
+/* Writes the finished board down against what is stored, for the reason
+   bankPrize() reads the wallet back before adding to it: the other tab's games
+   are in there and a blind write erases them. */
+function recordGame(time, mist, used) {
+  const raw = historyRaw();
+  const stored = readHistory(raw);
+  const base = stored || games;
+  games = logGame(base, {
+    t: Date.now(),
+    s: time,
+    m: mist,
+    h: used,
+    /* The grade the board was measured at, or 0 for a board this build never
+       measured: a game resumed from a save written before grading exists as a
+       game played, and filing it under the tier its difficulty asks for would
+       put a guess in the denominator the statistics stratify on. */
+    g: puzzleMeasured ? puzzleGrade : 0,
+    d: diffKey,
+  });
+  /* Written only when the key is empty or this build could read it, the rule
+     bankPrize() follows: bytes from a newer build the player still has cached
+     are left where they are, and this tab keeps its own ring in memory. */
+  if (stored || raw === null) saveHistory();
+}
+/* Reads the ring at boot. Nothing is migrated and nothing is written: an
+   unreadable key leaves this tab starting empty and leaves the bytes alone. */
+function loadHistory() {
+  const stored = readHistory();
+  if (stored) games = stored;
 }
 
 /* Reads the wallet at boot. Anything unreadable, corrupt or from a version
@@ -1132,16 +1473,14 @@ function loadGame() {
   puzzleMeasured = graded && seeded;
   solved = false;
   playing = true;
-  notesMode = false;
   pausedByDialog = false;
   undoStack = [];
   revealed = new Set();
   winTimers.forEach(clearTimeout);
   winTimers = [];
-  $('notesBtn').setAttribute('aria-pressed', 'false');
-  showNotesHint();
+  setNotes(false);
   $('diffLabel').textContent = DIFF[diffKey].label;
-  $('time').textContent = fmt(seconds);
+  $('time').textContent = clockText(seconds);
   $('stamp').classList.remove('show');
   /* seed the announcement tracker with the restored counters, so resuming a
      game with mistakes on the board does not announce them as fresh ones */
@@ -1180,19 +1519,16 @@ function win() {
   playing = false;
   clearSavedGame(); /* a finished game has nothing to resume into */
   clearInterval(tick);
+  /* setPaused returns early once solved is set, so the release cannot ride on
+     it: a lock left held here would keep the screen awake over the win overlay
+     for as long as the tab lives. */
+  syncWakeLock();
   sel = -1;
   render();
   $('stamp').classList.add('show');
   const flawless = mistakes === 0 && hints === 0;
   const earned = DIFF[diffKey].fries * (flawless ? 2 : 1);
   const chocoEarned = flawless ? DIFF[diffKey].choco : 0;
-  /* assertive: the win is the one event worth interrupting for, and the modal
-     it belongs to only appears after ~2s of animation. The prize goes in here
-     too: showOverlay() focuses the dialog's button, not the banner, so this is
-     the only announcement that reliably carries it. */
-  $('srAlert').textContent =
-    `Ganaste. ${fmt(seconds)}, ${mistakes === 1 ? '1 error' : `${mistakes} errores`}, ${hints === 1 ? '1 pista' : `${hints} pistas`}.` +
-    ` Te llevas ${earned} papas fritas${chocoEarned ? ` y ${chocoWord(chocoEarned)}` : ''}.`;
   const finalTime = seconds,
     finalMist = mistakes,
     finalHints = hints;
@@ -1205,7 +1541,25 @@ function win() {
      first win no longer counts: there was no time to beat, and claiming one
      stole the message from every first flawless win, which is the rarer thing
      and the one worth saying. */
-  const beatBest = recordWin(diffKey, finalTime, flawless);
+  const broke = recordWin(diffKey, finalTime, flawless);
+  const beatBest = broke.time,
+    beatStreak = broke.streak;
+  recordGame(finalTime, finalMist, finalHints);
+  const streakNow = stats.streak;
+  /* assertive: the win is the one event worth interrupting for, and the modal
+     it belongs to only appears after ~2s of animation. The prize goes in here
+     too: showOverlay() focuses the dialog's button, not the banner, so this is
+     the only announcement that reliably carries it. Written after recordWin,
+     which is the only place either record can be decided.
+
+     Both records are said here because both of them rain, and rain is nothing
+     at all to a screen reader: a shower with no sentence behind it is a
+     celebration only some players are invited to. */
+  $('srAlert').textContent =
+    `Ganaste. ${fmt(seconds)}, ${mistakes === 1 ? '1 error' : `${mistakes} errores`}, ${hints === 1 ? '1 pista' : `${hints} pistas`}.` +
+    ` Te llevas ${earned} papas fritas${chocoEarned ? ` y ${chocoWord(chocoEarned)}` : ''}.` +
+    (beatBest ? ' ¡Nuevo récord de tiempo!' : '') +
+    (beatStreak ? ` ¡Tu mejor racha: ${streakNow} secas seguidas!` : '');
   /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow = reduceMotion.matches ? 0 : 1;
   if (!reduceMotion.matches) {
@@ -1214,6 +1568,14 @@ function win() {
        rather than get lost among the papas. No cap, unlike the papas above:
        the most the table pays is five. */
     if (chocoEarned) winTimers.push(setTimeout(() => rain(chocoEarned, '🍫'), 700));
+    /* Last and fewest, for the same reason the chocolates come after the papas:
+       a shower that lands on top of another one is not read as its own event.
+       Six trophies rather than a number earned, because a record is not a
+       quantity: it happened or it did not, and the count is only what makes it
+       legible as rain. Nothing is banked here, so nothing about this may look
+       like the two showers above paying out. */
+    if (beatBest) winTimers.push(setTimeout(() => rain(6, '🏆'), 950));
+    if (beatStreak) winTimers.push(setTimeout(() => rain(6, '🥇'), 1150));
   }
   winTimers.push(
     setTimeout(() => {
@@ -1227,13 +1589,24 @@ function win() {
       $('wTime').textContent = fmt(finalTime);
       $('wMist').textContent = finalMist;
       $('wHint').textContent = finalHints;
-      $('winLede').textContent = beatBest
-        ? 'Tu mejor tiempo en este nivel.'
-        : flawless
-          ? 'La más seca: cero errores, cero pistas.'
-          : finalMist === 0
-            ? 'Sin errores. Filete.'
-            : 'Costó, pero salió igual.';
+      $('winLede').textContent = flawless
+        ? 'La más seca: cero errores, cero pistas.'
+        : finalMist === 0
+          ? 'Sin errores. Filete.'
+          : 'Costó, pero salió igual.';
+      /* Its own line rather than the lede, which the flawless message has a
+         better claim on: a first flawless win is rarer than a fast one. The
+         time tile is marked with it, so which of the three numbers the record
+         belongs to is answered where the number is rather than in the sentence.
+         Toggled either way: the dialog is reused by every win. */
+      $('wBestLine').hidden = !beatBest;
+      $('wTimeStat').classList.toggle('record', beatBest);
+      /* The other record, with its own glyph and its own line: the medal is the
+         streak everywhere it appears, and the trophy is the time. Both can land
+         on one win, and both showers are shown, so both sentences have to be
+         able to. */
+      $('wStreakLine').hidden = !beatStreak;
+      if (beatStreak) $('wStreakCount').textContent = streakNow;
       /* What the board actually was, rather than what was asked for, and the seed
        that rebuilds it. Both are textContent: the code is a number in base 36
        and the technique comes from a fixed table, but neither has any business
@@ -1268,6 +1641,13 @@ function inputDigit(d) {
   if (!playing || paused || sel < 0 || fixed[sel]) return;
   if (notesMode && values[sel] !== 0)
     return; /* checked before snapshot(): a no-op must not evict undo history */
+  /* Entering the digit that is already there does nothing, and says so before
+     snapshot() for the same reason the line above does. It used to clear the
+     cell, which is what turned an unsure tap into a lost one: a player who
+     cannot tell whether the first tap landed taps again, and the second tap
+     emptied the cell, which reads as the screen having missed both of them.
+     Erasing has a button, and it is now the only thing that erases. */
+  if (!notesMode && values[sel] === d) return;
   snapshot();
   if (notesMode) {
     if (notes[sel].has(d)) {
@@ -1276,14 +1656,13 @@ function inputDigit(d) {
       notes[sel].add(d);
     }
   } else {
-    if (values[sel] === d) {
-      values[sel] = 0;
+    values[sel] = d;
+    notes[sel].clear();
+    if (d === solution[sel]) {
+      for (const p of PEERS[sel]) notes[p].delete(d);
     } else {
-      values[sel] = d;
-      notes[sel].clear();
-      if (d === solution[sel]) {
-        for (const p of PEERS[sel]) notes[p].delete(d);
-      } else mistakes++;
+      mistakes++;
+      buzz(MISTAKE_BUZZ);
     }
   }
   render();
@@ -1313,7 +1692,10 @@ function undo() {
      render() rather than written to the element: written directly it overwrote
      the count render() had just announced, after srLast had already recorded it
      as said, so that crossing was lost for good. */
-  srAction = 'Deshecho.';
+  /* No full stop on any of these: the announcement below joins its parts with
+     ". " and closes with one, so a part that punctuates itself is read out with
+     two. */
+  srAction = 'Deshecho';
   render();
   saveGame();
 }
@@ -1326,6 +1708,61 @@ function undo() {
    Deterministic on ties, lowest index first, for the reason the seeds exist:
    the same board in the same state gives the same hint, so a test can assert it
    and a player can be told what happened. Returns -1 when the board is done. */
+/* ---- confirming what the notes already say ----
+   Placing a correct digit already deletes it from every peer's pencil marks, so
+   late in a game the board keeps leaving cells with one mark left. That mark is
+   the answer, the player worked it out, and it is written in the cell: typing it
+   again is bookkeeping, not deduction. This is the same operation in reverse.
+
+   Two conditions, both required. The player's marks are down to one, which is
+   them saying they have finished narrowing that cell. And the board agrees that
+   only that digit still fits, which is what makes the answer provable rather
+   than trusted: a mark that says less than the board says is either a cleverer
+   deduction or a mistake, and nothing here can tell those apart without reading
+   the solution, which would be a hint. So it declines both. */
+function openDigits(i) {
+  const taken = new Set();
+  for (const p of PEERS[i]) if (values[p]) taken.add(values[p]);
+  const open = [];
+  for (let d = 1; d <= 9; d++) if (!taken.has(d)) open.push(d);
+  return open;
+}
+/* Every cell this would fill, as [index, digit]. Empty while a wrong digit is on
+   the board: the candidate arithmetic above counts whatever is placed, so one
+   wrong digit can leave a cell with a single option that is not the answer, and
+   this would then write it in and charge for it. Wrong digits are painted in
+   vermilion from the moment they land, so refusing to work around one tells the
+   player nothing they cannot already see. */
+function settledCells() {
+  if (!values.every((v, i) => v === 0 || v === solution[i])) return [];
+  const found = [];
+  for (let i = 0; i < 81; i++) {
+    if (values[i] !== 0 || fixed[i] || notes[i].size !== 1) continue;
+    const open = openDigits(i);
+    const [only] = notes[i];
+    if (open.length === 1 && open[0] === only) found.push([i, only]);
+  }
+  return found;
+}
+/* One snapshot for the whole batch, so one Deshacer takes back the press rather
+   than one cell of it. Nothing is counted against the player: every digit was
+   already on screen in their own hand, so there is no error to make and nothing
+   for the hint counter to record. */
+function settleSingles() {
+  if (!playing || paused) return;
+  const found = settledCells();
+  if (found.length === 0) return;
+  snapshot();
+  for (const [i, d] of found) {
+    values[i] = d;
+    notes[i].clear();
+    for (const p of PEERS[i]) notes[p].delete(d);
+  }
+  srAction = found.length === 1 ? 'Confirmada 1 casilla' : `Confirmadas ${found.length} casillas`;
+  render();
+  saveGame();
+  if (values.every((v, i) => v === solution[i])) win();
+}
 function easiestOpen() {
   let best = -1;
   let fewest = 10;
@@ -1357,7 +1794,7 @@ function hint() {
   if (i < 0) {
     i = easiestOpen();
     if (i < 0) return;
-    srAction = fixed[sel] ? 'Esa casilla ya viene dada, pista en otra.' : 'Pista en otra casilla.';
+    srAction = fixed[sel] ? 'Esa casilla ya viene dada, pista en otra' : 'Pista en otra casilla';
   }
   snapshot();
   values[i] = solution[i];
@@ -1407,7 +1844,9 @@ function render() {
       c = (i % 9) + 1;
     el.setAttribute(
       'aria-label',
-      `Fila ${r}, columna ${c}${v ? `, ${v}` : ', vacía'}${fixed[i] ? ', dada' : ''}`,
+      `Fila ${r}, columna ${c}${v ? `, ${v}` : ', vacía'}${fixed[i] ? ', dada' : ''}${
+        v ? '' : noteList(notes[i])
+      }`,
     );
   }
   for (let d = 1; d <= 9; d++) {
@@ -1417,6 +1856,21 @@ function render() {
   $('mistakes').textContent = mistakes;
   $('hints').textContent = hints;
   $('remaining').innerHTML = `<b>${left}</b> por llenar`;
+  /* Visible only while it has work. Its box is held either way, so the clock and
+     the three permanent buttons beside it do not move when it arrives. The count
+     is the whole point of showing it: the player sees how many cells the press
+     will fill before pressing it. */
+  const settled = playing && !paused ? settledCells().length : 0;
+  $('settleBtn').classList.toggle('idle', settled === 0);
+  if (settled > 0) {
+    $('settleCount').textContent = settled;
+    $('settleBtn').setAttribute(
+      'aria-label',
+      settled === 1
+        ? 'Confirmar 1 casilla que ya tiene una sola nota'
+        : `Confirmar ${settled} casillas que ya tienen una sola nota`,
+    );
+  }
   /* Screen-reader announcements: polite, batched, and gated to actual play
      so neither the boot screen nor a paused/finished board can speak.
      Mistakes and hints announce on every change (they're rare and meaningful);
@@ -1459,13 +1913,30 @@ function render() {
 /* ---- wiring ---- */
 $('pauseBtn').addEventListener('click', () => setPaused(!paused));
 $('resumeBtn').addEventListener('click', () => setPaused(false));
-$('notesBtn').addEventListener('click', (e) => {
-  if (!playing || paused) return;
-  notesMode = !notesMode;
-  e.currentTarget.setAttribute('aria-pressed', String(notesMode));
-  showNotesHint();
+/* Each radio sets its own mode rather than flipping the flag, so tapping the
+   one already chosen is the no-op a radio group promises. The old single button
+   toggled, which meant a tap the player was not sure had landed could be undone
+   by checking. */
+$('penBtn').addEventListener('click', () => {
+  if (playing && !paused) setNotes(false);
 });
+$('notesBtn').addEventListener('click', () => {
+  if (playing && !paused) setNotes(true);
+});
+/* Left and right walk the group, which is what a radiogroup is expected to do
+   and what the two buttons stop doing the moment they are only clickable. */
+for (const id of ['penBtn', 'notesBtn']) {
+  $(id).addEventListener('keydown', (e) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+    if (!playing || paused) return;
+    e.preventDefault();
+    const next = notesMode ? 'penBtn' : 'notesBtn';
+    setNotes(!notesMode);
+    $(next).focus();
+  });
+}
 $('eraseBtn').addEventListener('click', erase);
+$('settleBtn').addEventListener('click', settleSingles);
 $('undoBtn').addEventListener('click', undo);
 $('hintBtn').addEventListener('click', hint);
 $('newBtn').addEventListener('click', () => {
@@ -1499,6 +1970,10 @@ function closeRecord() {
      focus lands on the body and the next Tab starts from the top of the page. */
   if ($('startOverlay').classList.contains('show')) $('recordBtn').focus();
 }
+$('buzzToggle').addEventListener('change', (e) => {
+  prefs.buzz = e.currentTarget.checked;
+  savePrefs();
+});
 $('closeRecord').addEventListener('click', closeRecord);
 
 /* Redeeming empties a balance and cannot be undone, so it takes two presses.
@@ -1528,7 +2003,7 @@ document.querySelectorAll('.redeem').forEach((button) => {
       /* Announced, because the only signal otherwise is a word changing on a
          button the player is no longer looking at. */
       $('srStatus').textContent =
-        `Tocá de nuevo para canjear ${kind === 'choco' ? chocoTotal : friesTotal} ${word}.`;
+        `Toca de nuevo para canjear ${kind === 'choco' ? chocoTotal : friesTotal} ${word}.`;
       armTimer = setTimeout(disarmRedeem, 4000);
       return;
     }
@@ -1592,7 +2067,7 @@ document.addEventListener('keydown', (e) => {
   if (k === 'backspace' || k === 'delete' || e.key === '0') {
     e.preventDefault();
     erase();
-  } else if (k === 'n') $('notesBtn').click();
+  } else if (k === 'n') setNotes(!notesMode);
   else if (k === 'h') hint();
   else if (k === 'z') undo();
   else if (k.startsWith('arrow')) {
@@ -1615,6 +2090,12 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) setPaused(true);
+  /* No re-acquire branch. Coming back does not resume the game, so asking
+     again here would hold the screen awake over a veiled board with a stopped
+     clock. The lock returns with the Seguir click, through setPaused. This
+     call is the release path for the case setPaused returns early on: hidden
+     after the board is won. */
+  syncWakeLock();
 });
 /* Another tab banked a prize while this one was open. Adopt its totals: ours
    are stale from here on, and the chips would otherwise keep showing a number
@@ -1629,6 +2110,16 @@ addEventListener('storage', (e) => {
     const s = readStats();
     if (s) {
       stats = s;
+      paintRecord();
+    }
+    return;
+  }
+  if (e.key === HISTORY_KEY) {
+    /* The other tab's finished games are this player's too. Nothing unreadable
+       is adopted: readHistory answers null and this tab keeps its own ring. */
+    const h = readHistory();
+    if (h) {
+      games = h;
       paintRecord();
     }
     return;
@@ -1653,6 +2144,13 @@ addEventListener('storage', (e) => {
    painted on both paths, the resumed game and the difficulty picker alike. */
 loadWallet();
 loadStats();
+loadHistory();
+loadPrefs();
+/* The switch stays down, and the preference behind it is still honoured: a
+   stored false silences the buzz whether or not there is a row to set it with.
+   Checked from the stored value all the same, so the row shows the truth the
+   moment it is put back on screen. */
+$('buzzToggle').checked = prefs.buzz;
 paintWallet();
 paintRecord();
 /* loadGame() renders and unpauses itself when it restores something; only the

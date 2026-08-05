@@ -146,9 +146,16 @@ test('every icon reference resolves to a symbol the browser can paint', async ({
 const LABELLED = [
   ['undoBtn', 'Deshacer Z'],
   ['eraseBtn', 'Borrar ⌫'],
-  ['notesBtn', 'Notas N'],
-  ['hintBtn', 'Pista H'],
+];
+
+/* Icon only, and all three in the header. Pista and Nueva partida moved up
+   there out of the tool row: Pista spends the flawless bonus and sat one slipped
+   thumb from the control a player touches most, and the corner is the hardest
+   place on a phone to reach by accident. Their whole name is the aria-label. */
+const ICON_ONLY = [
+  ['pauseBtn', 'Pausar'],
   ['newBtn', 'Nueva partida'],
+  ['hintBtn', 'Pista'],
 ];
 
 test('icons decorate the buttons without touching their accessible names', async ({
@@ -169,15 +176,28 @@ test('icons decorate the buttons without touching their accessible names', async
     await expect(page.locator(`#${id}`)).toHaveAccessibleName(name, { ignoreCase: true });
   }
 
-  /* Icon-only, so its whole accessible name is the aria-label. */
-  await expect(page.locator('#pauseBtn')).toHaveText('');
-  await expect(page.locator('#pauseBtn')).toHaveAccessibleName('Pausar');
+  for (const [id, name] of ICON_ONLY) {
+    await expect(page.locator(`#${id} use`), `${id} lost its icon`).toHaveCount(1);
+    await expect(page.locator(`#${id}`), `${id} grew a visible label`).toHaveText('');
+    await expect(page.locator(`#${id}`)).toHaveAccessibleName(name);
+  }
+
+  /* The mode is two radios in a group, not buttons, and they are the one pair
+     here that carries no icon: at this size a glyph beside four letters is what
+     pushed the row wide enough to crush the group it sits in. */
+  for (const [id, name] of [
+    ['penBtn', 'Lápiz'],
+    ['notesBtn', 'Notas'],
+  ]) {
+    await expect(page.locator(`#${id}`)).toHaveAccessibleName(name, { ignoreCase: true });
+    await expect(page.locator(`#${id}`)).toHaveAttribute('role', 'radio');
+  }
 
   const nodes = await accessibleNodes(cdp);
   /* The names above come from Playwright's own role engine. This is Chrome's
      tree, which is the one a screen reader reads. */
   const names = nodes.filter((node) => node.role === 'button').map((node) => node.name.trim());
-  for (const [, name] of [...LABELLED, ['pauseBtn', 'Pausar']]) {
+  for (const [, name] of [...LABELLED, ...ICON_ONLY]) {
     expect(names.map((entry) => entry.toLocaleLowerCase())).toContain(name.toLocaleLowerCase());
   }
 
@@ -437,10 +457,12 @@ test('the board only claims a role its own children can satisfy', async ({ page,
    is called and nothing about what it does or how to use it. The explanation is
    now on the button as a description, and on screen only while the mode is on,
    so the board is not permanently carrying an instruction. */
-test('the notes button explains itself, on screen only while notes are on', async ({
+test('changing mode moves nothing, and still explains itself to a reader', async ({
   page,
   context,
 }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
   await startGame(page);
 
   const hint = page.locator('#notesHint');
@@ -448,15 +470,30 @@ test('the notes button explains itself, on screen only while notes are on', asyn
   const text = await hint.textContent();
   expect(text, 'the hint says nothing').toMatch(/candidat/iu);
 
-  /* Clipped to a pixel rather than removed, so it stays in the tree. */
-  const clipped = async () => (await hint.boundingBox()).width;
+  /* The keys are what the thumb is aiming at while the mode is being changed.
+     Revealing the description on screen pushed them down 33px at exactly that
+     moment, and the column has no height to hold the line open with instead, so
+     it is out of the layout in both modes. */
+  const keypad = () => page.locator('#pad').boundingBox();
+  const before = await keypad();
 
-  expect(await clipped(), 'the hint is on screen before notes are on').toBeLessThan(5);
   await notes.click();
-  await expect(notes).toHaveAttribute('aria-pressed', 'true');
-  expect(await clipped(), 'turning notes on did not reveal the hint').toBeGreaterThan(80);
+  await expect(notes).toHaveAttribute('aria-checked', 'true');
+  expect(await keypad(), 'turning notes on moved the keypad').toEqual(before);
+  /* Clipped to a pixel rather than removed, so it stays in the tree. */
+  expect((await hint.boundingBox()).width, 'the description took layout space').toBeLessThan(5);
+
+  /* Tapping the mode already chosen does nothing, which is what a radio group
+     promises and what a toggle button could not: a tap the player was unsure
+     about used to undo itself. Leaving the mode is the other radio's job. */
   await notes.click();
-  expect(await clipped(), 'the hint stayed on screen after notes were turned off').toBeLessThan(5);
+  await expect(notes, 'the group toggled instead of choosing').toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await page.locator('#penBtn').click();
+  await expect(notes).toHaveAttribute('aria-checked', 'false');
+  expect(await keypad(), 'turning notes off moved the keypad').toEqual(before);
 
   /* Everything above is layout, and runs on both engines. What follows is the
      description Chrome computes for the button, which is the half that carries
@@ -466,15 +503,16 @@ test('the notes button explains itself, on screen only while notes are on', asyn
     'reads the accessibility tree, which only Chromium exposes over CDP',
   );
   const cdp = await context.newCDPSession(page);
+  /* radio, not button: the mode is a group of two now. */
   const described = () =>
     accessibleNodes(cdp).then(
       (nodes) =>
-        nodes.find((node) => node.role === 'button' && /Notas/u.test(node.name))?.description,
+        nodes.find((node) => node.role === 'radio' && /Notas/u.test(node.name))?.description,
     );
 
   expect(await described(), 'the button carries no description while notes are off').toBe(text);
   await notes.click();
-  expect(await described(), 'the description was lost when the hint became visible').toBe(text);
+  expect(await described(), 'the description was lost when the mode came on').toBe(text);
 });
 
 /* Double tap to zoom on iOS: a second tap within about 300ms was read as a
@@ -507,4 +545,437 @@ test('a double tap cannot zoom the page, while pinch to zoom still can', async (
   for (const selector of ['body', '#board', '#pad', '.tools']) {
     expect(await touchAction(selector), `${selector} forbids pinch to zoom`).not.toBe('none');
   }
+});
+
+/* The three complaints a player sent in, measured rather than argued about.
+   Keys were 36.7px wide against the 44px that Apple's guidelines and WCAG 2.5.5
+   both set, laid out nine across with 5px between them, and hit testing every
+   pixel of that strip found 9.2 percent of it answering to nothing: a tap that
+   landed in a gutter did nothing at all, which is what "sometimes it does not
+   take my touch" was. Three across is what buys the width back. */
+test('every target a thumb aims at clears 44px on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
+  await startGame(page);
+
+  const box = async (selector) => {
+    const rect = await page.locator(selector).first().boundingBox();
+    return { w: Math.round(rect.width * 10) / 10, h: Math.round(rect.height * 10) / 10 };
+  };
+
+  for (const selector of ['.key', '#undoBtn', '#eraseBtn', '#pauseBtn', '#newBtn', '#hintBtn']) {
+    const { w, h } = await box(selector);
+    expect(w, `${selector} is ${w}px wide, under the 44px minimum`).toBeGreaterThanOrEqual(44);
+    expect(h, `${selector} is ${h}px tall, under the 44px minimum`).toBeGreaterThanOrEqual(44);
+  }
+
+  /* Three columns, so the row a finger crosses holds three keys and not nine. */
+  const keys = await page.locator('.key').all();
+  const tops = new Set();
+  for (const key of keys) tops.add(Math.round((await key.boundingBox()).y));
+  expect(tops.size, 'the keypad is not three rows').toBe(3);
+
+  /* And nothing overflows the column sideways, which the header did the moment
+     it took two more buttons. */
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(overflow, 'something is wider than the page').toBe(false);
+});
+
+/* The other half of "I have to tap several times". Entering the digit that is
+   already in the cell used to clear it, so a player who could not tell whether
+   the first tap landed tapped again and lost it, which reads as the screen
+   having missed both. */
+test('tapping the same digit again leaves the cell alone', async ({ page }) => {
+  await page.goto('./');
+  await startGame(page);
+
+  const target = await page.evaluate(() => values.findIndex((v, i) => v === 0 && !fixed[i]));
+  const cell = page.locator('#board .cell').nth(target);
+  await cell.click();
+
+  const digit = page.locator('.key').nth(4);
+  await digit.click();
+  await expect(cell.locator('.v'), 'the first tap did not land').toHaveText('5');
+  await digit.click();
+  await expect(cell.locator('.v'), 'the second tap erased the first').toHaveText('5');
+  await digit.click();
+  await expect(cell.locator('.v'), 'a third tap erased it').toHaveText('5');
+
+  /* Erasing still has a button, and it is now the only thing that erases. */
+  await page.locator('#eraseBtn').click();
+  await expect(cell.locator('.v')).toHaveText('');
+});
+
+/* The mode is said again on the keypad, because the control is a row below the
+   eye line of somebody looking at the board. The class doing it is "noting" and
+   not "notes": .notes is already the grid of pencil marks inside a cell, and it
+   is position:absolute, so the shared name took the keypad out of flow and drew
+   it 800px tall across the board. */
+test('notes mode is visible on the keypad without taking it out of flow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
+  await startGame(page);
+
+  const shape = () =>
+    page.evaluate(() => {
+      const pad = document.getElementById('pad');
+      const rect = pad.getBoundingClientRect();
+      return {
+        position: getComputedStyle(pad).position,
+        height: Math.round(rect.height),
+        keyBg: getComputedStyle(document.querySelector('.key')).backgroundColor,
+      };
+    });
+
+  const off = await shape();
+  expect(off.position, 'the keypad is not in flow with notes off').toBe('static');
+
+  await page.locator('#notesBtn').click();
+  await expect(page.locator('#notesBtn')).toHaveAttribute('aria-checked', 'true');
+  /* Past the 120ms the keys take to change colour, or this reads the old one. */
+  await page.waitForTimeout(250);
+  const on = await shape();
+
+  expect(on.position, 'notes mode took the keypad out of flow').toBe('static');
+  expect(on.height, 'notes mode changed the size of the keypad').toBe(off.height);
+  expect(on.keyBg, 'the keypad says nothing about the mode it is in').not.toBe(off.keyBg);
+  await expect(page.locator('#pad')).toHaveClass(/noting/u);
+});
+
+/* Pista spends the flawless bonus and used to sit in the tool row beside the
+   notes toggle. It moved to the far corner of the header, which put it outside
+   the container pause makes inert, so both halves of that are checked here. */
+test('the costly button is out of the tool row and goes quiet while paused', async ({ page }) => {
+  await page.goto('./');
+  await startGame(page);
+
+  await expect(page.locator('.tools #hintBtn'), 'Pista is back in the tool row').toHaveCount(0);
+  await expect(page.locator('header #hintBtn')).toHaveCount(1);
+
+  await page.locator('#pauseBtn').click();
+  await expect(page.locator('#veil')).toBeVisible();
+  for (const id of ['hintBtn', 'newBtn']) {
+    await expect(
+      page.locator(`#${id}`),
+      `${id} still takes a click with the board covered`,
+    ).toHaveJSProperty('inert', true);
+  }
+  await page.locator('#resumeBtn').click();
+  await expect(page.locator('#hintBtn')).toHaveJSProperty('inert', false);
+});
+
+/* The wide button that closes a dialog or resumes a board. Its rule was deleted
+   with the tool row it sat beside in the stylesheet, and nothing said so: three
+   buttons went on working and quietly rendered as bare browser defaults for
+   several releases. Size is what tells them apart from an unstyled button, so
+   size is what is asserted. */
+test('the buttons that close a dialog are the full width of it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
+
+  const spans = async (id, holder) => {
+    const button = await page.locator(`#${id}`).boundingBox();
+    const around = await page.locator(holder).boundingBox();
+    return { button, ratio: button.width / around.width };
+  };
+
+  /* An unstyled button of this text is about 22px tall, and these carry 22px of
+     padding of their own, so 32 separates the two without pinning a number the
+     stylesheet is free to move. */
+  await startGame(page);
+  await page.locator('#pauseBtn').click();
+  const resume = await spans('resumeBtn', '#veil');
+  expect(resume.button.height, 'Seguir is not a button, it is browser default').toBeGreaterThan(32);
+  await page.locator('#resumeBtn').click();
+
+  await page.locator('#newBtn').click();
+  await page.locator('#recordBtn').click();
+  const close = await spans('closeRecord', '#recordOverlay .modal');
+  expect(close.button.height, 'Listo lost the shape that makes it a button').toBeGreaterThan(32);
+  /* The one that only a width rule can give it: a default button is as wide as
+     its word. */
+  expect(close.ratio, 'Listo no longer spans the dialog').toBeGreaterThan(0.8);
+});
+
+/* The one event where the answer reaches the finger before the eye: the error is
+   drawn in the cell and counted in a bar nobody is looking at while their thumb
+   is on the keypad. Nothing else buzzes, because a buzz on every digit is fifty
+   of them a board.
+
+   Stubbed, because no engine Playwright drives has a vibration motor and because
+   what is worth holding down is when the game asks and when it does not. iPhones
+   have no Vibration API at all, Chrome there included, so the absent case is the
+   ordinary one and gets a test of its own below. */
+const stubVibrate = (page) =>
+  page.addInitScript(() => {
+    window.buzzLog = [];
+    navigator.vibrate = (pattern) => {
+      window.buzzLog.push(pattern);
+      return true;
+    };
+  });
+
+const buzzes = (page) => page.evaluate(() => window.buzzLog.length);
+
+/* Back to the start dialog and into the record, which is the only way in. */
+async function openRecord(page) {
+  await page.locator('#newBtn').click();
+  await page.locator('#recordBtn').click();
+  await expect(page.getByRole('dialog', { name: 'TU REGISTRO' })).toBeVisible();
+}
+
+async function playInto(page, wrong) {
+  const target = await page.evaluate(() => values.findIndex((v, i) => v === 0 && !fixed[i]));
+  await page.locator('#board .cell').nth(target).click();
+  const digit = await page.evaluate(({ i, bad }) => (bad ? (solution[i] % 9) + 1 : solution[i]), {
+    i: target,
+    bad: wrong,
+  });
+  await page
+    .locator('.key')
+    .nth(digit - 1)
+    .click();
+  return target;
+}
+
+test('a mistake buzzes and a correct digit does not', async ({ page }) => {
+  await stubVibrate(page);
+  await page.goto('./');
+  await startGame(page);
+
+  await playInto(page, false);
+  expect(await buzzes(page), 'a correct digit buzzed').toBe(0);
+
+  await playInto(page, true);
+  expect(await buzzes(page), 'a mistake did not buzz').toBe(1);
+  expect(await page.evaluate(() => window.buzzLog[0]), 'the knock is not the one chosen').toEqual([
+    40, 30, 40,
+  ]);
+
+  /* The switch is out of sight for now, so nothing in the record offers it. */
+  await openRecord(page);
+  await expect(page.locator('#buzzRow')).toBeHidden();
+});
+
+/* The row is down but the preference behind it is still read, so a stored no is
+   still a no. This is what makes putting the row back on screen the only thing
+   that would take. */
+test('a stored preference silences the buzz with no switch on screen', async ({ page }) => {
+  await stubVibrate(page);
+  await page.addInitScript(() =>
+    localStorage.setItem('sudoku:prefs', JSON.stringify({ v: 1, buzz: false })),
+  );
+  await page.goto('./');
+  await startGame(page);
+
+  await playInto(page, true);
+  expect(await page.evaluate(() => mistakes), 'the move did not land').toBe(1);
+  expect(await buzzes(page), 'it buzzed with the preference set to no').toBe(0);
+  expect(
+    await page.evaluate(() => document.getElementById('buzzToggle').checked),
+    'the switch does not carry the stored answer, so putting it back would show the wrong one',
+  ).toBe(false);
+});
+
+/* Every iPhone, which is where the request came from. WebKit has never shipped
+   the Vibration API and Chrome on iOS is WebKit, so this is the common case. */
+test('a platform with no vibration is offered no switch and plays the same', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'vibrate', { configurable: true, value: undefined });
+  });
+  const noise = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') noise.push(m.text());
+  });
+  page.on('pageerror', (e) => noise.push(e.message));
+
+  await page.goto('./');
+  await startGame(page);
+  await playInto(page, true);
+
+  expect(await page.evaluate(() => mistakes), 'the move did not land').toBe(1);
+  await openRecord(page);
+  await expect(
+    page.locator('#buzzRow'),
+    'a switch was offered for hardware that is absent',
+  ).toBeHidden();
+  expect(noise).toEqual([]);
+});
+
+/* The pencil marks are painted into spans the label does not gather, so a cell
+   carrying the player's own candidates announced itself as empty and nothing
+   else. Lighthouse names it label-content-name-mismatch, at a weight of zero:
+   the score never moved, and the only reader it mattered to was the one with
+   nothing but the label to go on. */
+test('a cell reads out the pencil marks it is carrying', async ({ page }) => {
+  await startGame(page);
+
+  const label = (i) => page.locator('#board .cell').nth(i).getAttribute('aria-label');
+  const target = await page.evaluate(() => values.findIndex((v, i) => v === 0 && !fixed[i]));
+  const mark = (marks) =>
+    page.evaluate(
+      ({ i, set }) => {
+        notes[i] = new Set(set);
+        render();
+      },
+      { i: target, set: marks },
+    );
+
+  await mark([]);
+  expect(await label(target)).toMatch(/vacía$/u);
+  await mark([3]);
+  expect(await label(target), 'one mark is read as a list').toMatch(/vacía, nota 3$/u);
+  await mark([6, 3]);
+  expect(await label(target), 'the marks are not read in order').toMatch(/vacía, notas 3 y 6$/u);
+  await mark([9, 3, 6]);
+  expect(await label(target)).toMatch(/vacía, notas 3, 6 y 9$/u);
+
+  /* A cell holding an answer says the answer. Marks are cleared when a digit
+     lands, and a label that read them anyway would be quoting a stale set. */
+  await page.evaluate((i) => {
+    values[i] = solution[i];
+    render();
+  }, target);
+  expect(await label(target), 'a filled cell still reads out marks').not.toMatch(/nota/u);
+});
+
+/* Confirming what the notes already say. Placing a correct digit already deletes
+   it from every peer's pencil marks, so the late game keeps leaving cells with
+   one mark left. That mark is the answer, and typing it again is bookkeeping.
+
+   Fills the board correctly except for the last `leave` cells and writes the
+   true candidate set into the first `noted` of them, which is what a player who
+   keeps complete marks would be looking at. */
+const nearTheEnd = (page, { leave, noted }) =>
+  page.evaluate(
+    ({ keep, mark }) => {
+      const openFor = (i) => {
+        const taken = new Set();
+        for (const p of PEERS[i]) if (values[p]) taken.add(values[p]);
+        const out = [];
+        for (let d = 1; d <= 9; d++) if (!taken.has(d)) out.push(d);
+        return out;
+      };
+      const empties = [];
+      for (let i = 0; i < 81; i++) if (!fixed[i]) empties.push(i);
+      for (const i of empties.slice(0, empties.length - keep)) values[i] = solution[i];
+      const marked = empties.slice(-keep).slice(0, mark);
+      for (const i of marked) notes[i] = new Set(openFor(i));
+      undoStack = [];
+      render();
+      /* Complete marks are the true candidate set, so a marked cell is only
+         down to one when the board is too. Which of them that is depends on the
+         board this seed dealt, so it is reported rather than assumed. */
+      return { marked, settleable: marked.filter((i) => notes[i].size === 1) };
+    },
+    { keep: leave, mark: noted },
+  );
+
+test('the offer to confirm single notes appears only when it has work', async ({ page }) => {
+  await startGame(page);
+
+  await expect(page.locator('#settleBtn'), 'offered before a single note exists').toBeHidden();
+
+  const { settleable } = await nearTheEnd(page, { leave: 12, noted: 5 });
+  expect(settleable.length, 'the fixture left nothing to confirm').toBeGreaterThan(0);
+  await expect(page.locator('#settleBtn')).toBeVisible();
+  await expect(page.locator('#settleCount')).toHaveText(String(settleable.length));
+  await expect(page.locator('#settleBtn')).toHaveAccessibleName(
+    `Confirmar ${settleable.length} casillas que ya tienen una sola nota`,
+  );
+});
+
+test('confirming fills the cells, costs nothing, and one undo takes the batch back', async ({
+  page,
+}) => {
+  await startGame(page);
+  const { settleable } = await nearTheEnd(page, { leave: 12, noted: 5 });
+  expect(settleable.length, 'the fixture left nothing to confirm').toBeGreaterThan(0);
+
+  await page.locator('#settleBtn').click();
+
+  const after = await page.evaluate(
+    (cells) => ({
+      filled: cells.every((i) => values[i] === solution[i]),
+      notesGone: cells.every((i) => notes[i].size === 0),
+      mistakes,
+      hints,
+    }),
+    settleable,
+  );
+  expect(after.filled, 'a cell was left unfilled or filled wrong').toBe(true);
+  expect(after.notesGone, 'the marks it acted on are still there').toBe(true);
+  /* It puts nothing on the board that was not already on screen in the player's
+     own hand, so there is nothing for either counter to record. */
+  expect(after.mistakes, 'confirming counted an error').toBe(0);
+  expect(after.hints, 'confirming was charged as a hint').toBe(0);
+
+  const said =
+    settleable.length === 1 ? 'Confirmada 1 casilla' : `Confirmadas ${settleable.length} casillas`;
+  await expect(page.locator('#srStatus')).toContainText(said);
+
+  await page.locator('#undoBtn').click();
+  const undone = await page.evaluate(
+    (cells) => ({
+      empty: cells.every((i) => values[i] === 0),
+      notesBack: cells.every((i) => notes[i].size === 1),
+    }),
+    settleable,
+  );
+  expect(undone.empty, 'undo took back only part of the press').toBe(true);
+  expect(undone.notesBack, 'undo lost the marks the press consumed').toBe(true);
+});
+
+/* The rule that makes it provable rather than trusted. A mark saying less than
+   the board says is either a cleverer deduction or a mistake, and nothing here
+   can tell those apart without reading the solution, which would be a hint. */
+test('a note narrower than the board is left alone', async ({ page }) => {
+  await startGame(page);
+
+  const open = await page.evaluate(() => {
+    const i = values.findIndex((v, k) => {
+      if (v !== 0 || fixed[k]) return false;
+      const taken = new Set();
+      for (const p of PEERS[k]) if (values[p]) taken.add(values[p]);
+      return 9 - taken.size >= 2;
+    });
+    notes[i] = new Set([solution[i]]);
+    const taken = new Set();
+    for (const p of PEERS[i]) if (values[p]) taken.add(values[p]);
+    render();
+    return 9 - taken.size;
+  });
+
+  expect(open, 'the fixture found no cell with room to spare').toBeGreaterThanOrEqual(2);
+  await expect(
+    page.locator('#settleBtn'),
+    'it acted on a mark the board does not confirm',
+  ).toBeHidden();
+});
+
+/* One wrong digit poisons the candidate arithmetic, so a cell can be left with a
+   single option that is not the answer. Wrong digits are painted from the moment
+   they land, so standing down tells the player nothing they cannot already see. */
+test('a wrong digit on the board withdraws the offer until it is fixed', async ({ page }) => {
+  await startGame(page);
+  await nearTheEnd(page, { leave: 12, noted: 5 });
+  await expect(page.locator('#settleBtn')).toBeVisible();
+
+  const victim = await page.evaluate(() => {
+    const i = values.findIndex((v, k) => v === 0 && !fixed[k] && notes[k].size === 0);
+    values[i] = (solution[i] % 9) + 1;
+    render();
+    return i;
+  });
+
+  await expect(page.locator('#settleBtn')).toBeHidden();
+  await expect(page.locator('#board .cell.wrong'), 'the mistake is not shown').toHaveCount(1);
+
+  await page.evaluate((i) => {
+    values[i] = 0;
+    render();
+  }, victim);
+  await expect(page.locator('#settleBtn')).toBeVisible();
 });
