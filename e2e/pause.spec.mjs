@@ -49,9 +49,12 @@ const countCells = (nodes) =>
    are taken away and never handed back. */
 const CONTROL_NAMES = [/deshacer/iu, /borrar/iu, /notas/iu, /pista/iu, /nueva partida/iu];
 
+/* radio as well as button: the notes control is one half of a radio group now,
+   which is what puts both modes on screen at once instead of asking the player
+   to remember which way a toggle was left. */
 const countControls = (nodes) =>
   CONTROL_NAMES.filter((label) =>
-    nodes.some((node) => node.role === 'button' && label.test(node.name)),
+    nodes.some((node) => /^(button|radio)$/u.test(node.role) && label.test(node.name)),
   ).length;
 
 /* Polled rather than read once: the accessibility tree is rebuilt off the back
