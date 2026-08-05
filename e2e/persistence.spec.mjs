@@ -133,7 +133,10 @@ async function playAndSave(page) {
   await page.locator('#notesBtn').click();
   await cell(plan.a).click();
   await page.keyboard.press(String(plan.note));
-  await page.locator('#notesBtn').click();
+  /* Back to writing answers through the other radio. Clicking Notas again keeps
+     Notas chosen, which is the point of a group and the reason the digit below
+     would otherwise land as a pencil mark. */
+  await page.locator('#penBtn').click();
 
   await cell(plan.b).click();
   await page.keyboard.press(String(plan.digit));

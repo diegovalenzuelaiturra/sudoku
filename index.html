@@ -103,11 +103,18 @@
   .wordmark .sub{font-size:11px;color:var(--ink-soft);letter-spacing:.14em;margin-top:2px}
   .clock{display:flex;align-items:center;gap:10px}
   .time{font-family:var(--serif);font-size:20px;font-variant-numeric:tabular-nums;min-width:58px;text-align:right}
+  /* 44px is the smallest target Apple's guidelines and WCAG 2.5.5 both accept,
+     and these were 36. Measured on a 390 wide iPhone, where a finger pad covers
+     about 45px: under that, the miss lands on whatever is beside it. */
   .iconbtn{
-    width:36px;height:36px;border:1px solid var(--line);border-radius:8px;background:var(--paper-raised);
-    color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;
+    width:44px;height:44px;border:1px solid var(--line);border-radius:8px;background:var(--paper-raised);
+    color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;
   }
   .iconbtn:hover{border-color:var(--ink-soft)}
+  /* Pista spends the flawless bonus, so it is drawn as the quiet one of the
+     three. The corner it sits in is the rest of the argument. */
+  .iconbtn.costly{border-style:dashed;color:var(--ink-soft)}
+  .iconbtn.costly:hover{border-style:solid;color:var(--ink)}
 
   /* ---------- status bar ---------- */
   .status{
@@ -202,35 +209,68 @@
   }
 
   /* ---------- controls ---------- */
-  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+  /* Three across, the shape of a phone keypad. Nine across put the keys at 36px
+     wide on a 390 wide iPhone against a 44px minimum, and left 40px of gap
+     between them that swallowed a tap whole: measured by hit testing every
+     pixel of the strip, 9.2 percent of it answered to nothing. Three across
+     makes each key about 118px, so the gaps stop competing with the fingers. */
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
   .key{
     border:1px solid var(--line);border-radius:9px;background:var(--paper-raised);cursor:pointer;
-    padding:9px 0 7px;display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--indigo);
-    transition:transform .06s ease,border-color .12s;
+    padding:9px 0 7px;min-height:52px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--indigo);
+    transition:transform .06s ease,border-color .12s,background .12s;
   }
+  /* The mode, said again where the digits are entered. The toggle is a row
+     below and out of the eye line of somebody looking at the board, which is
+     how a note gets written as an answer. */
+  /* "noting" and not "notes": .notes is already the 3 by 3 grid of pencil marks
+     inside a cell, and it is position:absolute. Naming this one the same took
+     the keypad out of flow and laid its keys out as that grid, which put an
+     800px tall pad over the top of the board. */
+  .pad.noting .key{background:var(--indigo-wash);border-color:var(--indigo-wash-3)}
+  .pad.noting .key .d{font-size:17px}
   .key .d{font-family:var(--serif);font-size:24px;line-height:1.1}
   .key .c{font-size:10px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
   .key:hover{border-color:var(--indigo)}
   .key:active{transform:scale(.95)}
   .key.done{opacity:.28;pointer-events:none}
-  .tools{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}
+  /* Undo, the mode, and erase. On a phone they share one row, with the mode in
+     the middle taking whatever width is left: the two least used buttons at the
+     ends and the one touched constantly under the thumb.
+
+     On a wide screen the controls are a 232px column beside the board, where
+     the three of them together do not fit and the mode was crushed to the width
+     of its own padding, with erase sitting on top of it. There it takes a row of
+     its own, above the other two. */
+  .tools{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin-bottom:12px}
   .tool{
     border:1px solid var(--line);border-radius:9px;background:var(--paper-raised);cursor:pointer;
-    padding:10px 6px;font-size:12.5px;color:var(--ink);letter-spacing:.03em;
+    padding:10px 6px;min-height:44px;font-size:12.5px;color:var(--ink);letter-spacing:.03em;
     display:flex;align-items:center;justify-content:center;gap:6px;
     transition:transform .06s ease,border-color .12s;
   }
   .tool:hover{border-color:var(--ink-soft)}
   .tool:active{transform:scale(.96)}
   .tool .k{font-size:10px;color:var(--ink-soft);border:1px solid var(--line);border-radius:4px;padding:1px 4px}
-  .tool[aria-pressed="true"]{background:var(--indigo);border-color:var(--indigo);color:#F7F8F3}
-  .tool[aria-pressed="true"] .k{color:#dfe4ee;border-color:rgba(247,248,243,.4)}
-  .ico{width:1em;height:1em;fill:currentColor;vertical-align:-0.125em}
-  .newgame{
-    width:100%;border:1px solid var(--ink);border-radius:9px;background:transparent;cursor:pointer;
-    padding:11px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);font-weight:600;
+  /* Both halves on screen, one of them filled. The track is what makes it read
+     as a choice already made rather than as two buttons waiting to be pressed. */
+  /* min-width:0 because a flex item will not shrink below the content of its
+     own children, and the two labels inside are wider than the share this is
+     meant to take: without it the row overflows the column. */
+  .mode{
+    flex:1 1 100%;order:-1;min-width:0;display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;
+    border:1px solid var(--line);border-radius:11px;background:var(--paper);
   }
-  .newgame:hover{background:var(--ink);color:var(--paper-raised)}
+  .tool{flex:1 1 0}
+  .mode button{
+    border:0;border-radius:8px;background:transparent;cursor:pointer;min-height:38px;
+    font-size:12.5px;letter-spacing:.03em;color:var(--ink-soft);font-family:inherit;
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    transition:background .12s,color .12s;
+  }
+  .mode button[aria-checked="true"]{background:var(--indigo);color:#F7F8F3;font-weight:600}
+  .ico{width:1em;height:1em;fill:currentColor;vertical-align:-0.125em}
   button:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
 
   /* ---------- modal ---------- */
@@ -382,15 +422,49 @@
        The floor matters as much as the cap. Without it a 560px viewport asks
        for a 230px board, whose cells are 25px, and a cell too small to hit is
        worse than a page that scrolls. At 288px they are 32px and the page
-       scrolls again, which is where this started. */
-    .board{max-width:min(520px,100%,max(288px,calc(100dvh - 330px)));margin:0 auto}
+       scrolls again, which is where this started.
+
+       392px is the rest of the column now, not 330: the keypad is three rows
+       instead of one, which is what bought the keys their width, and the
+       subtraction is what keeps that off the end of the page rather than off
+       the board. Measured, not guessed: everything above and below the board
+       adds to 390 at this width, and the two spare pixels are for the rounding.
+       On a 390 by 844 iPhone the board is still limited by the column width, so
+       it does not move at all; in a browser tab, where about 140px goes to the
+       URL bar, it gives up what the keypad took and the page still does not
+       scroll, which is the trade this was chosen for. */
+    .board{max-width:min(520px,100%,max(288px,calc(100dvh - 392px)));margin:0 auto}
     .controls{max-width:520px;margin:0 auto;width:100%}
-    .tools{grid-template-columns:repeat(4,1fr)}
     .tool .k{display:none}
-    .pad{grid-template-columns:repeat(9,1fr);gap:5px}
-    .key{padding:7px 0 5px;border-radius:7px}
-    .key .d{font-size:19px}
+    /* One row here: without the shortcut chips the two buttons are narrow
+       enough that the mode fits between them, which is where a thumb wants it. */
+    .tool{padding:10px 4px;flex:0 1 auto}
+    .mode{flex:1 1 auto;order:0}
+    .key{padding:7px 0 5px;border-radius:8px}
+    .key .d{font-size:22px}
     .key .c{font-size:9px}
+    /* The subtitle is decoration, and the row it sits in is competing with the
+       keypad for the same pixels. */
+    .wordmark .sub{display:none}
+    .status{gap:10px;padding:6px 2px;margin-bottom:14px;font-size:12px}
+    /* The header carries three 44px buttons now instead of one 36px button, and
+       at 390 wide the wordmark and the clock together asked for 424 of the 370
+       there are. Everything here is the brand giving way to the controls: the
+       targets are the part that has to keep its size. */
+    .brand{gap:8px}
+    .seal{width:36px;height:36px;font-size:20px}
+    .wordmark .title{font-size:17px;letter-spacing:.18em}
+    .clock{gap:6px}
+    .time{font-size:18px;min-width:46px}
+    header{margin-bottom:10px}
+    /* The spacer grows to fill the first line, which pushed the count that
+       follows it onto a second one and cost the status bar 29px of a column
+       that is now paying for a three row keypad. The items simply flow. */
+    .status .spacer{display:none}
+    /* Last in the column, so its bottom margin is only space above the edge,
+       and the body padding is already there. */
+    .pad{margin-bottom:0}
+    .tools{margin-bottom:10px}
   }
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
@@ -441,6 +515,12 @@
                         <div class="sub">数独, juego de números</div>
                     </div>
                 </div>
+                <!-- The clock, then the three actions that are not part of playing a
+                    board. Pista sits in the far corner on purpose: it is the most
+                    expensive button in the game, since it spends the flawless bonus, and
+                    it used to sit in the tool row next to the notes toggle, one slipped
+                    thumb away from the control a player touches most. The top right
+                    corner is the hardest place on a phone to reach by accident. -->
                 <div class="clock">
                     <div class="time" id="time">0:00</div>
                     <button
@@ -455,6 +535,34 @@
                             focusable="false"
                         >
                             <use href="#i-pause"/>
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        class="iconbtn"
+                        id="newBtn"
+                        aria-label="Nueva partida"
+                    >
+                        <svg
+                            class="ico"
+                            aria-hidden="true"
+                            focusable="false"
+                        >
+                            <use href="#i-refresh"/>
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        class="iconbtn costly"
+                        id="hintBtn"
+                        aria-label="Pista"
+                    >
+                        <svg
+                            class="ico"
+                            aria-hidden="true"
+                            focusable="false"
+                        >
+                            <use href="#i-lightbulb"/>
                         </svg>
                     </button>
                 </div>
@@ -516,8 +624,10 @@
                     </div>
                 </div>
 
+                <!-- The mode above the keypad, the way it reads on the reference this
+                    follows: the choice is made on the way down to the digits rather than
+                    below them. -->
                 <div class="controls">
-                    <div class="pad" id="pad"></div>
                     <div class="tools">
                         <button
                             type="button"
@@ -533,6 +643,36 @@
                             </svg>
                             Deshacer <span class="k">Z</span>
                         </button>
+                        <!-- Which of the two the digits go in, as a choice with both halves
+                            on screen and one of them filled. A single toggle button only
+                            ever showed one state, so knowing the mode meant remembering
+                            which way the button had been left, and a wrong guess writes a
+                            real digit where a note was meant. A radiogroup rather than two
+                            pressed buttons: the modes are exclusive, and it is what makes
+                            the arrow keys walk between them.
+
+                            In the middle of the row on purpose. Pista used to be here,
+                            next to it, and Pista spends the flawless bonus. -->
+                        <div
+                            class="mode"
+                            role="radiogroup"
+                            aria-label="Modo de escritura"
+                        >
+                            <button
+                                type="button"
+                                role="radio"
+                                id="penBtn"
+                                aria-checked="true"
+                            >Lápiz</button>
+                            <button
+                                type="button"
+                                role="radio"
+                                id="notesBtn"
+                                aria-checked="false"
+                                aria-describedby="notesHint"
+                                tabindex="-1"
+                            >Notas</button>
+                        </div>
                         <button
                             type="button"
                             class="tool"
@@ -547,56 +687,13 @@
                             </svg>
                             Borrar <span class="k">⌫</span>
                         </button>
-                        <button
-                            type="button"
-                            class="tool"
-                            id="notesBtn"
-                            aria-pressed="false"
-                            aria-describedby="notesHint"
-                        >
-                            <svg
-                                class="ico"
-                                aria-hidden="true"
-                                focusable="false"
-                            >
-                                <use href="#i-stylus_note"/>
-                            </svg>
-                            Notas <span class="k">N</span>
-                        </button>
-                        <button
-                            type="button"
-                            class="tool"
-                            id="hintBtn"
-                        >
-                            <svg
-                                class="ico"
-                                aria-hidden="true"
-                                focusable="false"
-                            >
-                                <use href="#i-lightbulb"/>
-                            </svg>
-                            Pista <span class="k">H</span>
-                        </button>
                     </div>
                     <!-- What "Notas" does was guessable from the icon and nothing else. Kept
                         out of sight until the mode is on, so the board is not carrying an
                         instruction nobody is reading, but always in the accessibility tree
                         as the button's description, where it is read on focus either way. -->
                     <p class="toolhint visually-hidden" id="notesHint">Anota candidatos: el número queda chico. Tócalo de nuevo para borrarlo.</p>
-                    <button
-                        type="button"
-                        class="newgame"
-                        id="newBtn"
-                    >
-                        <svg
-                            class="ico"
-                            aria-hidden="true"
-                            focusable="false"
-                        >
-                            <use href="#i-refresh"/>
-                        </svg>
-                        Nueva partida
-                    </button>
+                    <div class="pad" id="pad"></div>
                 </div>
             </main>
         </div>

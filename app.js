@@ -404,6 +404,13 @@ function setPaused(p) {
      lives inside .app and would disable its own resume button. */
   boardEl.inert = p;
   controlsEl.inert = p;
+  /* These two used to be inside .controls and went quiet with it. They are in
+     the header now, which pause does not touch because the resume button lives
+     up there: Pista would otherwise reveal a cell on a board nobody can see,
+     and both would still take Tab while the game is stopped. Marked one at a
+     time rather than by their container, which also holds the resume button. */
+  $('newBtn').inert = p;
+  $('hintBtn').inert = p;
   if (p) {
     clearInterval(tick);
     saveGame();
@@ -557,12 +564,10 @@ function startGame(key, made) {
   seconds = 0;
   solved = false;
   playing = true;
-  notesMode = false;
   pausedByDialog = false;
   revealed = new Set();
   sel = values.indexOf(0);
-  $('notesBtn').setAttribute('aria-pressed', 'false');
-  showNotesHint();
+  setNotes(false);
   /* The win paints the chips on a timer, and every win timer was cleared at the
      top of this function. Starting the next puzzle during the payout animation
      would otherwise leave both totals reading what they said before the prize
@@ -1016,6 +1021,22 @@ function paintRecord() {
 function showNotesHint() {
   $('notesHint').classList.toggle('visually-hidden', !notesMode);
 }
+/* The one place the mode is set, so the four things that have to agree about it
+   cannot drift: the flag the digit entry reads, the two radios, and the keypad
+   itself. The keypad is in there because the control is a row below the eye
+   line of somebody looking at the board, and a mode you have to remember is a
+   mode that writes answers where notes were meant. */
+function setNotes(on) {
+  notesMode = on;
+  $('penBtn').setAttribute('aria-checked', String(!on));
+  $('notesBtn').setAttribute('aria-checked', String(on));
+  /* Only the checked radio is tabbable, which is what a radiogroup does: one
+     stop for the group, and the arrows move within it. */
+  $('penBtn').tabIndex = on ? -1 : 0;
+  $('notesBtn').tabIndex = on ? 0 : -1;
+  padEl.classList.toggle('noting', on);
+  showNotesHint();
+}
 /* Restarts the pop even if the chip is already mid-animation: removing the
    class is not enough on its own, the reflow between is what replays it. */
 function popChip(id) {
@@ -1371,14 +1392,12 @@ function loadGame() {
   puzzleMeasured = graded && seeded;
   solved = false;
   playing = true;
-  notesMode = false;
   pausedByDialog = false;
   undoStack = [];
   revealed = new Set();
   winTimers.forEach(clearTimeout);
   winTimers = [];
-  $('notesBtn').setAttribute('aria-pressed', 'false');
-  showNotesHint();
+  setNotes(false);
   $('diffLabel').textContent = DIFF[diffKey].label;
   $('time').textContent = fmt(seconds);
   $('stamp').classList.remove('show');
@@ -1541,6 +1560,13 @@ function inputDigit(d) {
   if (!playing || paused || sel < 0 || fixed[sel]) return;
   if (notesMode && values[sel] !== 0)
     return; /* checked before snapshot(): a no-op must not evict undo history */
+  /* Entering the digit that is already there does nothing, and says so before
+     snapshot() for the same reason the line above does. It used to clear the
+     cell, which is what turned an unsure tap into a lost one: a player who
+     cannot tell whether the first tap landed taps again, and the second tap
+     emptied the cell, which reads as the screen having missed both of them.
+     Erasing has a button, and it is now the only thing that erases. */
+  if (!notesMode && values[sel] === d) return;
   snapshot();
   if (notesMode) {
     if (notes[sel].has(d)) {
@@ -1549,15 +1575,11 @@ function inputDigit(d) {
       notes[sel].add(d);
     }
   } else {
-    if (values[sel] === d) {
-      values[sel] = 0;
-    } else {
-      values[sel] = d;
-      notes[sel].clear();
-      if (d === solution[sel]) {
-        for (const p of PEERS[sel]) notes[p].delete(d);
-      } else mistakes++;
-    }
+    values[sel] = d;
+    notes[sel].clear();
+    if (d === solution[sel]) {
+      for (const p of PEERS[sel]) notes[p].delete(d);
+    } else mistakes++;
   }
   render();
   saveGame();
@@ -1732,12 +1754,28 @@ function render() {
 /* ---- wiring ---- */
 $('pauseBtn').addEventListener('click', () => setPaused(!paused));
 $('resumeBtn').addEventListener('click', () => setPaused(false));
-$('notesBtn').addEventListener('click', (e) => {
-  if (!playing || paused) return;
-  notesMode = !notesMode;
-  e.currentTarget.setAttribute('aria-pressed', String(notesMode));
-  showNotesHint();
+/* Each radio sets its own mode rather than flipping the flag, so tapping the
+   one already chosen is the no-op a radio group promises. The old single button
+   toggled, which meant a tap the player was not sure had landed could be undone
+   by checking. */
+$('penBtn').addEventListener('click', () => {
+  if (playing && !paused) setNotes(false);
 });
+$('notesBtn').addEventListener('click', () => {
+  if (playing && !paused) setNotes(true);
+});
+/* Left and right walk the group, which is what a radiogroup is expected to do
+   and what the two buttons stop doing the moment they are only clickable. */
+for (const id of ['penBtn', 'notesBtn']) {
+  $(id).addEventListener('keydown', (e) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+    if (!playing || paused) return;
+    e.preventDefault();
+    const next = notesMode ? 'penBtn' : 'notesBtn';
+    setNotes(!notesMode);
+    $(next).focus();
+  });
+}
 $('eraseBtn').addEventListener('click', erase);
 $('undoBtn').addEventListener('click', undo);
 $('hintBtn').addEventListener('click', hint);
@@ -1865,7 +1903,7 @@ document.addEventListener('keydown', (e) => {
   if (k === 'backspace' || k === 'delete' || e.key === '0') {
     e.preventDefault();
     erase();
-  } else if (k === 'n') $('notesBtn').click();
+  } else if (k === 'n') setNotes(!notesMode);
   else if (k === 'h') hint();
   else if (k === 'z') undo();
   else if (k.startsWith('arrow')) {

@@ -444,7 +444,9 @@ test('keyboard focus is painted on the board, a pointer click is not', async ({ 
 
   /* Reached with the keyboard instead: the ring has to be there, or the player
      cannot tell which of the 81 cells is about to take the digit. */
-  await page.locator('#pauseBtn').focus();
+  /* The last thing in the header, so the next Tab is the board. Pista and Nueva
+     partida sit between the pause button and the grid now. */
+  await page.locator('#hintBtn').focus();
   await page.keyboard.press('Tab');
   await expect(page.locator('#board .cell').first()).toBeFocused();
   expect(await ring()).toEqual({ visible: true, outline: 'solid 2px rgb(49, 80, 126)' });

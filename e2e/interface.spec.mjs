@@ -146,9 +146,16 @@ test('every icon reference resolves to a symbol the browser can paint', async ({
 const LABELLED = [
   ['undoBtn', 'Deshacer Z'],
   ['eraseBtn', 'Borrar ⌫'],
-  ['notesBtn', 'Notas N'],
-  ['hintBtn', 'Pista H'],
+];
+
+/* Icon only, and all three in the header. Pista and Nueva partida moved up
+   there out of the tool row: Pista spends the flawless bonus and sat one slipped
+   thumb from the control a player touches most, and the corner is the hardest
+   place on a phone to reach by accident. Their whole name is the aria-label. */
+const ICON_ONLY = [
+  ['pauseBtn', 'Pausar'],
   ['newBtn', 'Nueva partida'],
+  ['hintBtn', 'Pista'],
 ];
 
 test('icons decorate the buttons without touching their accessible names', async ({
@@ -169,15 +176,28 @@ test('icons decorate the buttons without touching their accessible names', async
     await expect(page.locator(`#${id}`)).toHaveAccessibleName(name, { ignoreCase: true });
   }
 
-  /* Icon-only, so its whole accessible name is the aria-label. */
-  await expect(page.locator('#pauseBtn')).toHaveText('');
-  await expect(page.locator('#pauseBtn')).toHaveAccessibleName('Pausar');
+  for (const [id, name] of ICON_ONLY) {
+    await expect(page.locator(`#${id} use`), `${id} lost its icon`).toHaveCount(1);
+    await expect(page.locator(`#${id}`), `${id} grew a visible label`).toHaveText('');
+    await expect(page.locator(`#${id}`)).toHaveAccessibleName(name);
+  }
+
+  /* The mode is two radios in a group, not buttons, and they are the one pair
+     here that carries no icon: at this size a glyph beside four letters is what
+     pushed the row wide enough to crush the group it sits in. */
+  for (const [id, name] of [
+    ['penBtn', 'Lápiz'],
+    ['notesBtn', 'Notas'],
+  ]) {
+    await expect(page.locator(`#${id}`)).toHaveAccessibleName(name, { ignoreCase: true });
+    await expect(page.locator(`#${id}`)).toHaveAttribute('role', 'radio');
+  }
 
   const nodes = await accessibleNodes(cdp);
   /* The names above come from Playwright's own role engine. This is Chrome's
      tree, which is the one a screen reader reads. */
   const names = nodes.filter((node) => node.role === 'button').map((node) => node.name.trim());
-  for (const [, name] of [...LABELLED, ['pauseBtn', 'Pausar']]) {
+  for (const [, name] of [...LABELLED, ...ICON_ONLY]) {
     expect(names.map((entry) => entry.toLocaleLowerCase())).toContain(name.toLocaleLowerCase());
   }
 
@@ -453,9 +473,18 @@ test('the notes button explains itself, on screen only while notes are on', asyn
 
   expect(await clipped(), 'the hint is on screen before notes are on').toBeLessThan(5);
   await notes.click();
-  await expect(notes).toHaveAttribute('aria-pressed', 'true');
+  await expect(notes).toHaveAttribute('aria-checked', 'true');
   expect(await clipped(), 'turning notes on did not reveal the hint').toBeGreaterThan(80);
+  /* Tapping the mode already chosen does nothing, which is what a radio group
+     promises and what a toggle button could not: a tap the player was unsure
+     about used to undo itself. Leaving the mode is the other radio's job. */
   await notes.click();
+  await expect(notes, 'the group toggled instead of choosing').toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await page.locator('#penBtn').click();
+  await expect(notes).toHaveAttribute('aria-checked', 'false');
   expect(await clipped(), 'the hint stayed on screen after notes were turned off').toBeLessThan(5);
 
   /* Everything above is layout, and runs on both engines. What follows is the
@@ -466,10 +495,11 @@ test('the notes button explains itself, on screen only while notes are on', asyn
     'reads the accessibility tree, which only Chromium exposes over CDP',
   );
   const cdp = await context.newCDPSession(page);
+  /* radio, not button: the mode is a group of two now. */
   const described = () =>
     accessibleNodes(cdp).then(
       (nodes) =>
-        nodes.find((node) => node.role === 'button' && /Notas/u.test(node.name))?.description,
+        nodes.find((node) => node.role === 'radio' && /Notas/u.test(node.name))?.description,
     );
 
   expect(await described(), 'the button carries no description while notes are off').toBe(text);
@@ -507,4 +537,123 @@ test('a double tap cannot zoom the page, while pinch to zoom still can', async (
   for (const selector of ['body', '#board', '#pad', '.tools']) {
     expect(await touchAction(selector), `${selector} forbids pinch to zoom`).not.toBe('none');
   }
+});
+
+/* The three complaints a player sent in, measured rather than argued about.
+   Keys were 36.7px wide against the 44px that Apple's guidelines and WCAG 2.5.5
+   both set, laid out nine across with 5px between them, and hit testing every
+   pixel of that strip found 9.2 percent of it answering to nothing: a tap that
+   landed in a gutter did nothing at all, which is what "sometimes it does not
+   take my touch" was. Three across is what buys the width back. */
+test('every target a thumb aims at clears 44px on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
+  await startGame(page);
+
+  const box = async (selector) => {
+    const rect = await page.locator(selector).first().boundingBox();
+    return { w: Math.round(rect.width * 10) / 10, h: Math.round(rect.height * 10) / 10 };
+  };
+
+  for (const selector of ['.key', '#undoBtn', '#eraseBtn', '#pauseBtn', '#newBtn', '#hintBtn']) {
+    const { w, h } = await box(selector);
+    expect(w, `${selector} is ${w}px wide, under the 44px minimum`).toBeGreaterThanOrEqual(44);
+    expect(h, `${selector} is ${h}px tall, under the 44px minimum`).toBeGreaterThanOrEqual(44);
+  }
+
+  /* Three columns, so the row a finger crosses holds three keys and not nine. */
+  const keys = await page.locator('.key').all();
+  const tops = new Set();
+  for (const key of keys) tops.add(Math.round((await key.boundingBox()).y));
+  expect(tops.size, 'the keypad is not three rows').toBe(3);
+
+  /* And nothing overflows the column sideways, which the header did the moment
+     it took two more buttons. */
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(overflow, 'something is wider than the page').toBe(false);
+});
+
+/* The other half of "I have to tap several times". Entering the digit that is
+   already in the cell used to clear it, so a player who could not tell whether
+   the first tap landed tapped again and lost it, which reads as the screen
+   having missed both. */
+test('tapping the same digit again leaves the cell alone', async ({ page }) => {
+  await page.goto('./');
+  await startGame(page);
+
+  const target = await page.evaluate(() => values.findIndex((v, i) => v === 0 && !fixed[i]));
+  const cell = page.locator('#board .cell').nth(target);
+  await cell.click();
+
+  const digit = page.locator('.key').nth(4);
+  await digit.click();
+  await expect(cell.locator('.v'), 'the first tap did not land').toHaveText('5');
+  await digit.click();
+  await expect(cell.locator('.v'), 'the second tap erased the first').toHaveText('5');
+  await digit.click();
+  await expect(cell.locator('.v'), 'a third tap erased it').toHaveText('5');
+
+  /* Erasing still has a button, and it is now the only thing that erases. */
+  await page.locator('#eraseBtn').click();
+  await expect(cell.locator('.v')).toHaveText('');
+});
+
+/* The mode is said again on the keypad, because the control is a row below the
+   eye line of somebody looking at the board. The class doing it is "noting" and
+   not "notes": .notes is already the grid of pencil marks inside a cell, and it
+   is position:absolute, so the shared name took the keypad out of flow and drew
+   it 800px tall across the board. */
+test('notes mode is visible on the keypad without taking it out of flow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
+  await startGame(page);
+
+  const shape = () =>
+    page.evaluate(() => {
+      const pad = document.getElementById('pad');
+      const rect = pad.getBoundingClientRect();
+      return {
+        position: getComputedStyle(pad).position,
+        height: Math.round(rect.height),
+        keyBg: getComputedStyle(document.querySelector('.key')).backgroundColor,
+      };
+    });
+
+  const off = await shape();
+  expect(off.position, 'the keypad is not in flow with notes off').toBe('static');
+
+  await page.locator('#notesBtn').click();
+  await expect(page.locator('#notesBtn')).toHaveAttribute('aria-checked', 'true');
+  /* Past the 120ms the keys take to change colour, or this reads the old one. */
+  await page.waitForTimeout(250);
+  const on = await shape();
+
+  expect(on.position, 'notes mode took the keypad out of flow').toBe('static');
+  expect(on.height, 'notes mode changed the size of the keypad').toBe(off.height);
+  expect(on.keyBg, 'the keypad says nothing about the mode it is in').not.toBe(off.keyBg);
+  await expect(page.locator('#pad')).toHaveClass(/noting/u);
+});
+
+/* Pista spends the flawless bonus and used to sit in the tool row beside the
+   notes toggle. It moved to the far corner of the header, which put it outside
+   the container pause makes inert, so both halves of that are checked here. */
+test('the costly button is out of the tool row and goes quiet while paused', async ({ page }) => {
+  await page.goto('./');
+  await startGame(page);
+
+  await expect(page.locator('.tools #hintBtn'), 'Pista is back in the tool row').toHaveCount(0);
+  await expect(page.locator('header #hintBtn')).toHaveCount(1);
+
+  await page.locator('#pauseBtn').click();
+  await expect(page.locator('#veil')).toBeVisible();
+  for (const id of ['hintBtn', 'newBtn']) {
+    await expect(
+      page.locator(`#${id}`),
+      `${id} still takes a click with the board covered`,
+    ).toHaveJSProperty('inert', true);
+  }
+  await page.locator('#resumeBtn').click();
+  await expect(page.locator('#hintBtn')).toHaveJSProperty('inert', false);
 });
