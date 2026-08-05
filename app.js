@@ -1027,17 +1027,17 @@ function paintRecord() {
     list.append(li);
   }
 }
-/* On screen only while the mode is on. Not hidden with the hidden attribute:
-   aria-describedby has to keep resolving to it, and a hidden element is dropped
-   from the accessibility tree, taking the button's description with it. */
-function showNotesHint() {
-  $('notesHint').classList.toggle('visually-hidden', !notesMode);
-}
 /* The one place the mode is set, so the four things that have to agree about it
    cannot drift: the flag the digit entry reads, the two radios, and the keypad
    itself. The keypad is in there because the control is a row below the eye
    line of somebody looking at the board, and a mode you have to remember is a
-   mode that writes answers where notes were meant. */
+   mode that writes answers where notes were meant.
+
+   Nothing here changes the height of anything. The description of the mode used
+   to be revealed on screen when it came on, which pushed the keypad down 33px:
+   the keys moved under the thumb at the exact moment the player was about to
+   use them. The column has no room to hold that line open either, so it stays
+   where the reader who needs it can still reach it and out of the layout. */
 function setNotes(on) {
   notesMode = on;
   $('penBtn').setAttribute('aria-checked', String(!on));
@@ -1047,7 +1047,6 @@ function setNotes(on) {
   $('penBtn').tabIndex = on ? -1 : 0;
   $('notesBtn').tabIndex = on ? 0 : -1;
   padEl.classList.toggle('noting', on);
-  showNotesHint();
 }
 /* The pencil marks a cell is carrying, as the tail of its label, or nothing.
    Without this a cell announced itself as empty while showing the player their

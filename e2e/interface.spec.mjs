@@ -457,10 +457,12 @@ test('the board only claims a role its own children can satisfy', async ({ page,
    is called and nothing about what it does or how to use it. The explanation is
    now on the button as a description, and on screen only while the mode is on,
    so the board is not permanently carrying an instruction. */
-test('the notes button explains itself, on screen only while notes are on', async ({
+test('changing mode moves nothing, and still explains itself to a reader', async ({
   page,
   context,
 }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
   await startGame(page);
 
   const hint = page.locator('#notesHint');
@@ -468,13 +470,19 @@ test('the notes button explains itself, on screen only while notes are on', asyn
   const text = await hint.textContent();
   expect(text, 'the hint says nothing').toMatch(/candidat/iu);
 
-  /* Clipped to a pixel rather than removed, so it stays in the tree. */
-  const clipped = async () => (await hint.boundingBox()).width;
+  /* The keys are what the thumb is aiming at while the mode is being changed.
+     Revealing the description on screen pushed them down 33px at exactly that
+     moment, and the column has no height to hold the line open with instead, so
+     it is out of the layout in both modes. */
+  const keypad = () => page.locator('#pad').boundingBox();
+  const before = await keypad();
 
-  expect(await clipped(), 'the hint is on screen before notes are on').toBeLessThan(5);
   await notes.click();
   await expect(notes).toHaveAttribute('aria-checked', 'true');
-  expect(await clipped(), 'turning notes on did not reveal the hint').toBeGreaterThan(80);
+  expect(await keypad(), 'turning notes on moved the keypad').toEqual(before);
+  /* Clipped to a pixel rather than removed, so it stays in the tree. */
+  expect((await hint.boundingBox()).width, 'the description took layout space').toBeLessThan(5);
+
   /* Tapping the mode already chosen does nothing, which is what a radio group
      promises and what a toggle button could not: a tap the player was unsure
      about used to undo itself. Leaving the mode is the other radio's job. */
@@ -485,7 +493,7 @@ test('the notes button explains itself, on screen only while notes are on', asyn
   );
   await page.locator('#penBtn').click();
   await expect(notes).toHaveAttribute('aria-checked', 'false');
-  expect(await clipped(), 'the hint stayed on screen after notes were turned off').toBeLessThan(5);
+  expect(await keypad(), 'turning notes off moved the keypad').toEqual(before);
 
   /* Everything above is layout, and runs on both engines. What follows is the
      description Chrome computes for the button, which is the half that carries
@@ -504,7 +512,7 @@ test('the notes button explains itself, on screen only while notes are on', asyn
 
   expect(await described(), 'the button carries no description while notes are off').toBe(text);
   await notes.click();
-  expect(await described(), 'the description was lost when the hint became visible').toBe(text);
+  expect(await described(), 'the description was lost when the mode came on').toBe(text);
 });
 
 /* Double tap to zoom on iOS: a second tap within about 300ms was read as a
@@ -656,6 +664,39 @@ test('the costly button is out of the tool row and goes quiet while paused', asy
   }
   await page.locator('#resumeBtn').click();
   await expect(page.locator('#hintBtn')).toHaveJSProperty('inert', false);
+});
+
+/* The wide button that closes a dialog or resumes a board. Its rule was deleted
+   with the tool row it sat beside in the stylesheet, and nothing said so: three
+   buttons went on working and quietly rendered as bare browser defaults for
+   several releases. Size is what tells them apart from an unstyled button, so
+   size is what is asserted. */
+test('the buttons that close a dialog are the full width of it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
+
+  const spans = async (id, holder) => {
+    const button = await page.locator(`#${id}`).boundingBox();
+    const around = await page.locator(holder).boundingBox();
+    return { button, ratio: button.width / around.width };
+  };
+
+  /* An unstyled button of this text is about 22px tall, and these carry 22px of
+     padding of their own, so 32 separates the two without pinning a number the
+     stylesheet is free to move. */
+  await startGame(page);
+  await page.locator('#pauseBtn').click();
+  const resume = await spans('resumeBtn', '#veil');
+  expect(resume.button.height, 'Seguir is not a button, it is browser default').toBeGreaterThan(32);
+  await page.locator('#resumeBtn').click();
+
+  await page.locator('#newBtn').click();
+  await page.locator('#recordBtn').click();
+  const close = await spans('closeRecord', '#recordOverlay .modal');
+  expect(close.button.height, 'Listo lost the shape that makes it a button').toBeGreaterThan(32);
+  /* The one that only a width rule can give it: a default button is as wide as
+     its word. */
+  expect(close.ratio, 'Listo no longer spans the dialog').toBeGreaterThan(0.8);
 });
 
 /* The one event where the answer reaches the finger before the eye: the error is
