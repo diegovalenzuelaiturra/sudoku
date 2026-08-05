@@ -239,6 +239,14 @@ let ledger = [],
 const HISTORY_KEY = 'sudoku:history',
   HISTORY_VERSION = 1;
 let games = [];
+/* What the player has switched off. Its own key for the same reason the others
+   have one, and it follows the record's rule rather than the wallet's: a
+   setting that cannot be read is a setting to ask for again, not a thing that
+   was earned. Defaults to on, because a player who has never been asked has not
+   said no. */
+const PREFS_KEY = 'sudoku:prefs',
+  PREFS_VERSION = 1;
+let prefs = { buzz: true };
 
 /* ---- build DOM once ---- */
 const cells = [];
@@ -1222,6 +1230,57 @@ function recordWin(key, time, flawless) {
   };
 }
 
+/* ---- what the player switched off ---- */
+function readPrefs() {
+  let raw;
+  try {
+    raw = localStorage.getItem(PREFS_KEY);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  let p;
+  try {
+    p = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!p || typeof p !== 'object' || p.v !== PREFS_VERSION) return null;
+  /* Only an explicit false turns it off. Anything else stored under the flag,
+     including a version of this build that never wrote one, is a player who has
+     not said no. */
+  return { buzz: p.buzz !== false };
+}
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ v: PREFS_VERSION, buzz: prefs.buzz }));
+  } catch {
+    /* a setting that cannot be written is not worth failing a game over */
+  }
+}
+function loadPrefs() {
+  prefs = readPrefs() || { buzz: true };
+}
+/* A short double knock, and only for a mistake. It is the one event where the
+   answer arrives at the finger before the eye: the error is drawn in the cell
+   and counted in a bar the player is not looking at while their thumb is on the
+   keypad. Everything else the game does is already on screen where they are
+   looking, and a buzz on every digit is fifty of them a board.
+
+   Behind the same reduced motion gate as the prize rain: a player who asked for
+   no movement did not mean only the movement they can see. Missing on iPhone
+   entirely, where WebKit has never shipped the Vibration API, and Chrome there
+   is WebKit too, so the detection is the ordinary case and not a failure. */
+const MISTAKE_BUZZ = [40, 30, 40];
+function buzz(pattern) {
+  if (!prefs.buzz || reduceMotion.matches || typeof navigator.vibrate !== 'function') return;
+  try {
+    navigator.vibrate(pattern);
+  } catch {
+    /* a refused buzz is not worth losing the move it belonged to */
+  }
+}
+
 /* ---- the games themselves ----
    One row per finished board, so a statistic can be worked out at read time
    from what actually happened. The field names are one letter because a
@@ -1597,7 +1656,10 @@ function inputDigit(d) {
     notes[sel].clear();
     if (d === solution[sel]) {
       for (const p of PEERS[sel]) notes[p].delete(d);
-    } else mistakes++;
+    } else {
+      mistakes++;
+      buzz(MISTAKE_BUZZ);
+    }
   }
   render();
   saveGame();
@@ -1904,6 +1966,10 @@ function closeRecord() {
      focus lands on the body and the next Tab starts from the top of the page. */
   if ($('startOverlay').classList.contains('show')) $('recordBtn').focus();
 }
+$('buzzToggle').addEventListener('change', (e) => {
+  prefs.buzz = e.currentTarget.checked;
+  savePrefs();
+});
 $('closeRecord').addEventListener('click', closeRecord);
 
 /* Redeeming empties a balance and cannot be undone, so it takes two presses.
@@ -2075,6 +2141,12 @@ addEventListener('storage', (e) => {
 loadWallet();
 loadStats();
 loadHistory();
+loadPrefs();
+/* The switch is offered only where there is something to switch. Read once at
+   boot rather than on every repaint: a platform does not grow a vibration motor
+   between two renders. */
+$('buzzRow').hidden = typeof navigator.vibrate !== 'function';
+$('buzzToggle').checked = prefs.buzz;
 paintWallet();
 paintRecord();
 /* loadGame() renders and unpauses itself when it restores something; only the

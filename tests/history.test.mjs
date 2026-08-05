@@ -70,13 +70,16 @@ test('the finished games have their own key, and their own version on it', () =>
     /const HISTORY_KEY = 'sudoku:history',\s*HISTORY_VERSION = 1;/u,
     'the history key or its version moved, and every game a player has finished is now under a name nothing reads',
   );
-  /* Four keys, four distinct strings. Two constants holding the same string
-     gives one key two writers with two payload shapes, and the second write of
-     a session deletes whatever the first put there. */
+  /* As many distinct strings as there are key constants. Counted rather than
+     compared against a number written here, so adding a key is not a failure
+     while two constants holding the same string still is: that gives one key
+     two writers with two payload shapes, and the second write of a session
+     deletes whatever the first put there. */
+  const declared = code.match(/const \w+_KEY = 'sudoku:[a-z]+'/gu) || [];
   const keys = [...new Set(code.match(/'sudoku:[a-z]+'/gu))];
   assert.equal(
     keys.length,
-    4,
+    declared.length,
     `two storage keys are now the same string, so one writer erases the other: ${keys.join(', ')}`,
   );
   assert.ok(keys.includes("'sudoku:history'"), 'the games are stored under one of the other keys');

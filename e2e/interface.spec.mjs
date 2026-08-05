@@ -658,6 +658,110 @@ test('the costly button is out of the tool row and goes quiet while paused', asy
   await expect(page.locator('#hintBtn')).toHaveJSProperty('inert', false);
 });
 
+/* The one event where the answer reaches the finger before the eye: the error is
+   drawn in the cell and counted in a bar nobody is looking at while their thumb
+   is on the keypad. Nothing else buzzes, because a buzz on every digit is fifty
+   of them a board.
+
+   Stubbed, because no engine Playwright drives has a vibration motor and because
+   what is worth holding down is when the game asks and when it does not. iPhones
+   have no Vibration API at all, Chrome there included, so the absent case is the
+   ordinary one and gets a test of its own below. */
+const stubVibrate = (page) =>
+  page.addInitScript(() => {
+    window.buzzLog = [];
+    navigator.vibrate = (pattern) => {
+      window.buzzLog.push(pattern);
+      return true;
+    };
+  });
+
+const buzzes = (page) => page.evaluate(() => window.buzzLog.length);
+
+/* Back to the start dialog and into the record, which is the only way in. */
+async function openRecord(page) {
+  await page.locator('#newBtn').click();
+  await page.locator('#recordBtn').click();
+  await expect(page.getByRole('dialog', { name: 'TU REGISTRO' })).toBeVisible();
+}
+
+async function playInto(page, wrong) {
+  const target = await page.evaluate(() => values.findIndex((v, i) => v === 0 && !fixed[i]));
+  await page.locator('#board .cell').nth(target).click();
+  const digit = await page.evaluate(({ i, bad }) => (bad ? (solution[i] % 9) + 1 : solution[i]), {
+    i: target,
+    bad: wrong,
+  });
+  await page
+    .locator('.key')
+    .nth(digit - 1)
+    .click();
+  return target;
+}
+
+test('a mistake buzzes, a correct digit does not, and the switch turns it off', async ({
+  page,
+}) => {
+  await stubVibrate(page);
+  await page.goto('./');
+  await startGame(page);
+
+  await playInto(page, false);
+  expect(await buzzes(page), 'a correct digit buzzed').toBe(0);
+
+  await playInto(page, true);
+  expect(await buzzes(page), 'a mistake did not buzz').toBe(1);
+  expect(await page.evaluate(() => window.buzzLog[0]), 'the knock is not the one chosen').toEqual([
+    40, 30, 40,
+  ]);
+
+  /* Off, and it stays off across a reload: a player who switched it off did not
+     mean only until the page was closed. */
+  await openRecord(page);
+  await expect(page.locator('#buzzRow')).toBeVisible();
+  await page.locator('#buzzToggle').uncheck();
+  await page.locator('#closeRecord').click();
+  /* The record opens over the difficulty picker, which is still up behind it and
+     holds the board inert until the game is resumed. */
+  await page.locator('#cancelNew').click();
+  await expect(page.locator('#startOverlay')).toBeHidden();
+
+  await playInto(page, true);
+  expect(await buzzes(page), 'it buzzed after being switched off').toBe(1);
+
+  await page.reload();
+  await expect(page.locator('#board .cell')).toHaveCount(81);
+  expect(
+    await page.evaluate(() => document.getElementById('buzzToggle').checked),
+    'the switch forgot it was off',
+  ).toBe(false);
+});
+
+/* Every iPhone, which is where the request came from. WebKit has never shipped
+   the Vibration API and Chrome on iOS is WebKit, so this is the common case. */
+test('a platform with no vibration is offered no switch and plays the same', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'vibrate', { configurable: true, value: undefined });
+  });
+  const noise = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') noise.push(m.text());
+  });
+  page.on('pageerror', (e) => noise.push(e.message));
+
+  await page.goto('./');
+  await startGame(page);
+  await playInto(page, true);
+
+  expect(await page.evaluate(() => mistakes), 'the move did not land').toBe(1);
+  await openRecord(page);
+  await expect(
+    page.locator('#buzzRow'),
+    'a switch was offered for hardware that is absent',
+  ).toBeHidden();
+  expect(noise).toEqual([]);
+});
+
 /* The pencil marks are painted into spans the label does not gather, so a cell
    carrying the player's own candidates announced itself as empty and nothing
    else. Lighthouse names it label-content-name-mismatch, at a weight of zero:
