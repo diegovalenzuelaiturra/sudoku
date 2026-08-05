@@ -527,7 +527,7 @@ async function newGame(key) {
        element, so a message set first was cleared before anyone could read it.
        Written into a region that has been in the accessibility tree the whole
        time, which is what makes it a change a screen reader announces. */
-    $('genStatus').textContent = 'No se pudo armar el tablero. Probá de nuevo.';
+    $('genStatus').textContent = 'No se pudo armar el tablero. Prueba de nuevo.';
     return;
   }
   /* Outside the try: a failure to lay out a board that did arrive is a bug in
@@ -1769,7 +1769,7 @@ document.querySelectorAll('.redeem').forEach((button) => {
       /* Announced, because the only signal otherwise is a word changing on a
          button the player is no longer looking at. */
       $('srStatus').textContent =
-        `Tocá de nuevo para canjear ${kind === 'choco' ? chocoTotal : friesTotal} ${word}.`;
+        `Toca de nuevo para canjear ${kind === 'choco' ? chocoTotal : friesTotal} ${word}.`;
       armTimer = setTimeout(disarmRedeem, 4000);
       return;
     }

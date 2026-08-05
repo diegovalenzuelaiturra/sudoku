@@ -423,7 +423,7 @@ test('a board that cannot be built at all says so instead of hanging', async ({ 
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
 
   await expect(page.locator('#genStatus')).toHaveText(
-    'No se pudo armar el tablero. Probá de nuevo.',
+    'No se pudo armar el tablero. Prueba de nuevo.',
   );
   await expect(page.locator('#startOverlay')).toBeVisible();
   /* And the buttons are handed back, so "probá de nuevo" is something the
