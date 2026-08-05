@@ -216,13 +216,18 @@ test('index.html links the manifest and registers the worker relatively', () => 
 /* The page is published as one file, so a script tag the build does not fold in
    would ship as a request for a file that is never published, and the game
    would simply not load. */
-test('index.html asks for app.js and the build inlines it', async () => {
+test('index.html asks for app.js and stats.js, and the build inlines both', async () => {
   assert.match(html, /<script src="app\.js"><\/script>/u, 'index.html no longer loads app.js');
+  assert.match(html, /<script src="stats\.js"><\/script>/u, 'index.html no longer loads stats.js');
 
   const { ALLOWLIST } = await import('../scripts/build.mjs');
   assert.ok(
     !ALLOWLIST.some((entry) => entry.path === 'app.js'),
     'app.js is inlined into the page, so publishing it as well ships the game twice',
+  );
+  assert.ok(
+    !ALLOWLIST.some((entry) => entry.path === 'stats.js'),
+    'stats.js is inlined into the page, so publishing it as well ships it twice',
   );
 });
 
@@ -233,6 +238,7 @@ test('no shipped file points at an absolute path or hardcodes the subdirectory',
     'index.html',
     '404.html',
     'app.js',
+    'stats.js',
     'sw.js',
     'manifest.webmanifest',
     'icons/icon.svg',

@@ -138,13 +138,15 @@ function collect(root) {
 
 /* Scripts folded into the page that asks for them rather than published on
    their own. app.js is the game, kept in its own file so the linters read it as
-   JavaScript instead of as text inside markup.
+   JavaScript instead of as text inside markup. stats.js is the statistics
+   engine, in its own file so node can require it and the coverage report can
+   see it.
 
    This runs before contentHash below, and has to: the hash covers what is
    published, so an app.js left out of it would change the game without changing
    the build id, and every returning visitor would be served the previous
    version out of the service worker cache. */
-const INLINED_SCRIPTS = new Set(['app.js']);
+const INLINED_SCRIPTS = new Set(['app.js', 'stats.js']);
 
 const SCRIPT_TAG = /[ \t]*<script\s+src="([^"]+)"\s*>\s*<\/script>/gu;
 

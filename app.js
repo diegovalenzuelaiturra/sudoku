@@ -138,6 +138,12 @@ const DIFF = {
    because this file is inline and that one has to run in a worker; the pair is
    pinned together by tests/generator.test.mjs. */
 const GRADE_WORDS = { 1: 'directas', 2: 'bloques', 3: 'pares', 4: 'avanzado' };
+/* Which difficulty row a measured grade belongs to. The statistics stratify on
+   the grade a board was measured at, and the only name a player has for a tier
+   is the label on the button that starts it. Derived from DIFF rather than
+   written out again. */
+const GRADE_KEYS = {};
+for (const key of Object.keys(DIFF)) GRADE_KEYS[DIFF[key].grade] = key;
 const $ = (id) => document.getElementById(id);
 const boardEl = $('board'),
   padEl = $('pad');
@@ -156,6 +162,14 @@ let notesMode = false,
   paused = false,
   solved = false,
   playing = false;
+/* A board is minutes of reading the screen without touching it, which the
+   display timeout counts as idle: the phone dims mid puzzle. The platform lock
+   costs battery, so it is held only while the clock actually runs. Safari
+   shipped this in 16.4 and the floor here is 15.4, so a missing
+   navigator.wakeLock is the ordinary case rather than a failure. */
+let wakeLock = null,
+  wakeLockWanted = false,
+  wakeLockPending = false;
 /* Which cells have had their answer shown. Counters stopped rewinding with the
    undo stack, which is right for a mistake but charged twice for one revealed
    digit: hint() leaves sel on the cell it filled and undo() does not restore
@@ -212,6 +226,23 @@ const STATS_KEY = 'sudoku:stats',
   STATS_VERSION = 1;
 let ledger = [],
   stats = null;
+/* Finished games, one row each, as a bounded ring. Raw rows rather than derived
+   averages: a best time only ever moves one way, so it cannot show a decline,
+   and a stored row lets a later build compute a number nobody has asked for yet
+   without a migration. Its own key rather than a STATS_VERSION bump, because
+   readStats() answers null on any version it does not know and the next
+   saveStats() would write a blank over every player's counters.
+
+   Follows the wallet rule, not the stats rule: bytes this build cannot read are
+   left where they are. A lost streak is not a lost prize, but a game that was
+   played cannot be played again. */
+const HISTORY_KEY = 'sudoku:history',
+  HISTORY_VERSION = 1;
+let games = [];
+/* Which difficulty had its best time beaten in this session, for the marker in
+   the record. Deliberately not persisted: it is celebration, and a reload has
+   nothing to celebrate. */
+let freshBest = '';
 
 /* ---- build DOM once ---- */
 const cells = [];
@@ -385,6 +416,50 @@ function setPaused(p) {
     startTimer();
     if (wasShown) $('pauseBtn').focus();
   }
+  syncWakeLock();
+}
+
+/* Idempotent, and the live flags are the only truth: setPaused is called
+   repeatedly with the same value, and the request below spans a task boundary
+   the player can pause, win or background the tab across. */
+function syncWakeLock() {
+  if (!navigator.wakeLock?.request) return;
+  wakeLockWanted = playing && !paused && !solved && !document.hidden;
+  if (!wakeLockWanted) {
+    const held = wakeLock;
+    wakeLock = null;
+    if (held) held.release().catch(() => {});
+    return;
+  }
+  if (wakeLock || wakeLockPending) return;
+  /* Flagged before the request goes out: pausing and resuming faster than one
+     round trip would otherwise ask twice and leak the first sentinel, which
+     nothing afterwards holds a reference to and so nothing can release. */
+  wakeLockPending = true;
+  navigator.wakeLock
+    .request('screen')
+    .then((sentinel) => {
+      wakeLockPending = false;
+      if (!wakeLockWanted) {
+        sentinel.release().catch(() => {});
+        return;
+      }
+      wakeLock = sentinel;
+      /* The platform revokes this on its own for low battery and power save,
+         and a released sentinel cannot be reused. Dropping the reference is
+         what lets the next call ask for a fresh one. */
+      sentinel.addEventListener('release', () => {
+        if (wakeLock === sentinel) wakeLock = null;
+      });
+    })
+    /* NotAllowedError is the only name this rejects with, and it covers a
+       hidden document, a blocking permissions policy and a battery the platform
+       will not spend: nothing a player can act on. Swallowed rather than logged,
+       because an unhandled rejection is a console error and the browser suite
+       fails the run on one. */
+    .catch(() => {
+      wakeLockPending = false;
+    });
 }
 
 /* ---- game flow ----
@@ -737,6 +812,10 @@ function paintWallet() {
    pays one chocolate, announced as "1 chocolate" and written down in the
    history as "+1 chocolates". */
 const chocoWord = (n) => `${n} chocolate${Math.abs(n) === 1 ? '' : 's'}`;
+/* A rate on the 0 to 1 scale as a whole percent. The nulls of an empty sample
+   reach here whenever a caller paints before checking, and a bare Math.round
+   turns one into the string "NaN" on the dialog. */
+const percent = (x) => `${Math.round((x || 0) * 100)}%`;
 /* One ledger line as a sentence. Words rather than the emoji the chips use:
    this is a history somebody reads, and an emoji is nothing at all to a screen
    reader without a label beside it. */
@@ -755,6 +834,49 @@ function describeEntry(e) {
   const what = bits.join(', ');
   if (e.k === 'redeem') return `${what} canjeadas`;
   return `${what}${e.d ? ` en ${DIFF[e.d].label}` : ''}`;
+}
+/* The mark on a best time set in this session. Two nodes, not one: the trophy
+   is decoration a screen reader is told nothing by, and the words beside it are
+   what carry the fact. */
+function bestMark() {
+  const mark = document.createDocumentFragment();
+  const glyph = document.createElement('span');
+  glyph.setAttribute('aria-hidden', 'true');
+  glyph.textContent = ' 🏆';
+  const said = document.createElement('span');
+  said.className = 'visually-hidden';
+  said.textContent = ' récord nuevo';
+  mark.append(glyph, said);
+  return mark;
+}
+/* One sentence for how the last level played is going. Improvement is stated
+   plainly and a slower run is context rather than a verdict: there is no
+   leaderboard here and a plateau is what a practice curve does.
+
+   The empty state says when the counting starts and never that the player has
+   no games. sudoku:stats survives this build and sudoku:history begins empty at
+   it, so the first player to open this dialog after the update reads it with
+   four rows of their own wins 16px above it. That is the same contradiction the
+   streak line shipped once, recorded in paintRecord below. */
+function progressLine(level, here, total) {
+  if (here === null)
+    return total === 0
+      ? 'La cuenta parte con la próxima partida que termines.'
+      : 'Ninguna partida guardada dice en qué nivel fue, así que todavía no hay cuentas.';
+  const need = SudokuStats.MIN_MEDIAN_N;
+  if (here.n < need) {
+    return here.n === 1
+      ? `En ${level} va 1 partida de ${need} para sacar cuentas.`
+      : `En ${level} van ${here.n} partidas de ${need} para sacar cuentas.`;
+  }
+  if (here.verdict === 'few')
+    return `En ${level} hay ${here.n} partidas. Pocas para decir si el ritmo cambió.`;
+  if (here.verdict === 'better') return `En ${level} los tiempos bajaron ${here.pct}%. Filete.`;
+  if (here.verdict === 'worse')
+    return `En ${level} los tiempos subieron ${here.pct}%. Nada grave, pasa.`;
+  if (here.verdict === 'layoff')
+    return `En ${level} pasaron ${here.layoffDays} días sin jugar, así que el ritmo todavía se acomoda.`;
+  return `En ${level} el ritmo se mantiene.`;
 }
 /* Everything the record dialog shows, rebuilt from `stats` and the wallet. Also
    called when another tab writes either, so the numbers behind a closed dialog
@@ -778,14 +900,16 @@ function paintRecord() {
        nothing has been won: the zero in the column beside it already says why.
        Driven by the win count, not by the time, so a win clocked at zero is
        still a time rather than a blank. */
-    for (const text of [
+    const columns = [
       DIFF[key].label,
       String(row.played),
       String(row.won),
       row.won ? fmt(row.best) : '',
-    ]) {
+    ];
+    for (let column = 0; column < columns.length; column++) {
       const td = document.createElement('td');
-      td.textContent = text;
+      td.textContent = columns[column];
+      if (column === 3 && row.won && key === freshBest) td.append(bestMark());
       tr.append(td);
     }
     rows.append(tr);
@@ -809,6 +933,37 @@ function paintRecord() {
   $('streakText').textContent = noGames
     ? 'Sin partidas todavía.'
     : `Racha de secas: ${stats.streak}. La mejor: ${stats.bestStreak}.`;
+
+  /* The trend, at the level the last measured board was actually graded at.
+     One level rather than four: the sentence is only true of one of them, and
+     four rows of medians and bands do not fit 292px of dialog. Times are never
+     pooled across difficulty, because a player improving inside every level
+     while drifting toward harder boards shows a rising pooled average.
+
+     Everything here is derived from storage anything on this origin can write,
+     so all of it goes through textContent into holes the markup owns. */
+  const view = SudokuStats.report(games);
+  const here = view.top ? view.grades[view.top] : null;
+  const level = view.top ? DIFF[GRADE_KEYS[view.top]].label : '';
+  const enough = here !== null && here.median !== null;
+  $('progressLede').textContent = progressLine(level, here, view.n);
+  $('progressSpread').hidden = !enough;
+  $('progressClean').hidden = !enough;
+  if (enough) {
+    $('progressMedian').textContent = fmt(here.median);
+    $('progressP25').textContent = fmt(here.p25);
+    $('progressP75').textContent = fmt(here.p75);
+    $('progressP90').textContent = fmt(here.p90);
+    $('progressCleanRate').textContent = percent(here.flawless.rate);
+    $('progressCleanLow').textContent = percent(here.flawless.low);
+    $('progressCleanHigh').textContent = percent(here.flawless.high);
+  }
+  $('progressOffer').hidden = view.offer === null;
+  if (view.offer) {
+    const next = DIFF[GRADE_KEYS[view.offer.to]];
+    $('progressOffer').textContent =
+      `Probá ${next.label}: paga ${next.fries} papas fritas, y ${chocoWord(next.choco)} si sale seca.`;
+  }
 
   $('purseFries').textContent = friesTotal;
   $('purseChoco').textContent = chocoTotal;
@@ -1017,6 +1172,79 @@ function recordWin(key, time, flawless) {
   return beat;
 }
 
+/* ---- the games themselves ----
+   One row per finished board, so a statistic can be worked out at read time
+   from what actually happened. The field names are one letter because a
+   hundred and twenty rows are stored at once. */
+function saveHistory() {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify({ v: HISTORY_VERSION, games }));
+  } catch {
+    /* as with the autosave: a history that cannot be written is not worth failing a win over */
+  }
+}
+/* The bytes under the key, or null when there are none and when storage itself
+   is gone. Separate from readHistory() so recordGame() can tell an empty key
+   from bytes this build refused, which is the difference between writing and
+   leaving them where they are. */
+function historyRaw() {
+  try {
+    return localStorage.getItem(HISTORY_KEY);
+  } catch {
+    return null;
+  }
+}
+/* The stored rows, or null when there is nothing readable and current under the
+   key. Refuses a version this build has never heard of and leaves those bytes
+   alone, which is the wallet's rule: a game that was played cannot be played
+   again. Every field is clamped inside SudokuStats.readRows, since all of it
+   comes back from storage the player can edit. */
+function readHistory(raw = historyRaw()) {
+  if (raw === null) return null;
+  let h;
+  try {
+    h = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!h || typeof h !== 'object' || h.v !== HISTORY_VERSION) return null;
+  return SudokuStats.readRows(h.games, Object.keys(DIFF));
+}
+/* Appends to the ring that is about to be written, oldest off the end. */
+function logGame(base, row) {
+  return base.concat([row]).slice(-SudokuStats.HISTORY_MAX);
+}
+/* Writes the finished board down against what is stored, for the reason
+   bankPrize() reads the wallet back before adding to it: the other tab's games
+   are in there and a blind write erases them. */
+function recordGame(time, mist, used) {
+  const raw = historyRaw();
+  const stored = readHistory(raw);
+  const base = stored || games;
+  games = logGame(base, {
+    t: Date.now(),
+    s: time,
+    m: mist,
+    h: used,
+    /* The grade the board was measured at, or 0 for a board this build never
+       measured: a game resumed from a save written before grading exists as a
+       game played, and filing it under the tier its difficulty asks for would
+       put a guess in the denominator the statistics stratify on. */
+    g: puzzleMeasured ? puzzleGrade : 0,
+    d: diffKey,
+  });
+  /* Written only when the key is empty or this build could read it, the rule
+     bankPrize() follows: bytes from a newer build the player still has cached
+     are left where they are, and this tab keeps its own ring in memory. */
+  if (stored || raw === null) saveHistory();
+}
+/* Reads the ring at boot. Nothing is migrated and nothing is written: an
+   unreadable key leaves this tab starting empty and leaves the bytes alone. */
+function loadHistory() {
+  const stored = readHistory();
+  if (stored) games = stored;
+}
+
 /* Reads the wallet at boot. Anything unreadable, corrupt or from a version
    this build does not know leaves both totals at zero rather than guessing. */
 function loadWallet() {
@@ -1180,19 +1408,16 @@ function win() {
   playing = false;
   clearSavedGame(); /* a finished game has nothing to resume into */
   clearInterval(tick);
+  /* setPaused returns early once solved is set, so the release cannot ride on
+     it: a lock left held here would keep the screen awake over the win overlay
+     for as long as the tab lives. */
+  syncWakeLock();
   sel = -1;
   render();
   $('stamp').classList.add('show');
   const flawless = mistakes === 0 && hints === 0;
   const earned = DIFF[diffKey].fries * (flawless ? 2 : 1);
   const chocoEarned = flawless ? DIFF[diffKey].choco : 0;
-  /* assertive: the win is the one event worth interrupting for, and the modal
-     it belongs to only appears after ~2s of animation. The prize goes in here
-     too: showOverlay() focuses the dialog's button, not the banner, so this is
-     the only announcement that reliably carries it. */
-  $('srAlert').textContent =
-    `Ganaste. ${fmt(seconds)}, ${mistakes === 1 ? '1 error' : `${mistakes} errores`}, ${hints === 1 ? '1 pista' : `${hints} pistas`}.` +
-    ` Te llevas ${earned} papas fritas${chocoEarned ? ` y ${chocoWord(chocoEarned)}` : ''}.`;
   const finalTime = seconds,
     finalMist = mistakes,
     finalHints = hints;
@@ -1206,6 +1431,17 @@ function win() {
      stole the message from every first flawless win, which is the rarer thing
      and the one worth saying. */
   const beatBest = recordWin(diffKey, finalTime, flawless);
+  recordGame(finalTime, finalMist, finalHints);
+  if (beatBest) freshBest = diffKey;
+  /* assertive: the win is the one event worth interrupting for, and the modal
+     it belongs to only appears after ~2s of animation. The prize goes in here
+     too: showOverlay() focuses the dialog's button, not the banner, so this is
+     the only announcement that reliably carries it. Written after recordWin,
+     which is the only place the personal best can be decided. */
+  $('srAlert').textContent =
+    `Ganaste. ${fmt(seconds)}, ${mistakes === 1 ? '1 error' : `${mistakes} errores`}, ${hints === 1 ? '1 pista' : `${hints} pistas`}.` +
+    ` Te llevas ${earned} papas fritas${chocoEarned ? ` y ${chocoWord(chocoEarned)}` : ''}.` +
+    (beatBest ? ` Tu mejor tiempo en ${DIFF[diffKey].label}.` : '');
   /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow = reduceMotion.matches ? 0 : 1;
   if (!reduceMotion.matches) {
@@ -1227,13 +1463,15 @@ function win() {
       $('wTime').textContent = fmt(finalTime);
       $('wMist').textContent = finalMist;
       $('wHint').textContent = finalHints;
-      $('winLede').textContent = beatBest
-        ? 'Tu mejor tiempo en este nivel.'
-        : flawless
-          ? 'La más seca: cero errores, cero pistas.'
-          : finalMist === 0
-            ? 'Sin errores. Filete.'
-            : 'Costó, pero salió igual.';
+      $('winLede').textContent = flawless
+        ? 'La más seca: cero errores, cero pistas.'
+        : finalMist === 0
+          ? 'Sin errores. Filete.'
+          : 'Costó, pero salió igual.';
+      /* Its own line rather than the lede, which the flawless message has a
+         better claim on: a first flawless win is rarer than a fast one. */
+      $('wBestLine').hidden = !beatBest;
+      if (beatBest) $('wBestLevel').textContent = DIFF[diffKey].label;
       /* What the board actually was, rather than what was asked for, and the seed
        that rebuilds it. Both are textContent: the code is a number in base 36
        and the technique comes from a fixed table, but neither has any business
@@ -1615,6 +1853,12 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) setPaused(true);
+  /* No re-acquire branch. Coming back does not resume the game, so asking
+     again here would hold the screen awake over a veiled board with a stopped
+     clock. The lock returns with the Seguir click, through setPaused. This
+     call is the release path for the case setPaused returns early on: hidden
+     after the board is won. */
+  syncWakeLock();
 });
 /* Another tab banked a prize while this one was open. Adopt its totals: ours
    are stale from here on, and the chips would otherwise keep showing a number
@@ -1629,6 +1873,16 @@ addEventListener('storage', (e) => {
     const s = readStats();
     if (s) {
       stats = s;
+      paintRecord();
+    }
+    return;
+  }
+  if (e.key === HISTORY_KEY) {
+    /* The other tab's finished games are this player's too. Nothing unreadable
+       is adopted: readHistory answers null and this tab keeps its own ring. */
+    const h = readHistory();
+    if (h) {
+      games = h;
       paintRecord();
     }
     return;
@@ -1653,6 +1907,7 @@ addEventListener('storage', (e) => {
    painted on both paths, the resumed game and the difficulty picker alike. */
 loadWallet();
 loadStats();
+loadHistory();
 paintWallet();
 paintRecord();
 /* loadGame() renders and unpauses itself when it restores something; only the

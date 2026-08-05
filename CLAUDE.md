@@ -9,11 +9,14 @@ enforced by a test or exists because breaking it shipped a bug.
 Four things reach the browser: `index.html`, `generator.js`, `sw.js` and
 `icons/`. `index.html` is the whole interface, with its styles inline.
 
-The game itself is `app.js`, which is not published. `index.html` loads it with
-`<script src="app.js">` and `scripts/build.mjs` folds it back into the page, so
-what ships is still one file. It lives apart so the linters read it as
-JavaScript rather than as text inside markup, which is where it used to be and
-where nothing checked it. Add another such file to `INLINED_SCRIPTS` in
+Two more files are loaded by `index.html` and published by neither name:
+`app.js`, which is the game, and `stats.js`, which is the arithmetic behind the
+progress block. `index.html` loads them with `<script src="app.js">` and
+`<script src="stats.js">`, and `scripts/build.mjs` folds both back into the
+page, so what ships is still one file. They live apart so the linters read them
+as JavaScript rather than as text inside markup, which is where `app.js` used to
+be and where nothing checked it, and so node can require `stats.js` and the
+coverage report can see it. Add another such file to `INLINED_SCRIPTS` in
 `scripts/build.mjs`, not to the allowlist: inlining runs before the content
 hash, so a script left out of it would change the game without changing the
 build id and every returning visitor would keep the cached copy.
@@ -94,12 +97,14 @@ Every board is a pure function of a 32 bit seed, so a puzzle can be rebuilt from
 the code shown at the end of a game, and the tests assert over fixed seeds
 rather than over whatever the last run produced.
 
-Three localStorage keys, each versioned: `sudoku:save`, `sudoku:wallet`,
-`sudoku:stats`. One rule holds across all of them. A reader that cannot make
-sense of what is stored leaves it alone rather than overwriting it, because the
-bytes probably belong to a newer build the player still has cached. The wallet
-is the strictest, since what is in it was earned: it reads its own version and
-the one before, refuses anything newer, and never writes over what it refused.
+Four localStorage keys, each versioned: `sudoku:save`, `sudoku:wallet`,
+`sudoku:stats` and `sudoku:history`. One rule holds across all of them. A reader
+that cannot make sense of what is stored leaves it alone rather than overwriting
+it, because the bytes probably belong to a newer build the player still has
+cached. The wallet is the strictest, since what is in it was earned: it reads
+its own version and the one before, refuses anything newer, and never writes
+over what it refused. `sudoku:history` follows the wallet, not the stats: it is
+the ring of finished games, and a game that was played cannot be played again.
 
 ## Tests
 

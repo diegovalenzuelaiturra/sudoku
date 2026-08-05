@@ -300,7 +300,7 @@
 
   /* ---------- the record ---------- */
   .record{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}
-  .record th{font-weight:600;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);padding-bottom:6px}
+  .record th,.modal .micro{font-weight:600;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);padding-bottom:6px}
   .record td{padding:5px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
   .record td:first-child{text-align:left;letter-spacing:.04em}
   .purse{display:grid;gap:8px;margin-bottom:14px}
@@ -317,6 +317,18 @@
   .ledger .chip{margin-right:10px;font-variant-numeric:tabular-nums;white-space:nowrap}
   .ledger li:first-child{border-top:none}
   .ledger time{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* ---------- how it is going ---------- */
+  /* Set tighter than .modal .code's own 14px rhythm, which is spacing for a
+     single line at the bottom of a dialog. The record already measured 532px
+     against a 420px window and the scrolling backdrop is what saves it. */
+  .progress{margin-bottom:16px}
+  .modal .progress p{margin:0 0 5px}
+  .modal .progress p:last-child{margin:0}
+  /* Indigo is this sheet's colour for the interactive and the chosen, which is
+     what an invitation to the next tier is. Vermilion stays with mistakes and
+     warnings. */
+  .progress .offer{color:var(--indigo)}
 
   /* ---------- prizes ---------- */
   /* Named for the mechanic rather than the glyph: papas fritas and chocolates
@@ -693,6 +705,15 @@
                     <div class="stat"><b id="wHint">0</b><i>Pistas</i></div>
                 </div>
                 <div class="frybanner" id="fryBanner">🍟</div>
+                <!-- Celebration, and it pays nothing. The flawless bonus is the paying
+                    axis and the code already clamps against farming it; a second one
+                    would need its own clamps and would be farmable by clearing the
+                    history. -->
+                <p
+                    class="code"
+                    id="wBestLine"
+                    hidden
+                ><span aria-hidden="true">🏆</span> Tu mejor tiempo en <b id="wBestLevel">Normal</b>.</p>
                 <!-- What the board really was and the seed that rebuilds it. The technique
                     is the honest difficulty, and the code is here so a board worth talking
                     about can be found again. -->
@@ -750,6 +771,36 @@
                     </thead>
                     <tbody id="recordRows"></tbody>
                 </table>
+                <!-- How the last level played is going. A best time only moves one way,
+                    so the record above it cannot show a decline: the median, the band
+                    around it and the flawless rate can. Nothing here is pooled across
+                    difficulty, and nothing is shown before there are games to show it
+                    from, which is why the first line is a sentence and the rest are
+                    hidden until they are true.
+
+                    The sentence below is the one every player who updates into this
+                    build reads first, with the table of their own wins right above it,
+                    so it says when the counting starts and never that they have not
+                    played. -->
+                <div class="progress" id="progressBox">
+                    <h3 class="micro">Cómo vas</h3>
+                    <p class="lede" id="progressLede">La cuenta parte con la próxima partida que termines.</p>
+                    <p
+                        class="code"
+                        id="progressSpread"
+                        hidden
+                    >Típico <b id="progressMedian">0:00</b>. La mayoría entre <b id="progressP25">0:00</b> y <b id="progressP75">0:00</b>, casi siempre bajo <b id="progressP90">0:00</b>.</p>
+                    <p
+                        class="code"
+                        id="progressClean"
+                        hidden
+                    >Secas <b id="progressCleanRate">0%</b>. A la larga, entre <b id="progressCleanLow">0%</b> y <b id="progressCleanHigh">0%</b>.</p>
+                    <p
+                        class="code offer"
+                        id="progressOffer"
+                        hidden
+                    ></p>
+                </div>
                 <div class="purse">
                     <div class="purseRow">
                         <span>🍟 <b id="purseFries">0</b> <span class="visually-hidden">papas fritas por canjear</span></span>
@@ -779,6 +830,7 @@
                 >Listo</button>
             </div>
         </div>
+        <script src="stats.js"></script>
         <script src="app.js"></script>
     </body>
 </html>
