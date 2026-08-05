@@ -92,15 +92,12 @@
 
   /* ---------- header ---------- */
   header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}
-  .brand{display:flex;align-items:center;gap:12px}
   .seal{
     width:42px;height:42px;flex:none;background:var(--vermilion);color:#F7F1E6;
     border-radius:7px;display:flex;align-items:center;justify-content:center;
     font-size:24px;line-height:1;transform:rotate(-4deg);
     box-shadow:inset 0 0 6px rgba(0,0,0,.18);user-select:none;
   }
-  .wordmark .title{font-family:var(--serif);font-size:21px;letter-spacing:.32em;font-weight:700}
-  .wordmark .sub{font-size:11px;color:var(--ink-soft);letter-spacing:.14em;margin-top:2px}
   .actions{display:flex;align-items:center;gap:10px}
   .time{font-family:var(--serif);font-size:20px;font-variant-numeric:tabular-nums;min-width:58px}
   /* 44px is the smallest target Apple's guidelines and WCAG 2.5.5 both accept,
@@ -455,16 +452,11 @@
     .key{padding:7px 0 5px;border-radius:8px}
     .key .d{font-size:22px}
     .key .c{font-size:9px}
-    /* The subtitle is decoration, and the row it sits in is competing with the
-       keypad for the same pixels. */
-    .wordmark .sub{display:none}
     .status{gap:10px;padding:6px 2px;margin-bottom:14px;font-size:12px}
-    /* The header carries three 44px buttons now instead of one 36px button, and
-       at 390 wide the wordmark and the clock together asked for 424 of the 370
-       there are. Everything here is the brand giving way to the controls: the
-       targets are the part that has to keep its size. */
-    .brand{gap:10px}
-    .wordmark .title{font-size:15px;letter-spacing:.12em}
+    /* The header carries four 44px buttons now instead of one 36px button, and
+       the targets are the part that is not allowed to shrink: the guidelines put
+       the floor at 44 and the whole reason the keypad was rebuilt was that 36 is
+       not enough to hit. */
     .actions{gap:5px}
     .time{font-size:18px;min-width:44px}
     header{margin-bottom:10px}
@@ -477,18 +469,11 @@
     .pad{margin-bottom:0}
     .tools{margin-bottom:10px}
   }
-  /* Four 44px buttons and the clock need 241px of a 355px header on the
-     narrowest phone this supports, and the wordmark asks for 100 of what is
-     left. The seal is the mark that carries the brand at this size, and the
-     targets are the part that is not allowed to shrink: the guidelines put the
-     floor at 44 and the whole reason the keypad was rebuilt was that 36 is not
-     enough to hit. So the word goes and the buttons keep their size. */
+  /* The status has to stay on one line at this width. Wrapped it is 59px instead
+     of 34, which is more than the column has left: the board is already on its
+     288px floor here, so the 25px would come off the end of the page as
+     scrolling instead. */
   @media (max-width:409px){
-    .wordmark{display:none}
-    /* And the status has to stay on one line here. Wrapped it is 59px instead of
-       34, which is more than the column has left: the board is already on its
-       288px floor at this size, so the 25px comes off the end of the page as
-       scrolling instead. */
     .status{font-size:11px;gap:7px;letter-spacing:0}
   }
 
@@ -537,17 +522,11 @@
         </svg>
         <div class="app">
             <header>
-                <!-- The clock reads from the left, where the seal used to be. The seal
-                    is still the mark this game is known by, on the icon, the start
-                    dialog and the win stamp; in the header it was taking room from the
-                    four targets on the other side. -->
-                <div class="brand">
-                    <div class="wordmark">
-                        <div class="title">SUDOKU</div>
-                        <div class="sub">数独, juego de números</div>
-                    </div>
-                    <div class="time" id="time">0:00</div>
-                </div>
+                <!-- The clock, and nothing else on this side. The name and the seal are
+                    on the icon, the start dialog and the win stamp, which is where a
+                    player meets them; a board in play does not need to be told what game
+                    it is, and the room they took belongs to the four targets opposite. -->
+                <div class="time" id="time">0:00</div>
                 <!-- Ordered by how easy each one should be to hit, least first. A thumb
                     holding a phone swings from the bottom corner on its own side, so the
                     hard end of a top row is the far side of the screen and the easy end

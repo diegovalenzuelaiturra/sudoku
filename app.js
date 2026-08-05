@@ -1041,6 +1041,20 @@ function setNotes(on) {
   padEl.classList.toggle('noting', on);
   showNotesHint();
 }
+/* The pencil marks a cell is carrying, as the tail of its label, or nothing.
+   Without this a cell announced itself as empty while showing the player their
+   own candidates: the marks are painted into spans the label does not gather,
+   so the one reader with nothing else to go on was told the cell held nothing.
+
+   Ascending, and joined the way the marks are read rather than the way a list
+   is punctuated: "notas 3, 6 y 9". */
+function noteList(set) {
+  if (set.size === 0) return '';
+  const marks = [];
+  for (let d = 1; d <= 9; d++) if (set.has(d)) marks.push(d);
+  if (marks.length === 1) return `, nota ${marks[0]}`;
+  return `, notas ${marks.slice(0, -1).join(', ')} y ${marks[marks.length - 1]}`;
+}
 /* Restarts the pop even if the chip is already mid-animation: removing the
    class is not enough on its own, the reflow between is what replays it. */
 function popChip(id) {
@@ -1764,7 +1778,9 @@ function render() {
       c = (i % 9) + 1;
     el.setAttribute(
       'aria-label',
-      `Fila ${r}, columna ${c}${v ? `, ${v}` : ', vacía'}${fixed[i] ? ', dada' : ''}`,
+      `Fila ${r}, columna ${c}${v ? `, ${v}` : ', vacía'}${fixed[i] ? ', dada' : ''}${
+        v ? '' : noteList(notes[i])
+      }`,
     );
   }
   for (let d = 1; d <= 9; d++) {

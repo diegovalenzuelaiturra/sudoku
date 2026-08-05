@@ -658,6 +658,43 @@ test('the costly button is out of the tool row and goes quiet while paused', asy
   await expect(page.locator('#hintBtn')).toHaveJSProperty('inert', false);
 });
 
+/* The pencil marks are painted into spans the label does not gather, so a cell
+   carrying the player's own candidates announced itself as empty and nothing
+   else. Lighthouse names it label-content-name-mismatch, at a weight of zero:
+   the score never moved, and the only reader it mattered to was the one with
+   nothing but the label to go on. */
+test('a cell reads out the pencil marks it is carrying', async ({ page }) => {
+  await startGame(page);
+
+  const label = (i) => page.locator('#board .cell').nth(i).getAttribute('aria-label');
+  const target = await page.evaluate(() => values.findIndex((v, i) => v === 0 && !fixed[i]));
+  const mark = (marks) =>
+    page.evaluate(
+      ({ i, set }) => {
+        notes[i] = new Set(set);
+        render();
+      },
+      { i: target, set: marks },
+    );
+
+  await mark([]);
+  expect(await label(target)).toMatch(/vacía$/u);
+  await mark([3]);
+  expect(await label(target), 'one mark is read as a list').toMatch(/vacía, nota 3$/u);
+  await mark([6, 3]);
+  expect(await label(target), 'the marks are not read in order').toMatch(/vacía, notas 3 y 6$/u);
+  await mark([9, 3, 6]);
+  expect(await label(target)).toMatch(/vacía, notas 3, 6 y 9$/u);
+
+  /* A cell holding an answer says the answer. Marks are cleared when a digit
+     lands, and a label that read them anyway would be quoting a stale set. */
+  await page.evaluate((i) => {
+    values[i] = solution[i];
+    render();
+  }, target);
+  expect(await label(target), 'a filled cell still reads out marks').not.toMatch(/nota/u);
+});
+
 /* Confirming what the notes already say. Placing a correct digit already deletes
    it from every peer's pencil marks, so the late game keeps leaving cells with
    one mark left. That mark is the answer, and typing it again is bookkeeping.
