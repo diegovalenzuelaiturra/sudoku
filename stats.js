@@ -118,6 +118,17 @@
      the prize, so a row and the payout it earned cannot disagree. */
   const isFlawless = (row) => row.m === 0 && row.h === 0;
 
+  /* How many of the most recent games in a row were flawless. Counts backwards
+     from the newest and stops at the first game that cost an error or a hint,
+     so it is the run the player is on right now and not their best ever. Read
+     over one grade's rows, which is what makes it something the lifetime streak
+     beside it does not already say: that one spans the whole ladder. */
+  function cleanRun(rows) {
+    let run = 0;
+    for (let i = rows.length - 1; i >= 0 && isFlawless(rows[i]); i--) run++;
+    return run;
+  }
+
   /* ---- quantiles ---- */
 
   /* unicorn/no-array-sort reports a sort on an expression, and toSorted is
@@ -310,6 +321,10 @@
       p75: pace.p75,
       p90: pace.p90,
       flawless,
+      /* Shown to the player. `flawless` above stays because the offer up the
+         ladder reads its lower bound, where a rate earned over many games is
+         the right test and a run of three is not. */
+      run: cleanRun(rowsAtGrade),
       verdict: layoff && call.verdict === 'worse' ? 'layoff' : call.verdict,
       ratio: call.ratio,
       pct: Math.round(Math.abs(1 - call.ratio) * 100),
@@ -396,6 +411,7 @@
     readRow,
     readRows,
     isFlawless,
+    cleanRun,
     quantile,
     summarize,
     wilson,

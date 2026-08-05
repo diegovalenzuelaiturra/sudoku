@@ -372,7 +372,7 @@ test('a personal best reaches the dialog, the announcement and the record', () =
   );
   assert.match(
     win,
-    /\(beatBest \? ` Tu mejor tiempo en \$\{DIFF\[diffKey\]\.label\}\.` : ''\);/u,
+    /\(beatBest \? ' ¡Nuevo récord!' : ''\);/u,
     'the assertive announcement drops the personal best, and it is the only announcement that reliably carries anything: showOverlay() focuses the button, not the banner',
   );
   assert.match(
@@ -414,8 +414,21 @@ test('the personal best line is in the markup, hidden until it is true', () => {
   );
   assert.match(
     html,
-    /hidden\s*><span aria-hidden="true">🏆<\/span> Tu mejor tiempo en <b id="wBestLevel">/u,
-    'the line lost its aria-hidden trophy or the hole app.js writes the level into',
+    /hidden\s*><span aria-hidden="true">🏆<\/span> <b>¡Nuevo récord!<\/b><\/p>/u,
+    'the personal best line lost its aria-hidden trophy or its words',
+  );
+  /* One glyph, one meaning. The trophy is the best time; the streak beside the
+     record title is a medal. They were both trophies, in one dialog, saying two
+     different things. */
+  assert.match(
+    html,
+    /🔥 <b id="streakNow">0<\/b> 🥇 <b id="streakBest">0<\/b>/u,
+    'the best streak is a trophy again, which is the glyph the best time already uses',
+  );
+  assert.doesNotMatch(
+    body('bestMark'),
+    /🥇/u,
+    'the best time marker took the streak glyph, so the two are indistinguishable again',
   );
 });
 

@@ -492,6 +492,33 @@ test('flawless is the same test that pays the bonus', () => {
   assert.equal(S.isFlawless({ m: 3, h: 2 }), false);
 });
 
+/* The run the player is on, counted back from the newest game. Not their best
+   run ever: that would never fall, and a number that only rises says nothing
+   about the games being played now. */
+test('the clean run counts back from the last game and stops at the first blemish', () => {
+  const clean = (m = 0, h = 0) => ({ m, h });
+  assert.equal(S.cleanRun([]), 0, 'an empty history is a run of none');
+  assert.equal(S.cleanRun([clean(1)]), 0, 'the only game cost an error');
+  assert.equal(S.cleanRun([clean()]), 1);
+  assert.equal(
+    S.cleanRun([clean(), clean(), clean(1)]),
+    0,
+    'two clean games before a blemished one are not a run: the run ended with the last game',
+  );
+  assert.equal(
+    S.cleanRun([clean(1), clean(), clean()]),
+    2,
+    'the error at the start is behind the run and does not shorten it',
+  );
+  assert.equal(
+    S.cleanRun([clean(), clean(0, 1), clean(), clean()]),
+    2,
+    'a hint breaks the run exactly as an error does, because it is the same gate the bonus reads',
+  );
+  const all = Array.from({ length: 16 }, () => clean());
+  assert.equal(S.cleanRun(all), 16, 'a whole history of clean games is one whole run');
+});
+
 test('the empty report throws nothing, because it paints before the save loads', () => {
   const empty = S.gradeReport([]);
   assert.equal(empty.n, 0);

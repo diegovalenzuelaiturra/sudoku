@@ -236,12 +236,11 @@ test('a seeded history tells the player which way the times are going', async ({
   const problems = await boot(page);
   await openRecord(page);
 
-  /* The level the last measured board was graded at, and the direction, stated
-     plainly. Times are never pooled across difficulty, so the sentence names
-     one level rather than averaging four. */
-  await expect(page.locator('#progressLede')).toHaveText(
-    'En Normal los tiempos bajaron 48%. Filete.',
-  );
+  /* The level the last measured board was graded at names the block once, in
+     the heading. Times are never pooled across difficulty, so it is one level
+     rather than four averaged, and the sentence under it is about the player. */
+  await expect(page.locator('#progressLevel')).toHaveText('Normal');
+  await expect(page.locator('#progressLede')).toHaveText('Vas 48% más rápido.');
 
   await expect(page.locator('#progressSpread')).toBeVisible();
   await expect(page.locator('#progressMedian'), 'the headline is not the median').toHaveText(
@@ -254,14 +253,10 @@ test('a seeded history tells the player which way the times are going', async ({
     'Típico 8:03. La mayoría entre 6:31 y 9:09, casi siempre bajo 9:43.',
   );
 
-  /* The flawless rate with its Wilson interval. Three of twelve is a rate of 25
-     percent that six more games could move a long way, and the interval is what
-     says so. */
-  await expect(page.locator('#progressClean')).toBeVisible();
-  await expect(page.locator('#progressCleanRate')).toHaveText('25%');
-  await expect(page.locator('#progressCleanLow')).toHaveText('9%');
-  await expect(page.locator('#progressCleanHigh')).toHaveText('53%');
-  await expect(page.locator('#progressClean')).toHaveText('Secas 25%. A la larga, entre 9% y 53%.');
+  /* The last of these twelve games cost an error, so the run of clean games is
+     zero and the line is absent. A run of none is not a sentence worth writing
+     to somebody who just made a mistake. */
+  await expect(page.locator('#progressClean')).toBeHidden();
 
   /* Nothing in the block is an emoji standing in for a word, so nothing in it
      is aria-hidden: one here would take the whole sentence away from the only
@@ -294,9 +289,11 @@ test('the progress sentences are what a screen reader is handed', async ({ page,
      survives being broken up: a screen reader gets one line, not four fragments
      and a percentage. */
   const spoken = await spokenText(cdp);
-  expect(spoken).toContain('En Normal los tiempos bajaron 48%. Filete.');
+  /* Uppercased, because .micro transforms it the way the table headings above it
+     are transformed. The level is in the heading and in no sentence under it. */
+  expect(spoken).toContain('CÓMO VAS EN NORMAL');
+  expect(spoken).toContain('Vas 48% más rápido.');
   expect(spoken).toContain('Típico 8:03. La mayoría entre 6:31 y 9:09, casi siempre bajo 9:43.');
-  expect(spoken).toContain('Secas 25%. A la larga, entre 9% y 53%.');
   expect(problems).toEqual([]);
 });
 
@@ -364,16 +361,22 @@ test('a level that has stopped moving is offered the next one', async ({ page })
   const problems = await boot(page);
   await openRecord(page);
 
-  await expect(page.locator('#progressLede')).toHaveText('En Normal el ritmo se mantiene.');
+  await expect(page.locator('#progressLevel')).toHaveText('Normal');
+  await expect(page.locator('#progressLede')).toHaveText('Vas parejo.');
+  /* All sixteen were clean and they are the sixteen most recent, so the run is
+     the whole fixture. A count, because a run of games is something a player can
+     picture; the rate and its interval still decide the offer below, where a
+     lucky three in a row must not be enough. */
+  await expect(page.locator('#progressClean')).toHaveText(
+    'Llevas 16 partidas seguidas sin errores ni pistas.',
+  );
   /* Flat, at one level, with a flawless rate whose lower bound has saturated:
-     that is the cue to invite the player up the ladder. The invitation names the
-     level and stops there. Quoting the payout put the tier's rate in the one
-     place the interface states one, where it has to stay correct against the
-     flawless bonus forever, to sell something the line above it already earned. */
+     that is the cue to invite the player up the ladder. The level it leaves is
+     the one already in the heading, so only the one being offered is named. */
   await expect(page.locator('#progressOffer')).toBeVisible();
-  await expect(page.locator('#progressOffer')).toHaveText(`Prueba con ${PELUDO.label}.`);
-  await expect(page.locator('#progressCleanRate')).toHaveText('100%');
-  await expect(page.locator('#progressCleanLow')).toHaveText('81%');
+  await expect(page.locator('#progressOffer')).toHaveText(
+    `Ya te queda chico. Prueba con ${PELUDO.label}.`,
+  );
   expect(problems).toEqual([]);
 });
 
@@ -419,15 +422,14 @@ test('a personal best is announced and shown, and only when there was one to bea
   await winAt(page, 300);
   await expect(page.locator('#winOverlay')).toBeVisible();
   await expect(page.locator('#wBestLine'), 'a first win was called a personal best').toBeHidden();
-  expect(await page.locator('#srAlert').textContent()).not.toContain('Tu mejor tiempo');
+  expect(await page.locator('#srAlert').textContent()).not.toContain('récord');
 
   /* Faster than the first, which is the only thing that counts as one. */
   await page.locator('#againBtn').click();
   await startGame(page, 'medium');
   await winAt(page, 100);
   await expect(page.locator('#winOverlay')).toBeVisible();
-  await expect(page.locator('#wBestLine')).toBeVisible();
-  await expect(page.locator('#wBestLevel')).toHaveText('Normal');
+  await expect(page.locator('#wBestLine')).toHaveText('🏆 ¡Nuevo récord!');
   /* The flawless message keeps the lede: a first flawless win is rarer than a
      fast one, so the best time gets its own line rather than displacing it. */
   await expect(page.locator('#winLede')).toHaveText('La más seca: cero errores, cero pistas.');
@@ -436,7 +438,7 @@ test('a personal best is announced and shown, and only when there was one to bea
      screen reader: showOverlay focuses the dialog's button, not the banner. */
   const announced = await page.locator('#srAlert').textContent();
   expect(announced).toMatch(/^Ganaste\./u);
-  expect(announced.endsWith(' Tu mejor tiempo en Normal.'), announced).toBe(true);
+  expect(announced.endsWith(' ¡Nuevo récord!'), announced).toBe(true);
 
   /* Marked in the record too, on the difficulty it was set at. Two nodes: the
      trophy is decoration a screen reader is told nothing by, and the words
@@ -459,7 +461,7 @@ test('a personal best is announced and shown, and only when there was one to bea
   await winAt(page, 500);
   await expect(page.locator('#winOverlay')).toBeVisible();
   await expect(page.locator('#wBestLine'), 'a slower win was called a personal best').toBeHidden();
-  expect(await page.locator('#srAlert').textContent()).not.toContain('Tu mejor tiempo');
+  expect(await page.locator('#srAlert').textContent()).not.toContain('récord');
   expect(problems).toEqual([]);
 });
 

@@ -713,7 +713,7 @@
                     class="code"
                     id="wBestLine"
                     hidden
-                ><span aria-hidden="true">🏆</span> Tu mejor tiempo en <b id="wBestLevel">Normal</b>.</p>
+                ><span aria-hidden="true">🏆</span> <b>¡Nuevo récord!</b></p>
                 <!-- What the board really was and the seed that rebuilds it. The technique
                     is the honest difficulty, and the code is here so a board worth talking
                     about can be found again. -->
@@ -756,7 +756,7 @@
                         id="streakCounts"
                         aria-hidden="true"
                         hidden
-                    >🔥 <b id="streakNow">0</b> 🏆 <b id="streakBest">0</b></span><span
+                    >🔥 <b id="streakNow">0</b> 🥇 <b id="streakBest">0</b></span><span
                         id="streakText"
                     >Sin partidas todavía.</span>
                 </p>
@@ -773,8 +773,12 @@
                 </table>
                 <!-- How the last level played is going. A best time only moves one way,
                     so the record above it cannot show a decline: the median, the band
-                    around it and the flawless rate can. Nothing here is pooled across
-                    difficulty.
+                    around it and the run of clean games can. Nothing here is pooled
+                    across difficulty.
+
+                    The heading is the only place the level is named. Every line under
+                    it is addressed to the player, so three sentences no longer open
+                    with the same two words.
 
                     The whole block starts hidden and stays hidden until a level has
                     games enough to answer. A line counting up to the games it needs is
@@ -785,10 +789,10 @@
                     id="progressBox"
                     hidden
                 >
-                    <h3 class="micro">Cómo vas</h3>
+                    <h3 class="micro">Cómo vas en <span id="progressLevel">Normal</span></h3>
                     <p class="lede" id="progressLede"></p>
                     <p class="code" id="progressSpread">Típico <b id="progressMedian">0:00</b>. La mayoría entre <b id="progressP25">0:00</b> y <b id="progressP75">0:00</b>, casi siempre bajo <b id="progressP90">0:00</b>.</p>
-                    <p class="code" id="progressClean">Secas <b id="progressCleanRate">0%</b>. A la larga, entre <b id="progressCleanLow">0%</b> y <b id="progressCleanHigh">0%</b>.</p>
+                    <p class="code" id="progressClean"></p>
                     <p
                         class="code offer"
                         id="progressOffer"

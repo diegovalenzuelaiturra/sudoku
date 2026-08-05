@@ -823,10 +823,6 @@ function paintWallet() {
    pays one chocolate, announced as "1 chocolate" and written down in the
    history as "+1 chocolates". */
 const chocoWord = (n) => `${n} chocolate${Math.abs(n) === 1 ? '' : 's'}`;
-/* A rate on the 0 to 1 scale as a whole percent. The nulls of an empty sample
-   reach here whenever a caller paints before checking, and a bare Math.round
-   turns one into the string "NaN" on the dialog. */
-const percent = (x) => `${Math.round((x || 0) * 100)}%`;
 /* One ledger line as a sentence. Words rather than the emoji the chips use:
    this is a history somebody reads, and an emoji is nothing at all to a screen
    reader without a label beside it. */
@@ -860,23 +856,34 @@ function bestMark() {
   mark.append(glyph, said);
   return mark;
 }
-/* One sentence for how the last level played is going. Improvement is stated
-   plainly and a slower run is context rather than a verdict: there is no
-   leaderboard here and a plateau is what a practice curve does.
+/* One sentence for how the last level played is going, addressed to the player
+   and never naming the level: the heading over the block names it once, and
+   repeating it in every line made three sentences that all opened the same way.
+
+   Improvement is stated plainly and carries its number. A slower run carries no
+   number at all, which is not a rounding of the truth but a choice about which
+   of the two is a verdict: there is no leaderboard here, a plateau is what a
+   practice curve does, and the largest figure in the interface should not be
+   the one attached to the only bad news.
 
    Only ever called with a level that has games enough to answer. A block that
    counts up to the games it needs is bookkeeping about itself and says nothing
    about the player, so paintRecord hides the whole thing until there is a
    number in it. */
-function progressLine(level, here) {
-  if (here.verdict === 'few')
-    return `En ${level} hay ${here.n} partidas. Pocas para decir si el ritmo cambió.`;
-  if (here.verdict === 'better') return `En ${level} los tiempos bajaron ${here.pct}%. Filete.`;
-  if (here.verdict === 'worse')
-    return `En ${level} los tiempos subieron ${here.pct}%. Nada grave, pasa.`;
+function progressLine(here) {
+  if (here.verdict === 'few') return 'Todavía no se nota si el ritmo cambió.';
+  if (here.verdict === 'better') return `Vas ${here.pct}% más rápido.`;
+  if (here.verdict === 'worse') return 'Vas más lento que antes. Nada grave, pasa.';
   if (here.verdict === 'layoff')
-    return `En ${level} pasaron ${here.layoffDays} días sin jugar, así que el ritmo todavía se acomoda.`;
-  return `En ${level} el ritmo se mantiene.`;
+    return `Volviste después de ${here.layoffDays} días. El ritmo se acomoda solo.`;
+  return 'Vas parejo.';
+}
+/* The run of flawless games at this level, or nothing. Zero is not a sentence
+   worth writing: a player who just made one mistake does not need to be told
+   they are on a run of none. */
+function cleanRunLine(run) {
+  if (run === 1) return 'La última te salió sin errores ni pistas.';
+  return `Llevas ${run} partidas seguidas sin errores ni pistas.`;
 }
 /* Everything the record dialog shows, rebuilt from `stats` and the wallet. Also
    called when another tab writes either, so the numbers behind a closed dialog
@@ -951,21 +958,25 @@ function paintRecord() {
   const enough = here !== null && here.median !== null;
   $('progressBox').hidden = !enough;
   if (enough) {
-    $('progressLede').textContent = progressLine(DIFF[GRADE_KEYS[view.top]].label, here);
+    /* The one place the level is named. Every sentence under it is written to
+       the player instead, so the block reads as one thought about one level. */
+    $('progressLevel').textContent = DIFF[GRADE_KEYS[view.top]].label;
+    $('progressLede').textContent = progressLine(here);
     $('progressMedian').textContent = fmt(here.median);
     $('progressP25').textContent = fmt(here.p25);
     $('progressP75').textContent = fmt(here.p75);
     $('progressP90').textContent = fmt(here.p90);
-    $('progressCleanRate').textContent = percent(here.flawless.rate);
-    $('progressCleanLow').textContent = percent(here.flawless.low);
-    $('progressCleanHigh').textContent = percent(here.flawless.high);
+    $('progressClean').hidden = here.run === 0;
+    if (here.run > 0) $('progressClean').textContent = cleanRunLine(here.run);
   }
   /* Nested inside the offer's own gate rather than the block's: the invitation
      needs twelve games at a level and the block needs five, so an offer without
-     a block around it cannot happen. */
+     a block around it cannot happen. The level it leaves behind is the one in
+     the heading, so only the one being offered is named. */
   $('progressOffer').hidden = view.offer === null;
   if (view.offer) {
-    $('progressOffer').textContent = `Prueba con ${DIFF[GRADE_KEYS[view.offer.to]].label}.`;
+    $('progressOffer').textContent =
+      `Ya te queda chico. Prueba con ${DIFF[GRADE_KEYS[view.offer.to]].label}.`;
   }
 
   $('purseFries').textContent = friesTotal;
@@ -1444,7 +1455,7 @@ function win() {
   $('srAlert').textContent =
     `Ganaste. ${fmt(seconds)}, ${mistakes === 1 ? '1 error' : `${mistakes} errores`}, ${hints === 1 ? '1 pista' : `${hints} pistas`}.` +
     ` Te llevas ${earned} papas fritas${chocoEarned ? ` y ${chocoWord(chocoEarned)}` : ''}.` +
-    (beatBest ? ` Tu mejor tiempo en ${DIFF[diffKey].label}.` : '');
+    (beatBest ? ' ¡Nuevo récord!' : '');
   /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow = reduceMotion.matches ? 0 : 1;
   if (!reduceMotion.matches) {
@@ -1474,7 +1485,6 @@ function win() {
       /* Its own line rather than the lede, which the flawless message has a
          better claim on: a first flawless win is rarer than a fast one. */
       $('wBestLine').hidden = !beatBest;
-      if (beatBest) $('wBestLevel').textContent = DIFF[diffKey].label;
       /* What the board actually was, rather than what was asked for, and the seed
        that rebuilds it. Both are textContent: the code is a number in base 36
        and the technique comes from a fixed table, but neither has any business
