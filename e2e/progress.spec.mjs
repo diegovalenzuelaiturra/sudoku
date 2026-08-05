@@ -476,36 +476,46 @@ test('a personal best is announced and shown, and only when there was one to bea
    flawless, so the run only ever grows: the first takes the best from nothing to
    one, which is a record against nothing and is not announced, and the second is
    the first that beats a run the player had actually put together. */
-test('a best streak is its own record, with its own glyph, and the first one is not one', async ({
+test('a best streak is announced on the third and then every fifth, not on every win', async ({
   page,
 }) => {
   const problems = await boot(page);
+  const streakLine = page.locator('#wStreakLine');
+  /* Each win slower than the one before, so the clock sets nothing after the
+     first and the streak is the only record any of them can take. */
+  const again = async (time) => {
+    await page.locator('#againBtn').click();
+    await startGame(page, 'medium');
+    await winAt(page, time);
+    await expect(page.locator('#winOverlay')).toBeVisible();
+  };
 
   await startGame(page, 'medium');
   await winAt(page, 100);
   await expect(page.locator('#winOverlay')).toBeVisible();
-  await expect(
-    page.locator('#wStreakLine'),
-    'the first flawless win of all was called a best streak',
-  ).toBeHidden();
+  await expect(streakLine, 'the first flawless win of all was called a best streak').toBeHidden();
 
-  /* Slower than the first, so the clock sets nothing and the streak is the only
-     record on the board: the two are decided apart and shown apart. */
-  await page.locator('#againBtn').click();
-  await startGame(page, 'medium');
-  await winAt(page, 500);
-  await expect(page.locator('#winOverlay')).toBeVisible();
+  await again(500);
+  await expect(streakLine, 'a run of two was announced').toBeHidden();
+
+  await again(600);
   await expect(page.locator('#wBestLine'), 'a slower win set a time record').toBeHidden();
-  await expect(page.locator('#wStreakLine')).toHaveText('🥇 ¡Tu mejor racha: 2 secas seguidas!');
-
+  await expect(streakLine).toHaveText('🥇 ¡Tu mejor racha: 3 secas seguidas!');
   const announced = await page.locator('#srAlert').textContent();
-  expect(announced).toContain(' ¡Tu mejor racha: 2 secas seguidas!');
+  expect(announced).toContain(' ¡Tu mejor racha: 3 secas seguidas!');
   expect(announced, 'the clock claimed a record it did not set').not.toContain('récord de tiempo');
 
-  /* And the record agrees with the dialog that just announced it. */
+  /* The fourth extends the best streak and says nothing about it. */
+  await again(700);
+  await expect(streakLine, 'the fourth in a row was announced').toBeHidden();
+
+  await again(800);
+  await expect(streakLine).toHaveText('🥇 ¡Tu mejor racha: 5 secas seguidas!');
+
+  /* And the record counted every one of them, announced or not. */
   await page.locator('#againBtn').click();
   await openRecord(page);
-  await expect(page.locator('#streakCounts')).toHaveText('🔥 2 🥇 2');
+  await expect(page.locator('#streakCounts')).toHaveText('🔥 5 🥇 5');
   expect(problems).toEqual([]);
 });
 

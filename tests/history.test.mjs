@@ -319,8 +319,16 @@ test('the personal best is the answer recordWin gave, and a first win is not one
   );
   assert.match(
     record,
-    /return \{ time: beat, streak: held > 0 && stats\.bestStreak > held \};/u,
+    /streak: held > 0 && stats\.bestStreak > held && streakMilestone\(stats\.streak\),/u,
     'recordWin() no longer answers both records, and neither comparison can be made anywhere else: both have to be read before the counts move',
+  );
+  /* Once a player is on their longest run ever, every game after it breaks the
+     record again. Announcing each one rained nine times over ten wins and made
+     the rarest celebration in the game the most frequent. */
+  assert.match(
+    source,
+    /const streakMilestone = \(run\) => run === 3 \|\| \(run >= 5 && run % 5 === 0\);/u,
+    'every extension of a best streak is announced again, which is a shower on nearly every flawless win',
   );
   /* The same rule the best time follows, for the same reason. The first flawless
      win of all takes the best streak from 0 to 1, which is a record against

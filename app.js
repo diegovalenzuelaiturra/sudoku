@@ -1146,6 +1146,13 @@ function recordPlayed(key) {
 /* The streak counts flawless wins in a row. A plain win streak would say
    nothing here: there is no way to lose, so every game that ends, ends in a
    win, and the streak would just be the number of wins over again. */
+/* Which runs are worth interrupting a win for. Once a player is on their
+   longest run ever, every game after it extends the record again, so a shower
+   on each one turns the rarest celebration in the game into the most frequent:
+   ten in a row rained nine times. The third is the first run worth the name,
+   and after that every fifth. The best streak itself still moves on every one
+   of them, and the record dialog shows it; this decides only what is announced. */
+const streakMilestone = (run) => run === 3 || (run >= 5 && run % 5 === 0);
 /* Returns the two records this win could have broken, which is the only place
    either comparison can be made safely: done outside, both have to run before
    this function moves the counts, and moving the call one line later silently
@@ -1170,7 +1177,10 @@ function recordWin(key, time, flawless) {
   stats.streak = flawless ? stats.streak + 1 : 0;
   if (stats.streak > stats.bestStreak) stats.bestStreak = stats.streak;
   saveStats();
-  return { time: beat, streak: held > 0 && stats.bestStreak > held };
+  return {
+    time: beat,
+    streak: held > 0 && stats.bestStreak > held && streakMilestone(stats.streak),
+  };
 }
 
 /* ---- the games themselves ----
