@@ -411,6 +411,10 @@ function setPaused(p) {
      time rather than by their container, which also holds the resume button. */
   $('newBtn').inert = p;
   $('hintBtn').inert = p;
+  /* render() is what decides whether this one is offered at all, and pausing
+     does not render: without this it would keep whatever it was showing over a
+     board nobody can see. */
+  $('settleBtn').inert = p;
   if (p) {
     clearInterval(tick);
     saveGame();
@@ -1608,7 +1612,10 @@ function undo() {
      render() rather than written to the element: written directly it overwrote
      the count render() had just announced, after srLast had already recorded it
      as said, so that crossing was lost for good. */
-  srAction = 'Deshecho.';
+  /* No full stop on any of these: the announcement below joins its parts with
+     ". " and closes with one, so a part that punctuates itself is read out with
+     two. */
+  srAction = 'Deshecho';
   render();
   saveGame();
 }
@@ -1621,6 +1628,61 @@ function undo() {
    Deterministic on ties, lowest index first, for the reason the seeds exist:
    the same board in the same state gives the same hint, so a test can assert it
    and a player can be told what happened. Returns -1 when the board is done. */
+/* ---- confirming what the notes already say ----
+   Placing a correct digit already deletes it from every peer's pencil marks, so
+   late in a game the board keeps leaving cells with one mark left. That mark is
+   the answer, the player worked it out, and it is written in the cell: typing it
+   again is bookkeeping, not deduction. This is the same operation in reverse.
+
+   Two conditions, both required. The player's marks are down to one, which is
+   them saying they have finished narrowing that cell. And the board agrees that
+   only that digit still fits, which is what makes the answer provable rather
+   than trusted: a mark that says less than the board says is either a cleverer
+   deduction or a mistake, and nothing here can tell those apart without reading
+   the solution, which would be a hint. So it declines both. */
+function openDigits(i) {
+  const taken = new Set();
+  for (const p of PEERS[i]) if (values[p]) taken.add(values[p]);
+  const open = [];
+  for (let d = 1; d <= 9; d++) if (!taken.has(d)) open.push(d);
+  return open;
+}
+/* Every cell this would fill, as [index, digit]. Empty while a wrong digit is on
+   the board: the candidate arithmetic above counts whatever is placed, so one
+   wrong digit can leave a cell with a single option that is not the answer, and
+   this would then write it in and charge for it. Wrong digits are painted in
+   vermilion from the moment they land, so refusing to work around one tells the
+   player nothing they cannot already see. */
+function settledCells() {
+  if (!values.every((v, i) => v === 0 || v === solution[i])) return [];
+  const found = [];
+  for (let i = 0; i < 81; i++) {
+    if (values[i] !== 0 || fixed[i] || notes[i].size !== 1) continue;
+    const open = openDigits(i);
+    const [only] = notes[i];
+    if (open.length === 1 && open[0] === only) found.push([i, only]);
+  }
+  return found;
+}
+/* One snapshot for the whole batch, so one Deshacer takes back the press rather
+   than one cell of it. Nothing is counted against the player: every digit was
+   already on screen in their own hand, so there is no error to make and nothing
+   for the hint counter to record. */
+function settleSingles() {
+  if (!playing || paused) return;
+  const found = settledCells();
+  if (found.length === 0) return;
+  snapshot();
+  for (const [i, d] of found) {
+    values[i] = d;
+    notes[i].clear();
+    for (const p of PEERS[i]) notes[p].delete(d);
+  }
+  srAction = found.length === 1 ? 'Confirmada 1 casilla' : `Confirmadas ${found.length} casillas`;
+  render();
+  saveGame();
+  if (values.every((v, i) => v === solution[i])) win();
+}
 function easiestOpen() {
   let best = -1;
   let fewest = 10;
@@ -1652,7 +1714,7 @@ function hint() {
   if (i < 0) {
     i = easiestOpen();
     if (i < 0) return;
-    srAction = fixed[sel] ? 'Esa casilla ya viene dada, pista en otra.' : 'Pista en otra casilla.';
+    srAction = fixed[sel] ? 'Esa casilla ya viene dada, pista en otra' : 'Pista en otra casilla';
   }
   snapshot();
   values[i] = solution[i];
@@ -1712,6 +1774,21 @@ function render() {
   $('mistakes').textContent = mistakes;
   $('hints').textContent = hints;
   $('remaining').innerHTML = `<b>${left}</b> por llenar`;
+  /* Visible only while it has work. Its box is held either way, so the clock and
+     the three permanent buttons beside it do not move when it arrives. The count
+     is the whole point of showing it: the player sees how many cells the press
+     will fill before pressing it. */
+  const settled = playing && !paused ? settledCells().length : 0;
+  $('settleBtn').classList.toggle('idle', settled === 0);
+  if (settled > 0) {
+    $('settleCount').textContent = settled;
+    $('settleBtn').setAttribute(
+      'aria-label',
+      settled === 1
+        ? 'Confirmar 1 casilla que ya tiene una sola nota'
+        : `Confirmar ${settled} casillas que ya tienen una sola nota`,
+    );
+  }
   /* Screen-reader announcements: polite, batched, and gated to actual play
      so neither the boot screen nor a paused/finished board can speak.
      Mistakes and hints announce on every change (they're rare and meaningful);
@@ -1777,6 +1854,7 @@ for (const id of ['penBtn', 'notesBtn']) {
   });
 }
 $('eraseBtn').addEventListener('click', erase);
+$('settleBtn').addEventListener('click', settleSingles);
 $('undoBtn').addEventListener('click', undo);
 $('hintBtn').addEventListener('click', hint);
 $('newBtn').addEventListener('click', () => {

@@ -101,8 +101,8 @@
   }
   .wordmark .title{font-family:var(--serif);font-size:21px;letter-spacing:.32em;font-weight:700}
   .wordmark .sub{font-size:11px;color:var(--ink-soft);letter-spacing:.14em;margin-top:2px}
-  .clock{display:flex;align-items:center;gap:10px}
-  .time{font-family:var(--serif);font-size:20px;font-variant-numeric:tabular-nums;min-width:58px;text-align:right}
+  .actions{display:flex;align-items:center;gap:10px}
+  .time{font-family:var(--serif);font-size:20px;font-variant-numeric:tabular-nums;min-width:58px}
   /* 44px is the smallest target Apple's guidelines and WCAG 2.5.5 both accept,
      and these were 36. Measured on a 390 wide iPhone, where a finger pad covers
      about 45px: under that, the miss lands on whatever is beside it. */
@@ -112,9 +112,19 @@
   }
   .iconbtn:hover{border-color:var(--ink-soft)}
   /* Pista spends the flawless bonus, so it is drawn as the quiet one of the
-     three. The corner it sits in is the rest of the argument. */
+     four. The corner it sits in is the rest of the argument. */
   .iconbtn.costly{border-style:dashed;color:var(--ink-soft)}
   .iconbtn.costly:hover{border-style:solid;color:var(--ink)}
+  /* visibility, not display: the box stays, so the clock and the three
+     permanent buttons hold their positions whether this has work or not.
+     Hidden this way it is also out of the tab order and out of the
+     accessibility tree, which is what the hidden attribute was there for. */
+  .iconbtn.settle{position:relative;margin-right:12px;color:var(--indigo);border-color:var(--indigo-wash-3);background:var(--indigo-wash)}
+  .iconbtn.settle.idle{visibility:hidden}
+  .iconbtn.settle .badge{
+    position:absolute;top:1px;right:4px;
+    font-family:var(--serif);font-size:11px;font-weight:600;line-height:1;
+  }
 
   /* ---------- status bar ---------- */
   .status{
@@ -253,6 +263,8 @@
   .tool:hover{border-color:var(--ink-soft)}
   .tool:active{transform:scale(.96)}
   .tool .k{font-size:10px;color:var(--ink-soft);border:1px solid var(--line);border-radius:4px;padding:1px 4px}
+  /* Takes only the width of its own count, so appearing costs the mode a little
+     room and the column no height at all. */
   /* Both halves on screen, one of them filled. The track is what makes it read
      as a choice already made rather than as two buttons waiting to be pressed. */
   /* min-width:0 because a flex item will not shrink below the content of its
@@ -451,11 +463,10 @@
        at 390 wide the wordmark and the clock together asked for 424 of the 370
        there are. Everything here is the brand giving way to the controls: the
        targets are the part that has to keep its size. */
-    .brand{gap:8px}
-    .seal{width:36px;height:36px;font-size:20px}
-    .wordmark .title{font-size:17px;letter-spacing:.18em}
-    .clock{gap:6px}
-    .time{font-size:18px;min-width:46px}
+    .brand{gap:10px}
+    .wordmark .title{font-size:15px;letter-spacing:.12em}
+    .actions{gap:5px}
+    .time{font-size:18px;min-width:44px}
     header{margin-bottom:10px}
     /* The spacer grows to fill the first line, which pushed the count that
        follows it onto a second one and cost the status bar 29px of a column
@@ -466,6 +477,21 @@
     .pad{margin-bottom:0}
     .tools{margin-bottom:10px}
   }
+  /* Four 44px buttons and the clock need 241px of a 355px header on the
+     narrowest phone this supports, and the wordmark asks for 100 of what is
+     left. The seal is the mark that carries the brand at this size, and the
+     targets are the part that is not allowed to shrink: the guidelines put the
+     floor at 44 and the whole reason the keypad was rebuilt was that 36 is not
+     enough to hit. So the word goes and the buttons keep their size. */
+  @media (max-width:409px){
+    .wordmark{display:none}
+    /* And the status has to stay on one line here. Wrapped it is 59px instead of
+       34, which is more than the column has left: the board is already on its
+       288px floor at this size, so the 25px comes off the end of the page as
+       scrolling instead. */
+    .status{font-size:11px;gap:7px;letter-spacing:0}
+  }
+
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
     .stamp.show{opacity:1}
@@ -486,6 +512,9 @@
             </symbol>
             <symbol id="i-play_arrow" viewBox="0 -960 960 960">
                 <path d="M320-203v-560l440 280-440 280Zm60-280Zm0 171 269-171-269-171v342Z"/>
+            </symbol>
+            <symbol id="i-check" viewBox="0 -960 960 960">
+                <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
             </symbol>
             <symbol id="i-undo" viewBox="0 -960 960 960">
                 <path d="M259-200v-60h310q70 0 120.5-46.5T740-422q0-69-50.5-115.5T569-584H274l114 114-42 42-186-186 186-186 42 42-114 114h294q95 0 163.5 64T800-422q0 94-68.5 158T568-200H259Z"/>
@@ -508,33 +537,65 @@
         </svg>
         <div class="app">
             <header>
+                <!-- The clock reads from the left, where the seal used to be. The seal
+                    is still the mark this game is known by, on the icon, the start
+                    dialog and the win stamp; in the header it was taking room from the
+                    four targets on the other side. -->
                 <div class="brand">
-                    <div class="seal" aria-hidden="true">数</div>
                     <div class="wordmark">
                         <div class="title">SUDOKU</div>
                         <div class="sub">数独, juego de números</div>
                     </div>
-                </div>
-                <!-- The clock, then the three actions that are not part of playing a
-                    board. Pista sits in the far corner on purpose: it is the most
-                    expensive button in the game, since it spends the flawless bonus, and
-                    it used to sit in the tool row next to the notes toggle, one slipped
-                    thumb away from the control a player touches most. The top right
-                    corner is the hardest place on a phone to reach by accident. -->
-                <div class="clock">
                     <div class="time" id="time">0:00</div>
+                </div>
+                <!-- Ordered by how easy each one should be to hit, least first. A thumb
+                    holding a phone swings from the bottom corner on its own side, so the
+                    hard end of a top row is the far side of the screen and the easy end
+                    is the near one: rightmost is the most reachable, not the least.
+
+                    So Pista leads. It spends the flawless bonus and is the one button
+                    here that should take a deliberate reach, and Nueva partida stands
+                    between it and the rest, which is a mis-tap into a dialog with a
+                    cancel rather than into a spent bonus. Confirmar is last because it
+                    is pressed several times over an endgame. -->
+                <div class="actions">
+                    <!-- Kept in the layout at all times and only made invisible, so the
+                        three permanent buttons never shuffle sideways when the late game
+                        gives it work. First in the group because the header is laid out
+                        with the clock at one end and these at the other: a reserved slot
+                        here is absorbed by the empty middle and cannot be seen at all,
+                        where at the far end it left the row detached from the edge.
+
+                        Set apart from Pista by a wider gutter than the rest share. This
+                        is the button pressed several times over an endgame and that one
+                        is the button that spends the flawless bonus, so the two of them
+                        are the pair least worth putting within a slip of each other. -->
                     <button
                         type="button"
-                        class="iconbtn"
-                        id="pauseBtn"
-                        aria-label="Pausar"
+                        class="iconbtn settle idle"
+                        id="settleBtn"
                     >
                         <svg
                             class="ico"
                             aria-hidden="true"
                             focusable="false"
                         >
-                            <use href="#i-pause"/>
+                            <use href="#i-check"/>
+                        </svg>
+                        <b class="badge" id="settleCount">0</b>
+                    </button>
+                    <button
+                        type="button"
+                        class="iconbtn costly"
+                        id="hintBtn"
+                        aria-label="Pista"
+                    >
+                        <svg
+                            class="ico"
+                            aria-hidden="true"
+                            focusable="false"
+                        >
+                            <use href="#i-lightbulb"/>
                         </svg>
                     </button>
                     <button
@@ -553,16 +614,16 @@
                     </button>
                     <button
                         type="button"
-                        class="iconbtn costly"
-                        id="hintBtn"
-                        aria-label="Pista"
+                        class="iconbtn"
+                        id="pauseBtn"
+                        aria-label="Pausar"
                     >
                         <svg
                             class="ico"
                             aria-hidden="true"
                             focusable="false"
                         >
-                            <use href="#i-lightbulb"/>
+                            <use href="#i-pause"/>
                         </svg>
                     </button>
                 </div>
