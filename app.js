@@ -239,10 +239,12 @@ let ledger = [],
 const HISTORY_KEY = 'sudoku:history',
   HISTORY_VERSION = 1;
 let games = [];
-/* Which difficulty had its best time beaten in this session, for the marker in
-   the record. Deliberately not persisted: it is celebration, and a reload has
-   nothing to celebrate. */
-let freshBest = '';
+/* Which difficulties have had their best time beaten in this session, for the
+   markers in the record. Deliberately not persisted: it is celebration, and a
+   reload has nothing to celebrate. A set rather than one key, because a session
+   long enough to beat one record is long enough to beat a second, and a single
+   slot took the first trophy back off the table when it did. */
+const freshBest = new Set();
 
 /* ---- build DOM once ---- */
 const cells = [];
@@ -447,7 +449,10 @@ function syncWakeLock() {
       wakeLock = sentinel;
       /* The platform revokes this on its own for low battery and power save,
          and a released sentinel cannot be reused. Dropping the reference is
-         what lets the next call ask for a fresh one. */
+         what lets a later call ask for a fresh one, and saveGame() is what
+         makes that call arrive: the other three callers are a pause, a win and
+         a backgrounded tab, so a player who solves a board without pausing
+         would otherwise finish it with the display timeout back. */
       sentinel.addEventListener('release', () => {
         if (wakeLock === sentinel) wakeLock = null;
       });
@@ -632,6 +637,12 @@ function adoptCounters() {
 }
 function saveGame() {
   if (!playing || solved) return;
+  /* Re-arms the screen lock the platform is allowed to take back mid board.
+     Driven by a player action rather than by the sentinel's own release event,
+     which would spin against a platform that revokes as fast as it grants.
+     Costs nothing while the lock is held: syncWakeLock() returns at its first
+     branch. */
+  syncWakeLock();
   adoptCounters();
   try {
     localStorage.setItem(
@@ -909,7 +920,7 @@ function paintRecord() {
     for (let column = 0; column < columns.length; column++) {
       const td = document.createElement('td');
       td.textContent = columns[column];
-      if (column === 3 && row.won && key === freshBest) td.append(bestMark());
+      if (column === columns.length - 1 && row.won && freshBest.has(key)) td.append(bestMark());
       tr.append(td);
     }
     rows.append(tr);
@@ -962,7 +973,7 @@ function paintRecord() {
   if (view.offer) {
     const next = DIFF[GRADE_KEYS[view.offer.to]];
     $('progressOffer').textContent =
-      `Probá ${next.label}: paga ${next.fries} papas fritas, y ${chocoWord(next.choco)} si sale seca.`;
+      `Probá ${next.label}: paga ${next.fries} papas fritas, o el doble y ${chocoWord(next.choco)} si sale seca.`;
   }
 
   $('purseFries').textContent = friesTotal;
@@ -1432,7 +1443,7 @@ function win() {
      and the one worth saying. */
   const beatBest = recordWin(diffKey, finalTime, flawless);
   recordGame(finalTime, finalMist, finalHints);
-  if (beatBest) freshBest = diffKey;
+  if (beatBest) freshBest.add(diffKey);
   /* assertive: the win is the one event worth interrupting for, and the modal
      it belongs to only appears after ~2s of animation. The prize goes in here
      too: showOverlay() focuses the dialog's button, not the banner, so this is

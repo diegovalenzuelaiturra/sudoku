@@ -294,6 +294,15 @@ test('the screen is held awake only while the clock runs', () => {
     /addEventListener\('visibilitychange',[\s\S]{0,200}?syncWakeLock\(\);/u,
     'a tab hidden after the board is won keeps its lock: setPaused() returns early there, so this listener is the only release path left',
   );
+  /* The platform is allowed to take the lock back mid board for low battery or
+     power save. The three call sites above are a pause, a win and a hidden tab,
+     none of which a player solving a board has to reach, so without this one the
+     display timeout comes back for the rest of the game. */
+  assert.match(
+    body('saveGame'),
+    /syncWakeLock\(\);/u,
+    'a lock the platform revoked mid board is never asked for again, and the player finishes the board with the screen dimming',
+  );
 });
 
 test('the personal best is the answer recordWin gave, and a first win is not one', () => {
@@ -368,8 +377,15 @@ test('a personal best reaches the dialog, the announcement and the record', () =
   );
   assert.match(
     body('paintRecord'),
-    /key === freshBest\) td\.append\(bestMark\(\)\);/u,
+    /freshBest\.has\(key\)\) td\.append\(bestMark\(\)\);/u,
     'the record no longer marks the best time that was beaten in this session',
+  );
+  /* A set, so a session that beats two records keeps both trophies. A single
+     slot took the first one back off the table the moment the second landed. */
+  assert.match(
+    source,
+    /const freshBest = new Set\(\);/u,
+    'freshBest is no longer a set, so a second personal best erases the first marker',
   );
 });
 

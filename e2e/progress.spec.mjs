@@ -379,10 +379,13 @@ test('a level that has stopped moving is offered the next one', async ({ page })
   await expect(page.locator('#progressLede')).toHaveText('En Normal el ritmo se mantiene.');
   /* Flat, at one level, with a flawless rate whose lower bound has saturated:
      that is the cue to invite the player up the ladder, and the invitation names
-     what the next tier pays so it is worth taking. */
+     what the next tier pays so it is worth taking. The flawless bonus doubles
+     the papas as well as adding the chocolates, so the sentence has to say so:
+     naming the base rate beside the flawless chocolates promises a clean board
+     half of what it actually pays. */
   await expect(page.locator('#progressOffer')).toBeVisible();
   await expect(page.locator('#progressOffer')).toHaveText(
-    `Probá ${PELUDO.label}: paga ${PELUDO.fries} papas fritas, y ${PELUDO.choco} chocolates si sale seca.`,
+    `Probá ${PELUDO.label}: paga ${PELUDO.fries} papas fritas, o el doble y ${PELUDO.choco} chocolates si sale seca.`,
   );
   await expect(page.locator('#progressCleanRate')).toHaveText('100%');
   await expect(page.locator('#progressCleanLow')).toHaveText('81%');
