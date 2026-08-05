@@ -774,27 +774,21 @@
                 <!-- How the last level played is going. A best time only moves one way,
                     so the record above it cannot show a decline: the median, the band
                     around it and the flawless rate can. Nothing here is pooled across
-                    difficulty, and nothing is shown before there are games to show it
-                    from, which is why the first line is a sentence and the rest are
-                    hidden until they are true.
+                    difficulty.
 
-                    The sentence below is the one every player who updates into this
-                    build reads first, with the table of their own wins right above it,
-                    so it says when the counting starts and never that they have not
-                    played. -->
-                <div class="progress" id="progressBox">
+                    The whole block starts hidden and stays hidden until a level has
+                    games enough to answer. A line counting up to the games it needs is
+                    the dialog talking about itself, and the record right above it
+                    already holds everything that is true before then. -->
+                <div
+                    class="progress"
+                    id="progressBox"
+                    hidden
+                >
                     <h3 class="micro">Cómo vas</h3>
-                    <p class="lede" id="progressLede">La cuenta parte con la próxima partida que termines.</p>
-                    <p
-                        class="code"
-                        id="progressSpread"
-                        hidden
-                    >Típico <b id="progressMedian">0:00</b>. La mayoría entre <b id="progressP25">0:00</b> y <b id="progressP75">0:00</b>, casi siempre bajo <b id="progressP90">0:00</b>.</p>
-                    <p
-                        class="code"
-                        id="progressClean"
-                        hidden
-                    >Secas <b id="progressCleanRate">0%</b>. A la larga, entre <b id="progressCleanLow">0%</b> y <b id="progressCleanHigh">0%</b>.</p>
+                    <p class="lede" id="progressLede"></p>
+                    <p class="code" id="progressSpread">Típico <b id="progressMedian">0:00</b>. La mayoría entre <b id="progressP25">0:00</b> y <b id="progressP75">0:00</b>, casi siempre bajo <b id="progressP90">0:00</b>.</p>
+                    <p class="code" id="progressClean">Secas <b id="progressCleanRate">0%</b>. A la larga, entre <b id="progressCleanLow">0%</b> y <b id="progressCleanHigh">0%</b>.</p>
                     <p
                         class="code offer"
                         id="progressOffer"

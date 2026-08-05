@@ -20,9 +20,9 @@ const HISTORY_KEY = 'sudoku:history';
 const HISTORY_VERSION = 1;
 const STATS_KEY = 'sudoku:stats';
 
-/* What Normal and Peludo pay, written out rather than read from the page, so a
-   table edited by accident fails instead of agreeing with itself. */
-const PELUDO = { label: 'Peludo', fries: 15, choco: 3 };
+/* The tier above Normal, written out rather than read from the page, so a table
+   edited by accident fails instead of agreeing with itself. */
+const PELUDO = { label: 'Peludo' };
 
 /* A day between rows, pinned to a fixed instant. Nothing in a stored row is
    read against the wall clock, and a layoff is fourteen days, which a run of
@@ -300,19 +300,14 @@ test('the progress sentences are what a screen reader is handed', async ({ page,
   expect(problems).toEqual([]);
 });
 
-test('too few games is a sentence rather than a blank', async ({ page }) => {
+test('too few games shows nothing at all, heading included', async ({ page }) => {
   const problems = await boot(page);
   await openRecord(page);
 
-  /* Nothing stored at all. The lede is the one line that is always visible, so
-     the block is never an empty box with a heading over it, and it says when the
-     counting starts rather than what the player has played. */
-  await expect(page.locator('#progressLede')).toHaveText(
-    'La cuenta parte con la próxima partida que termines.',
-  );
-  await expect(page.locator('#progressSpread')).toBeHidden();
-  await expect(page.locator('#progressClean')).toBeHidden();
-  await expect(page.locator('#progressOffer')).toBeHidden();
+  /* Nothing stored at all. The block is not an empty box with a heading over it
+     and not a line counting up to the games it needs: a player is told nothing
+     by the dialog describing its own thresholds. */
+  await expect(page.locator('#progressBox')).toBeHidden();
   /* And nothing was written: a reader that finds nothing leaves the key alone. */
   expect(await readRaw(page, HISTORY_KEY), 'reading an empty history wrote one').toBeNull();
 
@@ -323,22 +318,18 @@ test('too few games is a sentence rather than a blank', async ({ page }) => {
   await openRecord(page);
 
   /* Under five games the quantiles are null, because four points put p25 and
-     p75 on the two middle observations and every new game moves both. The
-     player is told how many are missing rather than shown a NaN. */
-  await expect(page.locator('#progressLede')).toHaveText(
-    'En Piola van 3 partidas de 5 para sacar cuentas.',
-  );
-  await expect(page.locator('#progressSpread')).toBeHidden();
-  await expect(page.locator('#progressClean')).toBeHidden();
-  expect(await page.locator('#progressBox').innerText()).not.toMatch(/NaN|null|undefined/u);
+     p75 on the two middle observations and every new game moves both. There is
+     nothing true to say, so nothing is said. */
+  await expect(page.locator('#progressBox')).toBeHidden();
   expect(problems).toEqual([]);
 });
 
 /* The first dialog every existing player sees after this update. sudoku:stats
    is deliberately left alone by this build, so their wins are in the table while
-   the ring under it starts empty, and a line there reading "no games" would deny
-   the four rows above it. The streak line shipped exactly that once. */
-test('the empty ring never denies the wins in the table above it', async ({ page }) => {
+   the ring under it starts empty. Any sentence there would be talking about a
+   ring the player has no idea exists, beside a table of their own wins, so the
+   block is simply absent until it has something of theirs to report. */
+test('the empty ring says nothing beside the wins in the table above it', async ({ page }) => {
   await page.addInitScript(
     ([key, value]) => localStorage.setItem(key, value),
     [
@@ -363,11 +354,8 @@ test('the empty ring never denies the wins in the table above it', async ({ page
   /* The table is showing nineteen wins and two real best times. */
   await expect(page.locator('#recordRows tr').nth(1).locator('td').nth(2)).toHaveText('16');
   await expect(page.locator('#recordRows tr').nth(1).locator('td').nth(3)).toHaveText('5:10');
-  await expect(page.locator('#progressLede')).toHaveText(
-    'La cuenta parte con la próxima partida que termines.',
-  );
-  /* Whatever else the sentence says, it does not say there are no games. */
-  expect(await page.locator('#progressBox').innerText()).not.toMatch(/no hay partidas/iu);
+  /* Nothing is claimed about a player whose games this build never saw. */
+  await expect(page.locator('#progressBox')).toBeHidden();
   expect(problems).toEqual([]);
 });
 
@@ -378,15 +366,12 @@ test('a level that has stopped moving is offered the next one', async ({ page })
 
   await expect(page.locator('#progressLede')).toHaveText('En Normal el ritmo se mantiene.');
   /* Flat, at one level, with a flawless rate whose lower bound has saturated:
-     that is the cue to invite the player up the ladder, and the invitation names
-     what the next tier pays so it is worth taking. The flawless bonus doubles
-     the papas as well as adding the chocolates, so the sentence has to say so:
-     naming the base rate beside the flawless chocolates promises a clean board
-     half of what it actually pays. */
+     that is the cue to invite the player up the ladder. The invitation names the
+     level and stops there. Quoting the payout put the tier's rate in the one
+     place the interface states one, where it has to stay correct against the
+     flawless bonus forever, to sell something the line above it already earned. */
   await expect(page.locator('#progressOffer')).toBeVisible();
-  await expect(page.locator('#progressOffer')).toHaveText(
-    `Probá ${PELUDO.label}: paga ${PELUDO.fries} papas fritas, o el doble y ${PELUDO.choco} chocolates si sale seca.`,
-  );
+  await expect(page.locator('#progressOffer')).toHaveText(`Prueba con ${PELUDO.label}.`);
   await expect(page.locator('#progressCleanRate')).toHaveText('100%');
   await expect(page.locator('#progressCleanLow')).toHaveText('81%');
   expect(problems).toEqual([]);
@@ -402,9 +387,6 @@ test('a history from an unknown version survives a whole game, byte for byte', a
 
   const problems = await boot(page);
   await startGame(page, 'medium');
-  /* The grade the board was measured at, which the search is allowed to miss,
-     read from the page rather than assumed from the button that was pressed. */
-  const level = await page.evaluate(() => DIFF[GRADE_KEYS[puzzleGrade]].label);
   await solve(page);
   expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
 
@@ -416,10 +398,9 @@ test('a history from an unknown version survives a whole game, byte for byte', a
   await page.locator('#againBtn').click();
   await openRecord(page);
   /* A tab that cannot write is still allowed to keep score, the way the wallet
-     is: the game just finished counts in memory, against an empty ring. */
-  await expect(page.locator('#progressLede')).toHaveText(
-    `En ${level} va 1 partida de 5 para sacar cuentas.`,
-  );
+     is: the game just finished counts in memory, against an empty ring. One game
+     is not five, so the block has nothing to say and does not appear. */
+  await expect(page.locator('#progressBox')).toBeHidden();
   expect(
     await readRaw(page, HISTORY_KEY),
     'painting the record overwrote a history this build cannot read',

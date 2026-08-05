@@ -864,22 +864,11 @@ function bestMark() {
    plainly and a slower run is context rather than a verdict: there is no
    leaderboard here and a plateau is what a practice curve does.
 
-   The empty state says when the counting starts and never that the player has
-   no games. sudoku:stats survives this build and sudoku:history begins empty at
-   it, so the first player to open this dialog after the update reads it with
-   four rows of their own wins 16px above it. That is the same contradiction the
-   streak line shipped once, recorded in paintRecord below. */
-function progressLine(level, here, total) {
-  if (here === null)
-    return total === 0
-      ? 'La cuenta parte con la próxima partida que termines.'
-      : 'Ninguna partida guardada dice en qué nivel fue, así que todavía no hay cuentas.';
-  const need = SudokuStats.MIN_MEDIAN_N;
-  if (here.n < need) {
-    return here.n === 1
-      ? `En ${level} va 1 partida de ${need} para sacar cuentas.`
-      : `En ${level} van ${here.n} partidas de ${need} para sacar cuentas.`;
-  }
+   Only ever called with a level that has games enough to answer. A block that
+   counts up to the games it needs is bookkeeping about itself and says nothing
+   about the player, so paintRecord hides the whole thing until there is a
+   number in it. */
+function progressLine(level, here) {
   if (here.verdict === 'few')
     return `En ${level} hay ${here.n} partidas. Pocas para decir si el ritmo cambió.`;
   if (here.verdict === 'better') return `En ${level} los tiempos bajaron ${here.pct}%. Filete.`;
@@ -955,12 +944,14 @@ function paintRecord() {
      so all of it goes through textContent into holes the markup owns. */
   const view = SudokuStats.report(games);
   const here = view.top ? view.grades[view.top] : null;
-  const level = view.top ? DIFF[GRADE_KEYS[view.top]].label : '';
+  /* The whole block goes, heading included, until there is a number to put in
+     it. A player who has finished one board is told nothing by a line counting
+     up to the five it takes to say something, and the record above already
+     holds everything that is true at that point. */
   const enough = here !== null && here.median !== null;
-  $('progressLede').textContent = progressLine(level, here, view.n);
-  $('progressSpread').hidden = !enough;
-  $('progressClean').hidden = !enough;
+  $('progressBox').hidden = !enough;
   if (enough) {
+    $('progressLede').textContent = progressLine(DIFF[GRADE_KEYS[view.top]].label, here);
     $('progressMedian').textContent = fmt(here.median);
     $('progressP25').textContent = fmt(here.p25);
     $('progressP75').textContent = fmt(here.p75);
@@ -969,11 +960,12 @@ function paintRecord() {
     $('progressCleanLow').textContent = percent(here.flawless.low);
     $('progressCleanHigh').textContent = percent(here.flawless.high);
   }
+  /* Nested inside the offer's own gate rather than the block's: the invitation
+     needs twelve games at a level and the block needs five, so an offer without
+     a block around it cannot happen. */
   $('progressOffer').hidden = view.offer === null;
   if (view.offer) {
-    const next = DIFF[GRADE_KEYS[view.offer.to]];
-    $('progressOffer').textContent =
-      `Probá ${next.label}: paga ${next.fries} papas fritas, o el doble y ${chocoWord(next.choco)} si sale seca.`;
+    $('progressOffer').textContent = `Prueba con ${DIFF[GRADE_KEYS[view.offer.to]].label}.`;
   }
 
   $('purseFries').textContent = friesTotal;
