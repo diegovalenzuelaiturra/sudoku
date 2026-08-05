@@ -253,14 +253,6 @@
   .tool:hover{border-color:var(--ink-soft)}
   .tool:active{transform:scale(.96)}
   .tool .k{font-size:10px;color:var(--ink-soft);border:1px solid var(--line);border-radius:4px;padding:1px 4px}
-  /* Takes only the width of its own count, so appearing costs the mode a little
-     room and the column no height at all. */
-  .tool.settle{flex:0 0 auto;gap:4px;padding:10px 12px;color:var(--indigo);border-color:var(--indigo-wash-3);background:var(--indigo-wash)}
-  .tool.settle b{font-family:var(--serif);font-size:15px;font-weight:600}
-  /* The browser's own [hidden] rule is display:none at zero specificity, which
-     the class above outranks: the attribute went on and the button stayed on
-     screen, offering nothing. Every .tool needs this, not just this one. */
-  .tool[hidden]{display:none}
   /* Both halves on screen, one of them filled. The track is what makes it read
      as a choice already made rather than as two buttons waiting to be pressed. */
   /* min-width:0 because a flex item will not shrink below the content of its
@@ -495,9 +487,6 @@
             <symbol id="i-play_arrow" viewBox="0 -960 960 960">
                 <path d="M320-203v-560l440 280-440 280Zm60-280Zm0 171 269-171-269-171v342Z"/>
             </symbol>
-            <symbol id="i-check" viewBox="0 -960 960 960">
-                <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
-            </symbol>
             <symbol id="i-undo" viewBox="0 -960 960 960">
                 <path d="M259-200v-60h310q70 0 120.5-46.5T740-422q0-69-50.5-115.5T569-584H274l114 114-42 42-186-186 186-186 42 42-114 114h294q95 0 163.5 64T800-422q0 94-68.5 158T568-200H259Z"/>
             </symbol>
@@ -697,27 +686,6 @@
                                 <use href="#i-ink_eraser"/>
                             </svg>
                             Borrar <span class="k">⌫</span>
-                        </button>
-                        <!-- Only on screen when it has something to do, which is the late
-                            game and never the opening. In the row rather than on a line of
-                            its own because the column has no spare height: a block that
-                            appeared here would push the keypad down and start the page
-                            scrolling on a browser tab. Its whole accessible name is written
-                            by app.js, count included. -->
-                        <button
-                            type="button"
-                            class="tool settle"
-                            id="settleBtn"
-                            hidden
-                        >
-                            <svg
-                                class="ico"
-                                aria-hidden="true"
-                                focusable="false"
-                            >
-                                <use href="#i-check"/>
-                            </svg>
-                            <b id="settleCount">0</b>
                         </button>
                     </div>
                     <!-- What "Notas" does was guessable from the icon and nothing else. Kept
