@@ -270,6 +270,13 @@
   .modal .stat{border:1px solid var(--line);border-radius:8px;padding:10px 4px}
   .modal .stat b{font-family:var(--serif);font-size:18px;display:block}
   .modal .stat i{font-style:normal;font-size:10.5px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
+  /* Which of the three numbers the record is. "Nuevo récord" under a row of
+     three tiles does not say what was broken, and the time is the only one of
+     them a record is ever kept for. The tile is marked instead of the sentence
+     naming it, so the claim sits on the number it is about. */
+  .modal .stat.record{border-color:var(--indigo);background:var(--indigo-wash)}
+  .modal .stat.record b{color:var(--indigo)}
+  .modal .stat.record i{color:var(--indigo)}
   .modal .quiet{margin-top:12px;background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;text-decoration:underline}
   /* Only the two that carry an icon. The Canjear buttons share .quiet and have
      bare text, so moving the underline onto a label outright would take theirs
@@ -700,7 +707,7 @@
                 <h2 id="winTitle">¡SECA!</h2>
                 <p class="lede" id="winLede">Una cuadrícula limpia.</p>
                 <div class="stats">
-                    <div class="stat"><b id="wTime">0:00</b><i>Tiempo</i></div>
+                    <div class="stat" id="wTimeStat"><b id="wTime">0:00</b><i>Tiempo</i></div>
                     <div class="stat"><b id="wMist">0</b><i>Errores</i></div>
                     <div class="stat"><b id="wHint">0</b><i>Pistas</i></div>
                 </div>
@@ -713,7 +720,15 @@
                     class="code"
                     id="wBestLine"
                     hidden
-                ><span aria-hidden="true">🏆</span> <b>¡Nuevo récord!</b></p>
+                ><span aria-hidden="true">🏆</span> <b>¡Nuevo récord de tiempo!</b></p>
+                <!-- The other record. The medal is the streak wherever it appears and
+                    the trophy is the time, so the two are told apart by their glyph
+                    the same way they are told apart by their shower. -->
+                <p
+                    class="code"
+                    id="wStreakLine"
+                    hidden
+                ><span aria-hidden="true">🥇</span> <b>¡Tu mejor racha: <span id="wStreakCount">0</span> secas seguidas!</b></p>
                 <!-- What the board really was and the seed that rebuilds it. The technique
                     is the honest difficulty, and the code is here so a board worth talking
                     about can be found again. -->

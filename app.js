@@ -239,12 +239,6 @@ let ledger = [],
 const HISTORY_KEY = 'sudoku:history',
   HISTORY_VERSION = 1;
 let games = [];
-/* Which difficulties have had their best time beaten in this session, for the
-   markers in the record. Deliberately not persisted: it is celebration, and a
-   reload has nothing to celebrate. A set rather than one key, because a session
-   long enough to beat one record is long enough to beat a second, and a single
-   slot took the first trophy back off the table when it did. */
-const freshBest = new Set();
 
 /* ---- build DOM once ---- */
 const cells = [];
@@ -842,20 +836,6 @@ function describeEntry(e) {
   if (e.k === 'redeem') return `${what} canjeadas`;
   return `${what}${e.d ? ` en ${DIFF[e.d].label}` : ''}`;
 }
-/* The mark on a best time set in this session. Two nodes, not one: the trophy
-   is decoration a screen reader is told nothing by, and the words beside it are
-   what carry the fact. */
-function bestMark() {
-  const mark = document.createDocumentFragment();
-  const glyph = document.createElement('span');
-  glyph.setAttribute('aria-hidden', 'true');
-  glyph.textContent = ' 🏆';
-  const said = document.createElement('span');
-  said.className = 'visually-hidden';
-  said.textContent = ' récord nuevo';
-  mark.append(glyph, said);
-  return mark;
-}
 /* One sentence for how the last level played is going, addressed to the player
    and never naming the level: the heading over the block names it once, and
    repeating it in every line made three sentences that all opened the same way.
@@ -907,16 +887,18 @@ function paintRecord() {
        nothing has been won: the zero in the column beside it already says why.
        Driven by the win count, not by the time, so a win clocked at zero is
        still a time rather than a blank. */
-    const columns = [
+    /* No marker on the best time. A trophy beside the number said the record
+       was set in this session, which is a fact about the tab rather than about
+       the player, and it read as though the time itself were a trophy. The win
+       dialog is where a record is announced, and it is announced once. */
+    for (const text of [
       DIFF[key].label,
       String(row.played),
       String(row.won),
       row.won ? fmt(row.best) : '',
-    ];
-    for (let column = 0; column < columns.length; column++) {
+    ]) {
       const td = document.createElement('td');
-      td.textContent = columns[column];
-      if (column === columns.length - 1 && row.won && freshBest.has(key)) td.append(bestMark());
+      td.textContent = text;
       tr.append(td);
     }
     rows.append(tr);
@@ -1164,11 +1146,10 @@ function recordPlayed(key) {
 /* The streak counts flawless wins in a row. A plain win streak would say
    nothing here: there is no way to lose, so every game that ends, ends in a
    win, and the streak would just be the number of wins over again. */
-/* Returns whether this win beat a time there was one to beat, which is the only
-   caller that needs it and the only place the comparison can be made safely:
-   done outside, it has to run before this function moves the count, and moving
-   the call one line later silently turned every first win into a personal best
-   against nothing. */
+/* Returns the two records this win could have broken, which is the only place
+   either comparison can be made safely: done outside, both have to run before
+   this function moves the counts, and moving the call one line later silently
+   turned every first win into a personal best against nothing. */
 function recordWin(key, time, flawless) {
   stats = freshStats();
   const row = stats.d[key];
@@ -1180,10 +1161,16 @@ function recordWin(key, time, flawless) {
   const beat = !first && time < row.best;
   row.won++;
   if (first || time < row.best) row.best = time;
+  /* Read before the streak moves, for the same reason. A best of zero is a
+     player who has never strung two together, and the first flawless win of all
+     takes it from 0 to 1: that is a record against nothing, exactly like a
+     first win's time, and announcing it would spend the celebration on the
+     cheapest event in the game. */
+  const held = stats.bestStreak;
   stats.streak = flawless ? stats.streak + 1 : 0;
   if (stats.streak > stats.bestStreak) stats.bestStreak = stats.streak;
   saveStats();
-  return beat;
+  return { time: beat, streak: held > 0 && stats.bestStreak > held };
 }
 
 /* ---- the games themselves ----
@@ -1444,18 +1431,25 @@ function win() {
      first win no longer counts: there was no time to beat, and claiming one
      stole the message from every first flawless win, which is the rarer thing
      and the one worth saying. */
-  const beatBest = recordWin(diffKey, finalTime, flawless);
+  const broke = recordWin(diffKey, finalTime, flawless);
+  const beatBest = broke.time,
+    beatStreak = broke.streak;
   recordGame(finalTime, finalMist, finalHints);
-  if (beatBest) freshBest.add(diffKey);
+  const streakNow = stats.streak;
   /* assertive: the win is the one event worth interrupting for, and the modal
      it belongs to only appears after ~2s of animation. The prize goes in here
      too: showOverlay() focuses the dialog's button, not the banner, so this is
      the only announcement that reliably carries it. Written after recordWin,
-     which is the only place the personal best can be decided. */
+     which is the only place either record can be decided.
+
+     Both records are said here because both of them rain, and rain is nothing
+     at all to a screen reader: a shower with no sentence behind it is a
+     celebration only some players are invited to. */
   $('srAlert').textContent =
     `Ganaste. ${fmt(seconds)}, ${mistakes === 1 ? '1 error' : `${mistakes} errores`}, ${hints === 1 ? '1 pista' : `${hints} pistas`}.` +
     ` Te llevas ${earned} papas fritas${chocoEarned ? ` y ${chocoWord(chocoEarned)}` : ''}.` +
-    (beatBest ? ' ¡Nuevo récord!' : '');
+    (beatBest ? ' ¡Nuevo récord de tiempo!' : '') +
+    (beatStreak ? ` ¡Tu mejor racha: ${streakNow} secas seguidas!` : '');
   /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow = reduceMotion.matches ? 0 : 1;
   if (!reduceMotion.matches) {
@@ -1464,6 +1458,14 @@ function win() {
        rather than get lost among the papas. No cap, unlike the papas above:
        the most the table pays is five. */
     if (chocoEarned) winTimers.push(setTimeout(() => rain(chocoEarned, '🍫'), 700));
+    /* Last and fewest, for the same reason the chocolates come after the papas:
+       a shower that lands on top of another one is not read as its own event.
+       Six trophies rather than a number earned, because a record is not a
+       quantity: it happened or it did not, and the count is only what makes it
+       legible as rain. Nothing is banked here, so nothing about this may look
+       like the two showers above paying out. */
+    if (beatBest) winTimers.push(setTimeout(() => rain(6, '🏆'), 950));
+    if (beatStreak) winTimers.push(setTimeout(() => rain(6, '🥇'), 1150));
   }
   winTimers.push(
     setTimeout(() => {
@@ -1483,8 +1485,18 @@ function win() {
           ? 'Sin errores. Filete.'
           : 'Costó, pero salió igual.';
       /* Its own line rather than the lede, which the flawless message has a
-         better claim on: a first flawless win is rarer than a fast one. */
+         better claim on: a first flawless win is rarer than a fast one. The
+         time tile is marked with it, so which of the three numbers the record
+         belongs to is answered where the number is rather than in the sentence.
+         Toggled either way: the dialog is reused by every win. */
       $('wBestLine').hidden = !beatBest;
+      $('wTimeStat').classList.toggle('record', beatBest);
+      /* The other record, with its own glyph and its own line: the medal is the
+         streak everywhere it appears, and the trophy is the time. Both can land
+         on one win, and both showers are shown, so both sentences have to be
+         able to. */
+      $('wStreakLine').hidden = !beatStreak;
+      if (beatStreak) $('wStreakCount').textContent = streakNow;
       /* What the board actually was, rather than what was asked for, and the seed
        that rebuilds it. Both are textContent: the code is a number in base 36
        and the technique comes from a fixed table, but neither has any business

@@ -429,7 +429,11 @@ test('a personal best is announced and shown, and only when there was one to bea
   await startGame(page, 'medium');
   await winAt(page, 100);
   await expect(page.locator('#winOverlay')).toBeVisible();
-  await expect(page.locator('#wBestLine')).toHaveText('🏆 ¡Nuevo récord!');
+  await expect(page.locator('#wBestLine')).toHaveText('🏆 ¡Nuevo récord de tiempo!');
+  /* Which of the three numbers moved, marked on the number itself. The words
+     name the clock and the tile agrees with them. */
+  await expect(page.locator('#wTimeStat')).toHaveClass(/record/u);
+  await expect(page.locator('#wMist').locator('..')).not.toHaveClass(/record/u);
   /* The flawless message keeps the lede: a first flawless win is rarer than a
      fast one, so the best time gets its own line rather than displacing it. */
   await expect(page.locator('#winLede')).toHaveText('La más seca: cero errores, cero pistas.');
@@ -438,21 +442,20 @@ test('a personal best is announced and shown, and only when there was one to bea
      screen reader: showOverlay focuses the dialog's button, not the banner. */
   const announced = await page.locator('#srAlert').textContent();
   expect(announced).toMatch(/^Ganaste\./u);
-  expect(announced.endsWith(' ¡Nuevo récord!'), announced).toBe(true);
+  expect(announced).toContain(' ¡Nuevo récord de tiempo!');
 
-  /* Marked in the record too, on the difficulty it was set at. Two nodes: the
-     trophy is decoration a screen reader is told nothing by, and the words
-     beside it carry the fact. */
+  /* And nowhere in the record. A trophy against the best time said the record
+     was set in this session, which is a fact about the tab rather than about the
+     player, and it read as though the time itself were a trophy. */
   await page.locator('#againBtn').click();
   await openRecord(page);
   await expect(page.locator('#recordRows tr')).toHaveCount(4);
   const normal = page.locator('#recordRows tr').nth(1).locator('td');
-  await expect(normal, 'the marker cost the table a column').toHaveCount(4);
-  await expect(normal.nth(3).locator('.visually-hidden')).toHaveText('récord nuevo');
-  await expect(normal.nth(3).locator('[aria-hidden="true"]')).toHaveText('🏆');
+  await expect(normal, 'the table lost or gained a column').toHaveCount(4);
+  await expect(normal.nth(3)).toHaveText(/^\d+:\d\d$/u);
   expect(
-    await page.locator('#recordRows tr').nth(0).locator('.visually-hidden').count(),
-    'a difficulty nothing was won at is marked',
+    await page.locator('#recordRows [aria-hidden="true"]').count(),
+    'the record table marks the best time again',
   ).toBe(0);
 
   /* Slower than the best. Nothing is claimed. */
@@ -461,7 +464,48 @@ test('a personal best is announced and shown, and only when there was one to bea
   await winAt(page, 500);
   await expect(page.locator('#winOverlay')).toBeVisible();
   await expect(page.locator('#wBestLine'), 'a slower win was called a personal best').toBeHidden();
+  await expect(
+    page.locator('#wTimeStat'),
+    'the tile kept the mark of the win before',
+  ).not.toHaveClass(/record/u);
   expect(await page.locator('#srAlert').textContent()).not.toContain('récord');
+  expect(problems).toEqual([]);
+});
+
+/* The second record, which is the streak and not the clock. Every win here is
+   flawless, so the run only ever grows: the first takes the best from nothing to
+   one, which is a record against nothing and is not announced, and the second is
+   the first that beats a run the player had actually put together. */
+test('a best streak is its own record, with its own glyph, and the first one is not one', async ({
+  page,
+}) => {
+  const problems = await boot(page);
+
+  await startGame(page, 'medium');
+  await winAt(page, 100);
+  await expect(page.locator('#winOverlay')).toBeVisible();
+  await expect(
+    page.locator('#wStreakLine'),
+    'the first flawless win of all was called a best streak',
+  ).toBeHidden();
+
+  /* Slower than the first, so the clock sets nothing and the streak is the only
+     record on the board: the two are decided apart and shown apart. */
+  await page.locator('#againBtn').click();
+  await startGame(page, 'medium');
+  await winAt(page, 500);
+  await expect(page.locator('#winOverlay')).toBeVisible();
+  await expect(page.locator('#wBestLine'), 'a slower win set a time record').toBeHidden();
+  await expect(page.locator('#wStreakLine')).toHaveText('🥇 ¡Tu mejor racha: 2 secas seguidas!');
+
+  const announced = await page.locator('#srAlert').textContent();
+  expect(announced).toContain(' ¡Tu mejor racha: 2 secas seguidas!');
+  expect(announced, 'the clock claimed a record it did not set').not.toContain('récord de tiempo');
+
+  /* And the record agrees with the dialog that just announced it. */
+  await page.locator('#againBtn').click();
+  await openRecord(page);
+  await expect(page.locator('#streakCounts')).toHaveText('🔥 2 🥇 2');
   expect(problems).toEqual([]);
 });
 

@@ -319,13 +319,21 @@ test('the personal best is the answer recordWin gave, and a first win is not one
   );
   assert.match(
     record,
-    /return beat;/u,
-    'recordWin() no longer answers whether the best time moved',
+    /return \{ time: beat, streak: held > 0 && stats\.bestStreak > held \};/u,
+    'recordWin() no longer answers both records, and neither comparison can be made anywhere else: both have to be read before the counts move',
+  );
+  /* The same rule the best time follows, for the same reason. The first flawless
+     win of all takes the best streak from 0 to 1, which is a record against
+     nothing. */
+  assert.match(
+    record,
+    /const held = stats\.bestStreak;/u,
+    'the best streak is read after it moves, so every first flawless win reports a record',
   );
   assert.match(
     body('win'),
-    /const beatBest = recordWin\(/u,
-    'win() decides the personal best beside the call instead of asking for it, which is two copies of one test that agree only while the lines stay in this order',
+    /const broke = recordWin\(/u,
+    'win() decides the records beside the call instead of asking for them, which is two copies of one test that agree only while the lines stay in this order',
   );
 });
 
@@ -335,30 +343,23 @@ test('the personal best is the answer recordWin gave, and a first win is not one
 test('a personal best pays nothing', () => {
   const win = strip(body('win'));
   const paid = win.indexOf('bankPrize(');
-  const decided = win.indexOf('const beatBest');
-  assert.ok(paid > 0 && decided > paid, 'the prize is banked after the personal best is known');
-  for (const line of win.split('\n').filter((text) => text.includes('beatBest'))) {
+  const decided = win.indexOf('const broke');
+  assert.ok(paid > 0 && decided > paid, 'the prize is banked after the records are known');
+  for (const line of win.split('\n').filter((text) => /beatBest|beatStreak/u.test(text))) {
     assert.doesNotMatch(
       line,
       /bankPrize|earned|fries|choco|papas|Total/u,
-      `the personal best now pays: ${line.trim()}`,
+      `a record now pays: ${line.trim()}`,
     );
   }
   assert.doesNotMatch(
     body('bankPrize'),
-    /beatBest|freshBest/u,
-    'the wallet knows about the personal best, which is a second paying axis with none of the clamps the first one has',
+    /beatBest|beatStreak/u,
+    'the wallet knows about a record, which is a second paying axis with none of the clamps the first one has',
   );
-  for (const name of ['saveGame', 'saveHistory', 'saveStats', 'saveWallet']) {
-    assert.doesNotMatch(
-      body(name),
-      /freshBest/u,
-      `${name}() stores the session marker, so a reload celebrates a record set days ago`,
-    );
-  }
 });
 
-test('a personal best reaches the dialog, the announcement and the record', () => {
+test('both records reach the dialog and the announcement', () => {
   const win = body('win');
   assert.match(
     win,
@@ -367,46 +368,67 @@ test('a personal best reaches the dialog, the announcement and the record', () =
   );
   assert.match(
     win,
-    /\$\('srAlert'\)\.textContent =\s*`Ganaste\./u,
-    'the win announcement no longer opens with Ganaste., which e2e/interface.spec.mjs reads as the first word of it',
+    /\$\('wStreakLine'\)\.hidden = !beatStreak;/u,
+    'the best streak line is shown on every win, or on none',
+  );
+  /* Which of the three numbers in the dialog the record belongs to. "Nuevo
+     récord" over a row of three tiles does not say what was broken. */
+  assert.match(
+    win,
+    /\$\('wTimeStat'\)\.classList\.toggle\('record', beatBest\);/u,
+    'the time tile is no longer marked, so the record names no number and the player is left to guess which of the three moved',
   );
   assert.match(
     win,
-    /\(beatBest \? ' ¡Nuevo récord!' : ''\);/u,
-    'the assertive announcement drops the personal best, and it is the only announcement that reliably carries anything: showOverlay() focuses the button, not the banner',
+    /\$\('srAlert'\)\.textContent =\s*`Ganaste\./u,
+    'the win announcement no longer opens with Ganaste., which e2e/interface.spec.mjs reads as the first word of it',
+  );
+  /* Both showers have a sentence behind them. Rain is nothing at all to a
+     screen reader, so a record that only rains is a celebration some players
+     are never invited to. */
+  assert.match(
+    win,
+    /\(beatBest \? ' ¡Nuevo récord de tiempo!' : ''\)/u,
+    'the assertive announcement drops the time record, and it is the only announcement that reliably carries anything: showOverlay() focuses the button, not the banner',
   );
   assert.match(
+    win,
+    /\(beatStreak \? ` ¡Tu mejor racha: \$\{streakNow\} secas seguidas!` : ''\)/u,
+    'the assertive announcement drops the streak record, which then rains with nothing said about it',
+  );
+  /* The table is four plain cells again. A trophy beside the best time said the
+     record was set in this session, which is a fact about the tab rather than
+     about the player, and it read as though the time itself were a trophy. */
+  assert.doesNotMatch(
     body('paintRecord'),
-    /freshBest\.has\(key\)\) td\.append\(bestMark\(\)\);/u,
-    'the record no longer marks the best time that was beaten in this session',
-  );
-  /* A set, so a session that beats two records keeps both trophies. A single
-     slot took the first one back off the table the moment the second landed. */
-  assert.match(
-    source,
-    /const freshBest = new Set\(\);/u,
-    'freshBest is no longer a set, so a second personal best erases the first marker',
+    /🏆|bestMark|freshBest/u,
+    'the record table marks the best time again, where the trophy sat against the number and said nothing a reader could place',
   );
 });
 
-/* The trophy carries nothing at all to a screen reader, so the words beside it
-   are the whole fact. Two nodes, the same pairing the prize chips and the
-   streak line use. */
-test('the record marker says in words what the trophy says in a glyph', () => {
-  const mark = body('bestMark');
+/* One glyph, one record. The trophy is the time and the medal is the streak,
+   in the shower and in the line that explains it. */
+test('the two records are told apart by glyph, and both rain', () => {
+  const win = body('win');
   assert.match(
-    mark,
-    /setAttribute\('aria-hidden', 'true'\);[\s\S]*🏆/u,
-    'the trophy is announced, and it is announced as nothing: an emoji read aloud is a name for a picture',
+    win,
+    /if \(beatBest\) winTimers\.push\(setTimeout\(\(\) => rain\(6, '🏆'\)/u,
+    'a new best time no longer rains trophies',
   );
   assert.match(
-    mark,
-    /className = 'visually-hidden';[\s\S]*récord nuevo/u,
-    'the marker is a glyph with no accessible name, so the record reads the same aloud whether or not a best time was beaten',
+    win,
+    /if \(beatStreak\) winTimers\.push\(setTimeout\(\(\) => rain\(6, '🥇'\)/u,
+    'a new best streak no longer rains medals',
   );
+  /* Behind the same reduced motion gate the papas and the chocolates are
+     behind: a player who asked for no animation asked for all of it. */
+  const moving = win.match(/if \(!reduceMotion\.matches\) \{[\s\S]*?\n {2}\}/u);
+  assert.ok(moving, 'the reduced motion branch is not where this test expects it');
+  assert.match(moving[0], /'🏆'/u, 'the trophy shower runs for a player who asked for no motion');
+  assert.match(moving[0], /'🥇'/u, 'the medal shower runs for a player who asked for no motion');
 });
 
-test('the personal best line is in the markup, hidden until it is true', () => {
+test('both record lines are in the markup, hidden until they are true', () => {
   assert.match(
     html,
     /id="wBestLine"\s+hidden\s*>/u,
@@ -414,21 +436,36 @@ test('the personal best line is in the markup, hidden until it is true', () => {
   );
   assert.match(
     html,
-    /hidden\s*><span aria-hidden="true">🏆<\/span> <b>¡Nuevo récord!<\/b><\/p>/u,
-    'the personal best line lost its aria-hidden trophy or its words',
+    /id="wStreakLine"\s+hidden\s*>/u,
+    'the best streak line is not hidden by default, so it shows on the first win before app.js touches it',
   );
-  /* One glyph, one meaning. The trophy is the best time; the streak beside the
-     record title is a medal. They were both trophies, in one dialog, saying two
-     different things. */
+  assert.match(
+    html,
+    /hidden\s*><span aria-hidden="true">🏆<\/span> <b>¡Nuevo récord de tiempo!<\/b><\/p>/u,
+    'the personal best line lost its aria-hidden trophy or the word that says which number it is about',
+  );
+  assert.match(
+    html,
+    /hidden\s*><span aria-hidden="true">🥇<\/span> <b>¡Tu mejor racha: <span id="wStreakCount">0<\/span> secas seguidas!<\/b><\/p>/u,
+    'the best streak line lost its aria-hidden medal or the hole app.js writes the count into',
+  );
+  /* One glyph, one record, everywhere either appears. */
   assert.match(
     html,
     /🔥 <b id="streakNow">0<\/b> 🥇 <b id="streakBest">0<\/b>/u,
     'the best streak is a trophy again, which is the glyph the best time already uses',
   );
-  assert.doesNotMatch(
-    body('bestMark'),
-    /🥇/u,
-    'the best time marker took the streak glyph, so the two are indistinguishable again',
+  /* The tile the record belongs to is marked, and it is the only one that can
+     be: a record is kept for the clock and for neither counter beside it. */
+  assert.match(
+    html,
+    /<div class="stat" id="wTimeStat"><b id="wTime">/u,
+    'the time tile lost the hook the record marker is put on',
+  );
+  assert.match(
+    html,
+    /\.modal \.stat\.record\{/u,
+    'the marked tile has no style, so a record marks nothing the player can see',
   );
 });
 
