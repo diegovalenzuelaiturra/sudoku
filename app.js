@@ -950,15 +950,17 @@ function paintRecord() {
      as played: a player who resumed a game from before the record existed and
      won it was shown "Sin partidas todavía." beside a row reading one win and a
      real best time. */
-  /* Two counts and two emoji on screen, the sentence for a screen reader only.
-     Emoji are decorative to assistive tech, so dropping the words from the
-     markup would have dropped them from the accessibility tree as well: the
-     hidden span is what keeps the line meaning anything without sight of it.
+  /* Two counts, each with the word that says what it is, and the sentence for a
+     screen reader only. Emoji are decorative to assistive tech, so dropping the
+     words from the markup would have dropped them from the accessibility tree
+     as well: the hidden span is what keeps the line meaning anything without
+     sight of it.
 
      Before the first game there is no count worth showing, so the sentence is
      the visible content in that one case and the counts stay hidden. */
   const noGames = played === 0 && won === 0;
   $('streakNow').textContent = stats.streak;
+  $('streakNowWord').textContent = stats.streak === 1 ? 'seguida' : 'seguidas';
   $('streakBest').textContent = stats.bestStreak;
   $('streakCounts').hidden = noGames;
   $('streakText').classList.toggle('visually-hidden', !noGames);
@@ -1223,8 +1225,21 @@ function recordPlayed(key) {
    on each one turns the rarest celebration in the game into the most frequent:
    ten in a row rained nine times. The third is the first run worth the name,
    and after that every fifth. The best streak itself still moves on every one
-   of them, and the record dialog shows it; this decides only what is announced. */
+   of them, and every clean win says where the run stands; this decides only
+   which of them calls it a record and rains for it. */
 const streakMilestone = (run) => run === 3 || (run >= 5 && run % 5 === 0);
+/* What a clean win says about the run it just extended, and it says it every
+   time. The counter lives in the record dialog, which is behind the start
+   screen or the pause veil: a win that moved it silently left the player no
+   sign it had been counted, and a run counted where nobody is looking reads as
+   a run that was lost. Only a milestone claims a record, and only a record
+   rains. */
+const streakSaid = (run, record) =>
+  record
+    ? `¡Tu mejor racha: ${run} secas seguidas!`
+    : run === 1
+      ? 'Va 1 seca.'
+      : `Van ${run} secas seguidas.`;
 /* Returns the two records this win could have broken, which is the only place
    either comparison can be made safely: done outside, both have to run before
    this function moves the counts, and moving the call one line later silently
@@ -1580,7 +1595,7 @@ function win() {
     `Ganaste. ${fmt(seconds)}, ${mistakes === 1 ? '1 error' : `${mistakes} errores`}, ${hints === 1 ? '1 pista' : `${hints} pistas`}.` +
     ` Te llevas ${earned} papas fritas${chocoEarned ? ` y ${chocoWord(chocoEarned)}` : ''}.` +
     (beatBest ? ' ¡Nuevo récord de tiempo!' : '') +
-    (beatStreak ? ` ¡Tu mejor racha: ${streakNow} secas seguidas!` : '');
+    (flawless ? ` ${streakSaid(streakNow, beatStreak)}` : '');
   /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow = reduceMotion.matches ? 0 : 1;
   if (!reduceMotion.matches) {
@@ -1622,12 +1637,16 @@ function win() {
          Toggled either way: the dialog is reused by every win. */
       $('wBestLine').hidden = !beatBest;
       $('wTimeStat').classList.toggle('record', beatBest);
-      /* The other record, with its own glyph and its own line: the medal is the
-         streak everywhere it appears, and the trophy is the time. Both can land
-         on one win, and both showers are shown, so both sentences have to be
-         able to. */
-      $('wStreakLine').hidden = !beatStreak;
-      if (beatStreak) $('wStreakCount').textContent = streakNow;
+      /* The run, on its own line, on every clean win. The medal is the streak
+         everywhere it appears and the trophy is the time, so the glyph is what
+         separates the record from the count that led to it. Both records can
+         land on one win, and both showers are shown, so both sentences have to
+         be able to. */
+      $('wStreakLine').hidden = !flawless;
+      if (flawless) {
+        $('wStreakGlyph').textContent = beatStreak ? '🥇' : '🔥';
+        $('wStreakText').textContent = streakSaid(streakNow, beatStreak);
+      }
       /* What the board actually was, rather than what was asked for, and the seed
        that rebuilds it. Both are textContent: the code is a number in base 36
        and the technique comes from a fixed table, but neither has any business

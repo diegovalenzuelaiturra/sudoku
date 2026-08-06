@@ -480,10 +480,11 @@ test('a personal best is announced and shown, and only when there was one to bea
 });
 
 /* The second record, which is the streak and not the clock. Every win here is
-   flawless, so the run only ever grows: the first takes the best from nothing to
-   one, which is a record against nothing and is not announced, and the second is
-   the first that beats a run the player had actually put together. */
-test('a best streak is announced on the third and then every fifth, not on every win', async ({
+   flawless, so the run only ever grows: each one says where it stands, and the
+   third and then every fifth calls it a record. The counter itself sits in the
+   record dialog, which the player has to go and open, so a win that moved it
+   silently was reported as the game refusing to count the game at all. */
+test('every clean win says where the run is, and a milestone calls it a record', async ({
   page,
 }) => {
   const problems = await boot(page);
@@ -500,10 +501,16 @@ test('a best streak is announced on the third and then every fifth, not on every
   await startGame(page, 'medium');
   await winAt(page, 100);
   await expect(page.locator('#winOverlay')).toBeVisible();
-  await expect(streakLine, 'the first flawless win of all was called a best streak').toBeHidden();
+  await expect(streakLine, 'the first clean win of all said nothing about the run').toHaveText(
+    '🔥 Va 1 seca.',
+  );
+  expect(
+    await page.locator('#srAlert').textContent(),
+    'the run reached the line and not the announcement, which is the half a screen reader gets',
+  ).toContain(' Va 1 seca.');
 
   await again(500);
-  await expect(streakLine, 'a run of two was announced').toBeHidden();
+  await expect(streakLine).toHaveText('🔥 Van 2 secas seguidas.');
 
   await again(600);
   await expect(page.locator('#wBestLine'), 'a slower win set a time record').toBeHidden();
@@ -512,17 +519,54 @@ test('a best streak is announced on the third and then every fifth, not on every
   expect(announced).toContain(' ¡Tu mejor racha: 3 secas seguidas!');
   expect(announced, 'the clock claimed a record it did not set').not.toContain('récord de tiempo');
 
-  /* The fourth extends the best streak and says nothing about it. */
+  /* The fourth extends the best streak and does not claim one. */
   await again(700);
-  await expect(streakLine, 'the fourth in a row was announced').toBeHidden();
+  await expect(streakLine, 'the fourth in a row claimed a record').toHaveText(
+    '🔥 Van 4 secas seguidas.',
+  );
 
   await again(800);
   await expect(streakLine).toHaveText('🥇 ¡Tu mejor racha: 5 secas seguidas!');
 
-  /* And the record counted every one of them, announced or not. */
+  /* And the record counted every one of them, called a record or not. */
   await page.locator('#againBtn').click();
   await openRecord(page);
-  await expect(page.locator('#streakCounts')).toHaveText('🔥 5 🥇 5');
+  await expect(page.locator('#streakCounts')).toHaveText('🔥 5 seguidas 🥇 mejor 5');
+  expect(problems).toEqual([]);
+});
+
+/* Zero is not a sentence worth writing, and a win that ended a run has already
+   said what it cost in the two counters beside the clock. */
+test('a win that cost an error says nothing about the run', async ({ page }) => {
+  const problems = await boot(page);
+  await startGame(page, 'medium');
+  await page.evaluate(() => {
+    const i = values.findIndex((_v, k) => !fixed[k]);
+    sel = i;
+    inputDigit((solution[i] % 9) + 1);
+  });
+  await solve(page);
+  await expect(page.locator('#winOverlay')).toBeVisible();
+  await expect(page.locator('#wStreakLine')).toBeHidden();
+  expect(await page.locator('#srAlert').textContent()).not.toContain('seca');
+  expect(problems).toEqual([]);
+});
+
+/* Nothing falls for a player who asked for less motion, so a record that only
+   rains is a record they are never told about. Both records have a line for
+   that reason, and this is the run's. */
+test('a clean win says so with no animation at all', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const problems = await boot(page);
+  await startGame(page, 'medium');
+  await winAt(page, 100);
+  await expect(page.locator('#winOverlay')).toBeVisible();
+  await expect(
+    page.locator('.drop'),
+    'a shower ran for a player who asked for no motion',
+  ).toHaveCount(0);
+  await expect(page.locator('#wStreakLine')).toHaveText('🔥 Va 1 seca.');
+  await expect(page.locator('#fryBanner')).toContainText('🍟 +20');
   expect(problems).toEqual([]);
 });
 
