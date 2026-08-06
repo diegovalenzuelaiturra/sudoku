@@ -622,10 +622,13 @@ test('notes mode is visible on the keypad without taking it out of flow', async 
     page.evaluate(() => {
       const pad = document.getElementById('pad');
       const rect = pad.getBoundingClientRect();
+      const key = document.querySelector('.key');
       return {
         position: getComputedStyle(pad).position,
         height: Math.round(rect.height),
-        keyBg: getComputedStyle(document.querySelector('.key')).backgroundColor,
+        keyBg: getComputedStyle(key).backgroundColor,
+        keyHeight: Math.round(key.getBoundingClientRect().height),
+        digitSize: getComputedStyle(key.querySelector('.d')).fontSize,
       };
     });
 
@@ -640,8 +643,74 @@ test('notes mode is visible on the keypad without taking it out of flow', async 
 
   expect(on.position, 'notes mode took the keypad out of flow').toBe('static');
   expect(on.height, 'notes mode changed the size of the keypad').toBe(off.height);
+  /* Colour is the whole of the difference. Notes mode used to redraw the digits
+     smaller as well, 22px against 17 on a phone, so the thing the eye was aiming
+     at changed shape at the moment the mode changed. */
+  expect(on.digitSize, 'the digits are a different size in notes mode').toBe(off.digitSize);
+  expect(on.keyHeight, 'the keys are a different height in notes mode').toBe(off.keyHeight);
   expect(on.keyBg, 'the keypad says nothing about the mode it is in').not.toBe(off.keyBg);
   await expect(page.locator('#pad')).toHaveClass(/noting/u);
+});
+
+/* At the full width of the column the leftmost digits sit at the far end of a
+   right thumb's arc and the rightmost at the far end of a left one. The board
+   keeps the whole width, because what it needs is size; the controls are pulled
+   in and centred, because what they need is to be within reach of either hand.
+   Capped at the board's own floor, so they can never come out wider than the
+   grid they stand under, which on the smallest phone they would. */
+test('the controls are narrower than the board and centred under it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
+  await startGame(page);
+
+  /* Resized rather than reloaded between the two: a second visit restores the
+     board this one started and never offers the difficulty dialog again, and the
+     layout answers to the viewport either way. */
+  for (const size of [
+    { width: 390, height: 844 },
+    { width: 375, height: 667 },
+  ]) {
+    await page.setViewportSize(size);
+
+    const laid = await page.evaluate(() => {
+      const rect = (sel) => document.querySelector(sel).getBoundingClientRect();
+      const board = rect('.board');
+      const controls = rect('.controls');
+      return {
+        board: { left: Math.round(board.left), right: Math.round(board.right) },
+        controls: { left: Math.round(controls.left), right: Math.round(controls.right) },
+        boardWidth: Math.round(board.width),
+        controlsWidth: Math.round(controls.width),
+        key: {
+          w: Math.round(rect('.key').width),
+          h: Math.round(rect('.key').height),
+        },
+      };
+    });
+
+    const where = `${size.width} wide`;
+    expect(laid.controlsWidth, `the controls overhang the board at ${where}`).toBeLessThanOrEqual(
+      laid.boardWidth,
+    );
+    expect(
+      laid.controls.left,
+      `the controls start left of the board at ${where}`,
+    ).toBeGreaterThanOrEqual(laid.board.left);
+    expect(
+      laid.controls.right,
+      `the controls end right of the board at ${where}`,
+    ).toBeLessThanOrEqual(laid.board.right);
+    /* Centred, to within the rounding of an odd number of pixels. */
+    const leftGap = laid.controls.left - laid.board.left;
+    const rightGap = laid.board.right - laid.controls.right;
+    expect(
+      Math.abs(leftGap - rightGap),
+      `the controls are not centred at ${where}`,
+    ).toBeLessThanOrEqual(1);
+    /* And none of the reach was bought with target size. */
+    expect(laid.key.w, `a key is under 44px wide at ${where}`).toBeGreaterThanOrEqual(44);
+    expect(laid.key.h, `a key is under 44px tall at ${where}`).toBeGreaterThanOrEqual(44);
+  }
 });
 
 /* Pista spends the flawless bonus and used to sit in the tool row beside the
@@ -671,6 +740,67 @@ test('the costly button is out of the tool row and goes quiet while paused', asy
    buttons went on working and quietly rendered as bare browser defaults for
    several releases. Size is what tells them apart from an unstyled button, so
    size is what is asserted. */
+/* The win dialog is put up by a timer about two seconds after the last digit,
+   and the board is finished by then, so nothing has made the page inert: the
+   Nueva partida button is live for the whole of that window. Opening the picker
+   inside it left the win dialog to arrive on top and take the focus. */
+test('the win dialog cannot arrive on top of the difficulty picker', async ({ page }) => {
+  await startGame(page);
+
+  await page.evaluate(() => {
+    for (let i = 0; i < 81; i++) {
+      if (values[i] !== solution[i]) {
+        sel = i;
+        inputDigit(solution[i]);
+      }
+    }
+  });
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  /* Inside the window, before any of the win timers have run. */
+  await page.locator('#newBtn').click();
+  await expect(page.locator('#startOverlay')).toBeVisible();
+  /* Past the last of them, which is the dialog itself at about 1.9 seconds. */
+  await page.waitForTimeout(2600);
+
+  await expect(page.locator('#winOverlay'), 'the win dialog opened over the picker').toBeHidden();
+  await expect(page.locator('#startOverlay')).toBeVisible();
+  /* And the picker offers nothing to go back to, because there is no board to
+     go back to: the game that was on the screen is over. */
+  await expect(page.locator('#cancelNew')).toBeHidden();
+});
+
+/* Reported by a player: after finishing a game, Seguir jugando took them back to
+   the finished game. The attribute was being set, so every check of the property
+   said the button was gone, but .modal .quiet:has(.ico) sets a display and the
+   browser's own [hidden] rule is display:none at zero specificity, so it stayed
+   on screen. Pressing it only hides the dialog, and what is behind the dialog is
+   the board that was just won. */
+test('a finished game is never offered back', async ({ page }) => {
+  await startGame(page);
+  await page.evaluate(() => {
+    for (let i = 0; i < 81; i++) {
+      if (values[i] !== solution[i]) {
+        sel = i;
+        inputDigit(solution[i]);
+      }
+    }
+  });
+  await expect(page.locator('#winOverlay')).toBeVisible();
+
+  await page.locator('#againBtn').click();
+  await expect(page.locator('#startOverlay')).toBeVisible();
+  /* Rendered, not merely marked: the attribute was always right. */
+  await expect(
+    page.locator('#cancelNew'),
+    'the finished game is offered back through Seguir jugando',
+  ).toBeHidden();
+  expect(
+    await page.evaluate(() => getComputedStyle(document.getElementById('cancelNew')).display),
+    'the attribute is set and the stylesheet is drawing it anyway',
+  ).toBe('none');
+});
+
 test('the buttons that close a dialog are the full width of it', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('./');
