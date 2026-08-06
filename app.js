@@ -388,6 +388,24 @@ function hideOverlay(el) {
   if (!OVERLAYS.some((id) => $(id).classList.contains('show'))) appEl.inert = false;
 }
 
+/* Tapping beside a dialog closes it, which is the touch half of what Escape has
+   always done with a keyboard: the rule is that the two agree, so anything a
+   player cannot Escape out of cannot be tapped out of either.
+
+   Both ends of the press have to land on the backdrop. Guarding the click alone
+   closes the dialog on a drag that starts on a button and lifts off beside it,
+   because a click is dispatched to the nearest ancestor of where the press began
+   and where it ended, and for that drag the ancestor is the backdrop. */
+function dismissOnBackdrop(el, close) {
+  let fromBackdrop = false;
+  el.addEventListener('pointerdown', (e) => {
+    fromBackdrop = e.target === el;
+  });
+  el.addEventListener('click', (e) => {
+    if (fromBackdrop && e.target === el) close();
+  });
+}
+
 /* ---- timer ---- */
 function startTimer() {
   clearInterval(tick);
@@ -417,12 +435,15 @@ function setPaused(p) {
      lives inside .app and would disable its own resume button. */
   boardEl.inert = p;
   controlsEl.inert = p;
-  /* These two used to be inside .controls and went quiet with it. They are in
-     the header now, which pause does not touch because the resume button lives
-     up there: Pista would otherwise reveal a cell on a board nobody can see,
-     and both would still take Tab while the game is stopped. Marked one at a
-     time rather than by their container, which also holds the resume button. */
-  $('newBtn').inert = p;
+  /* Pista used to be inside .controls and went quiet with it. It is in the
+     header now, which pause does not touch because the resume button lives up
+     there: without this it would reveal a cell on a board nobody can see, and
+     would still take Tab while the game is stopped. Marked on its own rather
+     than by its container, which also holds the resume button.
+
+     Nueva partida is deliberately left alone. Abandoning a paused game used to
+     mean resuming it first, and the picker acts on no board: it opens over the
+     veil, and cancelling out of it leaves the pause where it found it. */
   $('hintBtn').inert = p;
   /* render() is what decides whether this one is offered at all, and pausing
      does not render: without this it would keep whatever it was showing over a
@@ -1959,6 +1980,10 @@ $('cancelNew').addEventListener('click', () => {
   hideOverlay($('startOverlay'));
   if (pausedByDialog) setPaused(false); /* only resume if this dialog is what paused it */
   pausedByDialog = false;
+  /* A game that was already paused before this dialog opened is still paused
+     behind it, and the veil is a dialog: leaving focus on the body would drop
+     a keyboard player outside the only thing on screen they can act on. */
+  if (paused) $('resumeBtn').focus();
 });
 $('againBtn').addEventListener('click', () => {
   hideOverlay($('winOverlay'));
@@ -1967,24 +1992,40 @@ $('againBtn').addEventListener('click', () => {
 });
 
 /* ---- the record dialog ----
-   Opens over the start dialog rather than replacing it, so closing it puts the
-   player back where they were rather than at a dead end. */
-$('recordBtn').addEventListener('click', () => {
+   Opens over whatever asked for it rather than replacing it, so closing it puts
+   the player back where they were rather than at a dead end. Two things ask: the
+   difficulty picker, and the pause veil, which is the only place the record can
+   be read without the clock running. */
+function openRecord() {
   paintRecord();
   showOverlay($('recordOverlay'));
-});
+}
+$('recordBtn').addEventListener('click', openRecord);
+$('veilRecordBtn').addEventListener('click', openRecord);
 function closeRecord() {
   disarmRedeem();
   hideOverlay($('recordOverlay'));
   /* Back to what opened it, which is still on screen behind. Without this the
      focus lands on the body and the next Tab starts from the top of the page. */
   if ($('startOverlay').classList.contains('show')) $('recordBtn').focus();
+  else if ($('veil').classList.contains('show')) $('veilRecordBtn').focus();
 }
 $('buzzToggle').addEventListener('change', (e) => {
   prefs.buzz = e.currentTarget.checked;
   savePrefs();
 });
 $('closeRecord').addEventListener('click', closeRecord);
+
+/* The three a tap beside can close, in the order Escape checks them, each going
+   one step back rather than all the way to the board: the record was opened from
+   somewhere and that somewhere is still on screen behind it. The picker closes
+   only when it is offering a way back, which at boot it is not. The win dialog
+   is on no list at all, because what is behind it is a game that is over. */
+dismissOnBackdrop($('recordOverlay'), closeRecord);
+dismissOnBackdrop($('startOverlay'), () => {
+  if (!$('cancelNew').hidden) $('cancelNew').click();
+});
+dismissOnBackdrop($('veil'), () => setPaused(false));
 
 /* Redeeming empties a balance and cannot be undone, so it takes two presses.
    A confirm() would do the same job in one, but it is a browser modal on top of
