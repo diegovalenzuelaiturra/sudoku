@@ -379,8 +379,8 @@ test('both records reach the dialog and the announcement', () => {
   );
   assert.match(
     win,
-    /\$\('wStreakLine'\)\.hidden = !beatStreak;/u,
-    'the best streak line is shown on every win, or on none',
+    /\$\('wStreakLine'\)\.hidden = !flawless;/u,
+    'the run is back to being shown only when it breaks a record, which leaves every other clean win saying nothing about a counter it moved',
   );
   /* Which of the three numbers in the dialog the record belongs to. "Nuevo
      récord" over a row of three tiles does not say what was broken. */
@@ -404,8 +404,15 @@ test('both records reach the dialog and the announcement', () => {
   );
   assert.match(
     win,
-    /\(beatStreak \? ` ¡Tu mejor racha: \$\{streakNow\} secas seguidas!` : ''\)/u,
-    'the assertive announcement drops the streak record, which then rains with nothing said about it',
+    /\(flawless \? ` \$\{streakSaid\(streakNow, beatStreak\)\}` : ''\)/u,
+    'the assertive announcement drops the run, so a player who cannot see the line is told about the streak only when it breaks a record',
+  );
+  /* One is not "1 secas seguidas", and a record is the only sentence that
+     claims one. */
+  assert.match(
+    source,
+    /run === 1\s*\?\s*'Va 1 seca\.'\s*:\s*`Van \$\{run\} secas seguidas\.`/u,
+    'the run reads as a plural whatever it is worth, or the singular lost its own wording',
   );
   /* The table is four plain cells again. A trophy beside the best time said the
      record was set in this session, which is a fact about the tab rather than
@@ -457,8 +464,8 @@ test('both record lines are in the markup, hidden until they are true', () => {
   );
   assert.match(
     html,
-    /hidden\s*><span aria-hidden="true">🥇<\/span> <b>¡Tu mejor racha: <span id="wStreakCount">0<\/span> secas seguidas!<\/b><\/p>/u,
-    'the best streak line lost its aria-hidden medal or the hole app.js writes the count into',
+    /hidden\s*><span\s+id="wStreakGlyph"\s+aria-hidden="true"\s*>🔥<\/span> <b id="wStreakText">/u,
+    'the streak line lost one of the two holes app.js writes into: the glyph that separates a record from a count, and the sentence itself',
   );
   /* One glyph, one record, everywhere either appears. */
   assert.match(

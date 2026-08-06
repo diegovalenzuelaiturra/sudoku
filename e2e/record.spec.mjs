@@ -180,6 +180,30 @@ test('a win that is not flawless breaks the streak', async ({ page }) => {
   expect(problems).toEqual([]);
 });
 
+/* Every other streak test finishes its games in one page. A phone does not: the
+   app is closed and reopened between boards, so a run has to come back off the
+   key as well as survive an "Otra al tiro". Nothing covered that, and it is the
+   first thing to suspect when a player reports a run that stopped counting. */
+test('the run survives the app being closed between games', async ({ page }) => {
+  const problems = await boot(page);
+
+  await startGame(page, 'medium');
+  await solve(page);
+  await expect(page.locator('#winOverlay')).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator('#board .cell')).toHaveCount(81);
+
+  await startGame(page, 'medium');
+  await solve(page);
+  await expect(page.locator('#wStreakLine')).toHaveText('🔥 Van 2 secas seguidas.');
+
+  await page.locator('#againBtn').click();
+  await openRecord(page);
+  await expect(page.locator('#streakCounts')).toHaveText('🔥 2 🥇 2');
+  expect(problems).toEqual([]);
+});
+
 /* seconds arrives from the same editable storage as the counters and was read
    with Number(x)||0. A negative restored, rendered as -15:00, and recordWin()
    wrote it as that difficulty's best. The next boot sanitised the stored best to

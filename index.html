@@ -928,14 +928,21 @@
                     id="wBestLine"
                     hidden
                 ><span aria-hidden="true">🏆</span> <b>¡Nuevo récord de tiempo!</b></p>
-                <!-- The other record. The medal is the streak wherever it appears and
-                    the trophy is the time, so the two are told apart by their glyph
-                    the same way they are told apart by their shower. -->
+                <!-- Where the run stands, on every clean win, and whether it is a
+                    record. The medal is the streak wherever it appears and the trophy
+                    is the time, so the two are told apart by their glyph the same way
+                    they are told apart by their shower. Both holes are filled by
+                    app.js: a run that is only written into the record dialog is a run
+                    the player is never told about, since that dialog is somewhere
+                    they have to go rather than somewhere the win puts them. -->
                 <p
                     class="code"
                     id="wStreakLine"
                     hidden
-                ><span aria-hidden="true">🥇</span> <b>¡Tu mejor racha: <span id="wStreakCount">0</span> secas seguidas!</b></p>
+                ><span
+                        id="wStreakGlyph"
+                        aria-hidden="true"
+                    >🔥</span> <b id="wStreakText">Va 1 seca.</b></p>
                 <!-- What the board really was and the seed that rebuilds it. The technique
                     is the honest difficulty, and the code is here so a board worth talking
                     about can be found again. -->
