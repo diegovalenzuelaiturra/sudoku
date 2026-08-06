@@ -139,6 +139,14 @@
   .status .chip{color:var(--indigo);font-weight:600;letter-spacing:.08em;text-transform:uppercase}
   .status .spacer{flex:1}
   .status .warn b{color:var(--vermilion)}
+  /* The browser's own rule for this is display:none at zero specificity, so any
+     class in this sheet that sets a display outranks it and the element stays on
+     screen with the attribute set. It has cost three bugs now: a tool button
+     offering nothing, a settings row on a platform with nothing to set, and
+     Seguir jugando inviting a player back into a game they had already won,
+     which is what it does when the only thing behind the dialog is a finished
+     board. One rule, once, instead of a guard per class. */
+  [hidden]{display:none!important}
   .visually-hidden{
     position:absolute;width:1px;height:1px;margin:-1px;padding:0;
     overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;
@@ -387,10 +395,6 @@
   .ledger .chip{margin-right:10px;font-variant-numeric:tabular-nums;white-space:nowrap}
   .ledger li:first-child{border-top:none}
   .prefs{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
-  /* The browser's own [hidden] rule is display:none at zero specificity, which
-     the line above outranks: without this the row is laid out and shown on a
-     platform that has nothing to switch. */
-  .prefs[hidden]{display:none}
   .prefs label{
     display:flex;align-items:center;min-height:44px;
     font-size:12.5px;color:var(--ink);letter-spacing:.03em;cursor:pointer;

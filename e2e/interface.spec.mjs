@@ -740,6 +740,67 @@ test('the costly button is out of the tool row and goes quiet while paused', asy
    buttons went on working and quietly rendered as bare browser defaults for
    several releases. Size is what tells them apart from an unstyled button, so
    size is what is asserted. */
+/* The win dialog is put up by a timer about two seconds after the last digit,
+   and the board is finished by then, so nothing has made the page inert: the
+   Nueva partida button is live for the whole of that window. Opening the picker
+   inside it left the win dialog to arrive on top and take the focus. */
+test('the win dialog cannot arrive on top of the difficulty picker', async ({ page }) => {
+  await startGame(page);
+
+  await page.evaluate(() => {
+    for (let i = 0; i < 81; i++) {
+      if (values[i] !== solution[i]) {
+        sel = i;
+        inputDigit(solution[i]);
+      }
+    }
+  });
+  expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
+
+  /* Inside the window, before any of the win timers have run. */
+  await page.locator('#newBtn').click();
+  await expect(page.locator('#startOverlay')).toBeVisible();
+  /* Past the last of them, which is the dialog itself at about 1.9 seconds. */
+  await page.waitForTimeout(2600);
+
+  await expect(page.locator('#winOverlay'), 'the win dialog opened over the picker').toBeHidden();
+  await expect(page.locator('#startOverlay')).toBeVisible();
+  /* And the picker offers nothing to go back to, because there is no board to
+     go back to: the game that was on the screen is over. */
+  await expect(page.locator('#cancelNew')).toBeHidden();
+});
+
+/* Reported by a player: after finishing a game, Seguir jugando took them back to
+   the finished game. The attribute was being set, so every check of the property
+   said the button was gone, but .modal .quiet:has(.ico) sets a display and the
+   browser's own [hidden] rule is display:none at zero specificity, so it stayed
+   on screen. Pressing it only hides the dialog, and what is behind the dialog is
+   the board that was just won. */
+test('a finished game is never offered back', async ({ page }) => {
+  await startGame(page);
+  await page.evaluate(() => {
+    for (let i = 0; i < 81; i++) {
+      if (values[i] !== solution[i]) {
+        sel = i;
+        inputDigit(solution[i]);
+      }
+    }
+  });
+  await expect(page.locator('#winOverlay')).toBeVisible();
+
+  await page.locator('#againBtn').click();
+  await expect(page.locator('#startOverlay')).toBeVisible();
+  /* Rendered, not merely marked: the attribute was always right. */
+  await expect(
+    page.locator('#cancelNew'),
+    'the finished game is offered back through Seguir jugando',
+  ).toBeHidden();
+  expect(
+    await page.evaluate(() => getComputedStyle(document.getElementById('cancelNew')).display),
+    'the attribute is set and the stylesheet is drawing it anyway',
+  ).toBe('none');
+});
+
 test('the buttons that close a dialog are the full width of it', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('./');
