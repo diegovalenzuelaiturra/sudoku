@@ -45,10 +45,14 @@ repos:
   # answer everywhere. Left to itself zizmor uses the network when a GitHub
   # token happens to be in the environment and stays quietly offline when one
   # is not, so the same commit could pass on a laptop and fail in CI purely
-  # because of an exported variable. Fixing it offline removes that. The audits
-  # given up are the ones that resolve action references over the API, which
-  # matter least here: every action this repo uses is SHA-pinned and
-  # GitHub-owned, and the repo's Actions policy will not admit anything else.
+  # because of an exported variable. Fixing it offline removes that.
+  #
+  # What that costs is the audits that resolve action references over the API,
+  # and .github/workflows/zizmor.yml is where they are run instead. They are
+  # worth running: the Actions policy admits three third-party patterns now, and
+  # a pinned SHA in somebody else's repository is exactly what impostor-commit
+  # and known-vulnerable-actions exist to check. This hook is still the one that
+  # fails hard on a finding, in seconds, before the commit is made.
   #
   # --no-progress is from the upstream manifest and has to be repeated here,
   # because setting args in this file replaces the manifest's args rather than
