@@ -725,12 +725,13 @@ test('the costly button is out of the tool row and goes quiet while paused', asy
 
   await page.locator('#pauseBtn').click();
   await expect(page.locator('#veil')).toBeVisible();
-  for (const id of ['hintBtn', 'newBtn']) {
-    await expect(
-      page.locator(`#${id}`),
-      `${id} still takes a click with the board covered`,
-    ).toHaveJSProperty('inert', true);
-  }
+  await expect(
+    page.locator('#hintBtn'),
+    'Pista still takes a click with the board covered',
+  ).toHaveJSProperty('inert', true);
+  /* Nueva partida is the one header action a pause keeps, so that a game can be
+     abandoned without being resumed first. */
+  await expect(page.locator('#newBtn')).toHaveJSProperty('inert', false);
   await page.locator('#resumeBtn').click();
   await expect(page.locator('#hintBtn')).toHaveJSProperty('inert', false);
 });
@@ -1108,4 +1109,76 @@ test('a wrong digit on the board withdraws the offer until it is fixed', async (
     render();
   }, victim);
   await expect(page.locator('#settleBtn')).toBeVisible();
+});
+
+/* Tapping beside a dialog to leave it is what Escape has always done here with a
+   keyboard, and a phone has no Escape. The rule is that the two agree, which is
+   what settles the two cases below: a dialog nobody can Escape out of is a
+   dialog nobody can tap out of either. */
+const asideOf = (page, id) => page.locator(`#${id}`).click({ position: { x: 8, y: 8 } });
+
+test('tapping beside a dialog closes it, one step at a time', async ({ page }) => {
+  await startGame(page);
+  await page.locator('#newBtn').click();
+  await expect(page.locator('#startOverlay')).toBeVisible();
+  await page.locator('#recordBtn').click();
+  await expect(page.locator('#recordOverlay')).toBeVisible();
+
+  await asideOf(page, 'recordOverlay');
+  /* One step, to the picker that put it up. Going straight to the board would
+     skip a dialog the player never asked to leave. */
+  await expect(page.locator('#recordOverlay')).toBeHidden();
+  await expect(page.locator('#startOverlay')).toBeVisible();
+
+  await asideOf(page, 'startOverlay');
+  await expect(page.locator('#startOverlay')).toBeHidden();
+  await expect(page.locator('#board .cell').first()).toBeVisible();
+});
+
+test('the picker with nothing behind it cannot be tapped away', async ({ page }) => {
+  await expect(page.locator('#startOverlay')).toBeVisible();
+  /* The same condition Escape reads: no way back is offered because there is no
+     game to go back to. */
+  await expect(page.locator('#cancelNew')).toBeHidden();
+
+  await asideOf(page, 'startOverlay');
+  await expect(page.locator('#startOverlay'), 'the player was left with no game').toBeVisible();
+});
+
+/* Behind this one is a board that has been finished, and handing a finished game
+   back is a bug this repository has already shipped once. */
+test('the win dialog cannot be tapped away', async ({ page }) => {
+  await startGame(page);
+  await page.evaluate(() => {
+    for (let i = 0; i < 81; i++) {
+      if (values[i] !== solution[i]) {
+        sel = i;
+        inputDigit(solution[i]);
+      }
+    }
+  });
+  await expect(page.locator('#winOverlay')).toBeVisible();
+
+  await asideOf(page, 'winOverlay');
+  await expect(page.locator('#winOverlay')).toBeVisible();
+});
+
+/* Both ends of the press have to land outside. A click is dispatched to the
+   nearest ancestor of where the press began and where it ended, so a drag that
+   starts on the dialog and lifts off beside it arrives at the backdrop looking
+   exactly like a tap there, and selecting a line of the record used to be enough
+   to close it. */
+test('a press that starts inside a dialog does not close it where it lifts', async ({ page }) => {
+  await startGame(page);
+  await page.locator('#newBtn').click();
+  await page.locator('#recordBtn').click();
+  await expect(page.locator('#recordOverlay')).toBeVisible();
+
+  const modal = await page.locator('#recordOverlay .modal').boundingBox();
+  await page.mouse.move(modal.x + modal.width / 2, modal.y + 24);
+  await page.mouse.down();
+  await page.mouse.move(8, 8, { steps: 6 });
+  await page.mouse.up();
+
+  await expect(page.locator('#recordOverlay'), 'a drag out of the dialog closed it').toBeVisible();
 });
