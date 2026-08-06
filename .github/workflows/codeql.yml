@@ -30,15 +30,18 @@ name: CodeQL
 #
 # Deliberately NOT path-filtered, unlike osv-scanner.yml. That file answers a
 # question about package-lock.json and can afford to skip a pull request that
-# does not touch it. This one is a required status check in both rulesets, and a
-# required check that never runs leaves the merge waiting for a result that will
-# not arrive. Every pull request runs this, or it is not required.
+# leaves it alone. This one has to report on every pull request, because the
+# code scanning rule described below blocks a merge that has no results as well
+# as one with alerts, so a skipped run is a wedged merge.
 #
 # Findings do not turn this job red. codeql-action/analyze fails on an internal
 # error, not on an alert, which is deliberate upstream: the alert belongs in the
 # Security tab where it can be triaged and stays triaged. What makes an alert
-# block a merge is the code scanning rule in both rulesets, which is a separate
-# thing to keep in mind if this ever appears to pass while alerts are open.
+# block a merge is the code scanning rule in both rulesets, which names the tool
+# rather than this job. Keep that in mind if this ever looks green while alerts
+# are open, and note that the same rule covers a job that never ran at all,
+# which is why neither of these is also a required status check: the rule
+# already refuses a merge whose results are missing.
 on:
   pull_request:
   push:
@@ -62,10 +65,11 @@ concurrency:
 
 jobs:
   analyze:
-    # Both rulesets require this check by name. Renaming the job blocks every
-    # pull request until the required status check in each of them is updated to
-    # match, so change all three together or not at all.
-    name: CodeQL
+    # Not "CodeQL". Uploading SARIF makes GitHub publish a check run of its own
+    # named after the tool in the file, so a job called CodeQL puts two rows
+    # with one name on every pull request and leaves it to the reader to work
+    # out which of them is the analysis and which is the result.
+    name: CodeQL analysis
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

@@ -30,10 +30,12 @@ name: Zizmor
 # Findings do not turn this job red. With advanced-security the action uploads
 # SARIF and exits zero, on the upstream reasoning that an alert belongs in the
 # Security tab where it can be triaged rather than in a red run that a rerun
-# clears. What blocks a merge is the code scanning rule in both rulesets. The
-# offline copy in the Lint job still fails hard on any finding, so a workflow
-# written unsafely is red in seconds and blocked either way, and this file only
-# adds the findings that copy cannot see.
+# clears. What blocks a merge is the code scanning rule in both rulesets, which
+# refuses a pull request carrying alerts and equally one whose results never
+# arrived, so this runs unfiltered on every pull request. The offline copy in
+# the Lint job still fails hard on any finding, so a workflow written unsafely
+# is red in seconds and blocked either way, and this file only adds the findings
+# that copy cannot see.
 on:
   pull_request:
   push:
@@ -54,10 +56,10 @@ concurrency:
 
 jobs:
   audit:
-    # Both rulesets require this check by name. Renaming the job blocks every
-    # pull request until the required status check in each of them is updated to
-    # match, so change all three together or not at all.
-    name: Zizmor
+    # Not "zizmor", for the reason given in codeql.yml: the SARIF upload
+    # publishes a check run named after the tool, and two rows with one name is
+    # worse than a longer name.
+    name: Zizmor audit
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
