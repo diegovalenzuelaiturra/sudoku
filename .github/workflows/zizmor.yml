@@ -1,0 +1,98 @@
+name: Zizmor
+
+# zizmor already runs here, twice: as a git hook from .pre-commit-config.yaml
+# and again in the Lint job, which is a required status check in both rulesets.
+# That copy runs --offline, and this file exists for exactly what --offline
+# gives up.
+#
+# The offline audits read the workflow files and nothing else. The online ones
+# resolve every "uses:" against the GitHub API, which is what catches the
+# attacks that a SHA pin cannot: impostor-commit, where a pinned SHA is real but
+# is not reachable from any branch or tag of the repository it claims to come
+# from, and known-vulnerable-actions, where the pinned version is the one with
+# the advisory against it.
+#
+# The pre-commit config says those audits "matter least here: every action this
+# repo uses is SHA-pinned and GitHub-owned, and the repo's Actions policy will
+# not admit anything else". That was true when it was written and is not true
+# now. The policy admits three third-party patterns today, google's OSV scanner,
+# step-security's hardened runner and this action, and each one is a pinned SHA
+# in somebody else's repository. The online audits are worth most on exactly
+# those, so the argument for skipping them has turned into the argument for
+# running them somewhere.
+#
+# Kept out of the Lint job rather than added to it. That job is a hook runner
+# and takes no network beyond installing its own tools, and a hook that answers
+# differently depending on whether a token is in the environment is the thing
+# the --offline flag was added to prevent. This is a separate job with a
+# separate token and a separate verdict.
+#
+# Findings do not turn this job red. With advanced-security the action uploads
+# SARIF and exits zero, on the upstream reasoning that an alert belongs in the
+# Security tab where it can be triaged rather than in a red run that a rerun
+# clears. What blocks a merge is the code scanning rule in both rulesets, which
+# refuses a pull request carrying alerts and equally one whose results never
+# arrived, so this runs unfiltered on every pull request. The offline copy in
+# the Lint job still fails hard on any finding, so a workflow written unsafely
+# is red in seconds and blocked either way, and this file only adds the findings
+# that copy cannot see.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Mondays at 06:30 UTC, between OSV-Scanner and CodeQL. The online audits are
+  # the only ones here whose answer can change with nothing in the diff: an
+  # advisory published against a pinned action turns a green tree red without a
+  # commit, which is the case a schedule exists to catch.
+  schedule:
+    - cron: "30 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: zizmor-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  audit:
+    # Not "zizmor", for the reason given in codeql.yml: the SARIF upload
+    # publishes a check run named after the tool, and two rows with one name is
+    # worse than a longer name.
+    name: Zizmor audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # Publishes findings under Security, Code scanning. Free on public
+      # repositories. Granted to third-party code, which is why it is scoped to
+      # this one job rather than to the file.
+      security-events: write
+      contents: read
+      # Required by codeql-action/upload-sarif, which this action calls.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Pinned to v0.6.1 rather than to v0.6.2, which is five days old, on the
+      # same seven-day cooldown dependabot.yml applies to everything else here.
+      #
+      # This action needed a pattern in the repository's Actions policy, the
+      # same way google/osv-scanner-action did, because "selected" plus the
+      # GitHub-owned and verified-creator checkboxes does not cover it.
+      #
+      # Unlike that one, nothing here is left unpinned. It is a composite
+      # action: its only "uses:" is codeql-action/upload-sarif at a full SHA,
+      # and it runs zizmor from ghcr.io by digest, read out of a table shipped
+      # inside the action itself. Pinning the action therefore pins the image,
+      # which is precisely what the OSV reusable workflow could not promise.
+      #
+      # The version is named rather than left at "latest" so this and the
+      # pre-commit hook run the same zizmor. .pre-commit-config.yaml pins rev
+      # v1.28.0, and 1.28.0 is the newest entry in this action's table, so the
+      # two agree today and a Dependabot bump to either one that leaves the
+      # other behind is visible in the diff rather than silent.
+      - uses: zizmorcore/zizmor-action@6fc4b006235f201fdab3722e17240ab420d580e5 # v0.6.1
+        with:
+          version: "1.28.0"
