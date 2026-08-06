@@ -208,7 +208,10 @@
     background:rgba(237,239,231,.72);backdrop-filter:blur(2px);border-radius:4px;z-index:3;
   }
   .veil.show{display:flex}
-  .veil p{font-family:var(--serif);font-size:18px;letter-spacing:.2em}
+  /* The title is the middle of the board, which is where a thumb lands to
+     resume: without this the one word on the veil is the one place that tap
+     does nothing, because the press would target the paragraph. */
+  .veil p{font-family:var(--serif);font-size:18px;letter-spacing:.2em;pointer-events:none}
 
   /* win stamp */
   .stamp{
@@ -348,16 +351,23 @@
   .modal .stat.record{border-color:var(--indigo);background:var(--indigo-wash)}
   .modal .stat.record b{color:var(--indigo)}
   .modal .stat.record i{color:var(--indigo)}
-  .modal .quiet{margin-top:12px;background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;text-decoration:underline}
-  /* Only the two that carry an icon. The Canjear buttons share .quiet and have
+  /* Unscoped from .modal, because the pause veil is a dialog too and offers the
+     record through one of these. */
+  .quiet{margin-top:12px;background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;text-decoration:underline}
+  /* The veil is a flex column and spaces its own children. The padding is what
+     makes this one a target a thumb can hit: the same 12px text is 14px tall,
+     and it is the only one of these that is pressed on a phone held in one hand
+     rather than read off a dialog. Invisible, since there is nothing to paint. */
+  .veil .quiet{margin-top:0;padding:15px 12px}
+  /* Only the ones that carry an icon. The Canjear buttons share .quiet and have
      bare text, so moving the underline onto a label outright would take theirs
      away. Underlining the button would draw a line under the glyph as well,
      which reads as an underlined icon rather than a link. */
-  .modal .quiet:has(.ico){display:inline-flex;align-items:center;gap:5px;text-decoration:none}
-  .modal .quiet .label{text-decoration:underline}
+  .quiet:has(.ico){display:inline-flex;align-items:center;gap:5px;text-decoration:none}
+  .quiet .label{text-decoration:underline}
   /* A disabled difficulty button is not broken, it is busy: keep it legible
      rather than greying it into something that looks unavailable for good. */
-  .diff[disabled],.modal .quiet[disabled]{opacity:.5;cursor:default}
+  .diff[disabled],.quiet[disabled]{opacity:.5;cursor:default}
   .diff[disabled]:hover{border-color:var(--line);color:var(--ink)}
   .genstatus{margin-top:12px;font-size:11.5px;color:var(--ink-soft);letter-spacing:.06em}
   /* Never hidden, only emptied. A live region announces a change made while it
@@ -691,6 +701,24 @@
                                 <use href="#i-play_arrow"/>
                             </svg>
                             Seguir
+                        </button>
+                        <!-- The clock is stopped here, so this is the one place in the game
+                            where reading the record costs no time. It used to be reachable
+                            only through the difficulty picker, which is the dialog for
+                            leaving a board rather than for looking at one. -->
+                        <button
+                            type="button"
+                            class="quiet"
+                            id="veilRecordBtn"
+                        >
+                            <svg
+                                class="ico"
+                                aria-hidden="true"
+                                focusable="false"
+                            >
+                                <use href="#i-leaderboard"/>
+                            </svg>
+                            <span class="label">Ver mi registro</span>
                         </button>
                     </div>
                     <div

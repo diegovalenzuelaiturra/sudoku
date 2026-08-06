@@ -55,7 +55,8 @@ const spoil = (page) =>
 
 const readRaw = (page, key) => page.evaluate((k) => localStorage.getItem(k), key);
 
-/* Back to the start dialog and into the record, which is the only way in. */
+/* From the start dialog, which is one of the two ways in: the other is the pause
+   veil, and pause.spec.mjs covers that one. */
 async function openRecord(page) {
   await page.locator('#recordBtn').click();
   await expect(page.getByRole('dialog', { name: 'TU REGISTRO' })).toBeVisible();

@@ -43,11 +43,14 @@ async function accessibleNodes(cdp) {
 const countCells = (nodes) =>
   nodes.filter((node) => node.role === 'button' && CELL_NAME.test(node.name)).length;
 
-/* The named buttons inside .controls. The board is only half of what pausing
-   marks inert: .controls holds undo, erase, notes, hint and new game, and
-   #pauseBtn is not in it, so nothing else in the suite notices if the controls
-   are taken away and never handed back. */
-const CONTROL_NAMES = [/deshacer/iu, /borrar/iu, /notas/iu, /pista/iu, /nueva partida/iu];
+/* The named buttons pausing takes away. The board is only half of it: .controls
+   holds undo, erase and the two writing modes, Pista sits in the header, and
+   #pauseBtn is in neither place, so nothing else in the suite notices if any of
+   them is taken away and never handed back.
+
+   Nueva partida is not on this list and is covered on its own below, because it
+   is the one action a paused game keeps. */
+const CONTROL_NAMES = [/deshacer/iu, /borrar/iu, /notas/iu, /pista/iu];
 
 /* radio as well as button: the notes control is one half of a radio group now,
    which is what puts both modes on screen at once instead of asking the player
@@ -189,4 +192,68 @@ test('Escape resumes', async ({ page, context }) => {
   await expectExposedCells(cdp, 81);
   await expectExposedControls(cdp, CONTROL_NAMES.length);
   await expect(page.locator('#pauseBtn')).toBeFocused();
+});
+
+/* The record used to be reachable only through the difficulty picker, which is
+   the dialog for leaving a board. Pausing is where a player stops to look at
+   something, and it is the one moment in the game when looking is free. */
+test('the record can be read from the pause, and the clock does not run', async ({ page }) => {
+  await startGame(page);
+  await page.locator('#pauseBtn').click();
+
+  await page.locator('#veilRecordBtn').click();
+  await expect(page.locator('#recordOverlay')).toBeVisible();
+
+  const clock = await page.locator('#time').textContent();
+  await page.waitForTimeout(1400);
+  expect(await page.locator('#time').textContent(), 'reading the record cost the player time').toBe(
+    clock,
+  );
+
+  await page.locator('#closeRecord').click();
+  await expect(page.locator('#recordOverlay')).toBeHidden();
+  /* Back to the pause that opened it, rather than onto the board: the player
+     asked for the record, not to start playing again. */
+  await expect(page.locator('#veil')).toBeVisible();
+  await expect(page.locator('#veilRecordBtn')).toBeFocused();
+});
+
+test('a paused game can be left without being resumed first', async ({ page }) => {
+  await startGame(page);
+  await page.locator('#pauseBtn').click();
+  await expect(page.locator('#veil')).toBeVisible();
+
+  await page.locator('#newBtn').click();
+  await expect(page.locator('#startOverlay')).toBeVisible();
+  await expect(page.locator('#cancelNew')).toBeVisible();
+
+  await page.locator('#cancelNew').click();
+  /* Still paused. This dialog is not what stopped the clock, so closing it puts
+     nothing back: the pause is left exactly where it was found. */
+  await expect(page.locator('#veil')).toBeVisible();
+  await expect(page.locator('#resumeBtn')).toBeFocused();
+});
+
+/* The veil covers the board, so a tap on it is a tap on the sudoku, which is
+   what a player reaches for to carry on. The button stays for the keyboard and
+   for anyone who looks for one. */
+test('tapping the veiled board resumes', async ({ page }) => {
+  await startGame(page);
+  await page.locator('#pauseBtn').click();
+  await expect(page.locator('#veil')).toBeVisible();
+
+  /* On the words EN PAUSA, in the middle of the board, which is where a thumb
+     lands. The paragraph takes no pointer events for this reason: without that
+     the one spot the eye is drawn to is the one spot the tap does nothing. */
+  const title = await page.locator('#veilTitle').boundingBox();
+  const veil = await page.locator('#veil').boundingBox();
+  await page.locator('#veil').click({
+    position: {
+      x: title.x + title.width / 2 - veil.x,
+      y: title.y + title.height / 2 - veil.y,
+    },
+  });
+
+  await expect(page.locator('#veil')).toBeHidden();
+  await expect(page.locator('#board .cell').first()).toBeVisible();
 });
