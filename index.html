@@ -975,17 +975,19 @@
                 aria-labelledby="recordTitle"
             >
                 <h2 id="recordTitle">TU REGISTRO</h2>
-                <!-- Emoji and a count, no words, matching the prize chips in the
-                    status bar. The words are not gone, they moved: emoji carry nothing
-                    to a screen reader, so the sentence lives in the hidden span and is
-                    the only thing read aloud. The counts are aria-hidden so it is not
-                    read twice. -->
+                <!-- Each count says what it counts. Two emoji over two bare numbers
+                    read as a tally of prizes collected rather than as a run and the
+                    record it is measured against, and a run below the record then
+                    looked like the game had taken something away. The sentence in the
+                    span beside them is still the only thing read aloud: emoji carry
+                    nothing to a screen reader, and the visible half is aria-hidden so
+                    the line is not read twice. -->
                 <p class="lede" id="streakLine">
                     <span
                         id="streakCounts"
                         aria-hidden="true"
                         hidden
-                    >🔥 <b id="streakNow">0</b> 🥇 <b id="streakBest">0</b></span><span
+                    >🔥 <b id="streakNow">0</b> <span id="streakNowWord">seguidas</span> 🥇 mejor <b id="streakBest">0</b></span><span
                         id="streakText"
                     >Sin partidas todavía.</span>
                 </p>

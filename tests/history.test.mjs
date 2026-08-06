@@ -470,7 +470,7 @@ test('both record lines are in the markup, hidden until they are true', () => {
   /* One glyph, one record, everywhere either appears. */
   assert.match(
     html,
-    /🔥 <b id="streakNow">0<\/b> 🥇 <b id="streakBest">0<\/b>/u,
+    /🔥 <b id="streakNow">0<\/b> <span id="streakNowWord">seguidas<\/span> 🥇 mejor <b id="streakBest">0<\/b>/u,
     'the best streak is a trophy again, which is the glyph the best time already uses',
   );
   /* The tile the record belongs to is marked, and it is the only one that can

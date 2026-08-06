@@ -950,15 +950,17 @@ function paintRecord() {
      as played: a player who resumed a game from before the record existed and
      won it was shown "Sin partidas todavía." beside a row reading one win and a
      real best time. */
-  /* Two counts and two emoji on screen, the sentence for a screen reader only.
-     Emoji are decorative to assistive tech, so dropping the words from the
-     markup would have dropped them from the accessibility tree as well: the
-     hidden span is what keeps the line meaning anything without sight of it.
+  /* Two counts, each with the word that says what it is, and the sentence for a
+     screen reader only. Emoji are decorative to assistive tech, so dropping the
+     words from the markup would have dropped them from the accessibility tree
+     as well: the hidden span is what keeps the line meaning anything without
+     sight of it.
 
      Before the first game there is no count worth showing, so the sentence is
      the visible content in that one case and the counts stay hidden. */
   const noGames = played === 0 && won === 0;
   $('streakNow').textContent = stats.streak;
+  $('streakNowWord').textContent = stats.streak === 1 ? 'seguida' : 'seguidas';
   $('streakBest').textContent = stats.bestStreak;
   $('streakCounts').hidden = noGames;
   $('streakText').classList.toggle('visually-hidden', !noGames);

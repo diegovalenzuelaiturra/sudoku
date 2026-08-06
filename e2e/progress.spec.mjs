@@ -531,7 +531,7 @@ test('every clean win says where the run is, and a milestone calls it a record',
   /* And the record counted every one of them, called a record or not. */
   await page.locator('#againBtn').click();
   await openRecord(page);
-  await expect(page.locator('#streakCounts')).toHaveText('🔥 5 🥇 5');
+  await expect(page.locator('#streakCounts')).toHaveText('🔥 5 seguidas 🥇 mejor 5');
   expect(problems).toEqual([]);
 });
 

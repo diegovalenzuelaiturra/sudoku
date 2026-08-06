@@ -150,7 +150,7 @@ test('a flawless win is written into the record, the streak and the ledger', asy
   await expect(page.locator('#streakText')).toHaveText('Racha de secas: 1. La mejor: 1.');
   /* On screen it is emoji and counts; the sentence above exists for a screen
      reader, which emoji carry nothing to. */
-  await expect(page.locator('#streakCounts')).toHaveText('🔥 1 🥇 1');
+  await expect(page.locator('#streakCounts')).toHaveText('🔥 1 seguida 🥇 mejor 1');
 
   await expect(page.locator('#ledgerList li')).toHaveCount(1);
   await expect(page.locator('#ledgerList li').first()).toContainText(
@@ -175,7 +175,7 @@ test('a win that is not flawless breaks the streak', async ({ page }) => {
   /* Back to zero, and the best is kept: the streak is the run of flawless wins,
      which is the only streak that says anything in a game with no way to lose. */
   await expect(page.locator('#streakText')).toHaveText('Racha de secas: 0. La mejor: 1.');
-  await expect(page.locator('#streakCounts')).toHaveText('🔥 0 🥇 1');
+  await expect(page.locator('#streakCounts')).toHaveText('🔥 0 seguidas 🥇 mejor 1');
   expect(await recordRow(page, 1)).toMatchObject(['Normal', '2', '2', expect.anything()]);
   expect(problems).toEqual([]);
 });
@@ -200,7 +200,7 @@ test('the run survives the app being closed between games', async ({ page }) => 
 
   await page.locator('#againBtn').click();
   await openRecord(page);
-  await expect(page.locator('#streakCounts')).toHaveText('🔥 2 🥇 2');
+  await expect(page.locator('#streakCounts')).toHaveText('🔥 2 seguidas 🥇 mejor 2');
   expect(problems).toEqual([]);
 });
 
@@ -278,7 +278,7 @@ test('a mistake undone still breaks the streak', async ({ page }) => {
 
   await openRecord(page);
   await expect(page.locator('#streakText')).toHaveText('Racha de secas: 0. La mejor: 1.');
-  await expect(page.locator('#streakCounts')).toHaveText('🔥 0 🥇 1');
+  await expect(page.locator('#streakCounts')).toHaveText('🔥 0 seguidas 🥇 mejor 1');
   expect(problems).toEqual([]);
 });
 
