@@ -1,0 +1,100 @@
+name: CodeQL
+
+# Reads the code this repository writes, which is the one thing none of the
+# other scanners here look at. OSV-Scanner judges the dependency tree, zizmor
+# judges the workflows, the three linters judge style and validity: all of them
+# answer questions about somebody else's code or about the shape of ours. This
+# is the only one that asks whether the game itself does something unsafe.
+#
+# Worth being honest about the expected yield, so nobody reads a green run as a
+# stronger claim than it is. There is no server, no session, no secret and no
+# user input that survives a reload: the six innerHTML sites in app.js all
+# interpolate numbers and constants from the DIFF table, which is why they are
+# written that way. CodeQL will very likely find nothing here today. It is worth
+# running because it reads every future change rather than this snapshot, and
+# because the cost is a few minutes of a runner nobody is waiting on.
+#
+# Two languages in one job rather than the matrix the starter workflow ships
+# with. The matrix names its checks "CodeQL (javascript-typescript)" and
+# "CodeQL (actions)", and both rulesets require checks by exact context name, so
+# a matrix would put two brittle strings in two rulesets. One job is one context.
+#
+#   javascript-typescript: app.js, stats.js, generator.js, sw.js, the scripts
+#   under scripts/, and the JavaScript inlined in index.html.
+#
+#   actions: the workflows themselves. This overlaps zizmor, deliberately. They
+#   are different engines with different rules, and where they agree the second
+#   alert is one click to dismiss, where they disagree the one that found it is
+#   the reason to run both. zizmor is still the specialist and the one whose
+#   findings block through the Lint job.
+#
+# Deliberately NOT path-filtered, unlike osv-scanner.yml. That file answers a
+# question about package-lock.json and can afford to skip a pull request that
+# leaves it alone. This one has to report on every pull request, because the
+# code scanning rule described below blocks a merge that has no results as well
+# as one with alerts, so a skipped run is a wedged merge.
+#
+# Findings do not turn this job red. codeql-action/analyze fails on an internal
+# error, not on an alert, which is deliberate upstream: the alert belongs in the
+# Security tab where it can be triaged and stays triaged. What makes an alert
+# block a merge is the code scanning rule in both rulesets, which names the tool
+# rather than this job. Keep that in mind if this ever looks green while alerts
+# are open, and note that the same rule covers a job that never ran at all,
+# which is why neither of these is also a required status check: the rule
+# already refuses a merge whose results are missing.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Mondays at 07:00 UTC, an hour after OSV-Scanner, so a slow week does not
+  # start with three scans queued behind each other. A schedule matters here for
+  # the same reason it does there: the query packs are updated upstream, so the
+  # same code can be judged differently next month with nothing in the diff to
+  # trigger a rescan.
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  # Superseding is right on a pull request and wrong on the shared default
+  # branch ref, where a scheduled run and a push would cancel each other.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    # Not "CodeQL". Uploading SARIF makes GitHub publish a check run of its own
+    # named after the tool in the file, so a job called CodeQL puts two rows
+    # with one name on every pull request and leaves it to the reader to work
+    # out which of them is the analysis and which is the result.
+    name: CodeQL analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # Publishes findings under Security, Code scanning. Free on public
+      # repositories.
+      security-events: write
+      contents: read
+      # Read by codeql-action to reach the workflow run it belongs to.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Pinned to the same SHA the OSV workflow already uses for this action,
+      # rather than to the newest tag. v4.37.6 exists and is two days old, and
+      # dependabot.yml refuses any release younger than a week on the grounds
+      # that a compromised one is usually recognised inside that window. Taking
+      # a fresher pin here by hand would step around the control this repository
+      # chose. Dependabot moves both files together when the week is up.
+      #
+      # No build-mode and no autobuild step: neither of these languages is
+      # compiled, and this repository has no build in the sense CodeQL means.
+      - uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: javascript-typescript,actions
+
+      - uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
