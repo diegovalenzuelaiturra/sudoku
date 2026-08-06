@@ -1940,6 +1940,16 @@ $('settleBtn').addEventListener('click', settleSingles);
 $('undoBtn').addEventListener('click', undo);
 $('hintBtn').addEventListener('click', hint);
 $('newBtn').addEventListener('click', () => {
+  /* The win dialog is put up by a timer about two seconds after the last digit,
+     and this button is live for all of them: the board is finished, so nothing
+     has made the page inert yet. Opening the picker inside that window used to
+     leave the win dialog to arrive on top of it and take the focus. newGame()
+     already kills these for the same reason, but only once a difficulty has
+     been chosen, which is one click too late. Dropping them here costs the
+     summary of a board the player has walked away from, and the prize it
+     announced was banked the moment it was won. */
+  winTimers.forEach(clearTimeout);
+  winTimers = [];
   $('cancelNew').hidden = !playing;
   pausedByDialog = playing && !paused;
   if (pausedByDialog) setPaused(true);
