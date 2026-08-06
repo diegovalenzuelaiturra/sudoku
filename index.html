@@ -50,6 +50,11 @@
         <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C43A20'/%3E%3Cg stroke='%23F7F1E6' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 13h20M6 19h20M13 6v20M19 6v20'/%3E%3C/g%3E%3C/svg%3E">
         <style>
   :root{
+    /* The narrowest the board is ever allowed to be, and with it the widest the
+       controls under it are ever drawn. Named once so the two cannot drift: at
+       the smallest phone the board sits on this floor, and a keypad wider than
+       the number it stands under overhangs it on both sides. */
+    --board-floor:288px;
     --paper:#EDEFE7;
     --paper-raised:#F7F8F3;
     --ink:#22241E;
@@ -234,8 +239,11 @@
      inside a cell, and it is position:absolute. Naming this one the same took
      the keypad out of flow and laid its keys out as that grid, which put an
      800px tall pad over the top of the board. */
+  /* Colour and nothing else. Shrinking the digits here as well made the keypad
+     redraw itself at two sizes, 22px against 17px on a phone and 24 against 17
+     on a wide screen, so the thing the eye is aiming at changed shape at the
+     moment the mode changed. The tint says the same thing and moves nothing. */
   .pad.noting .key{background:var(--indigo-wash);border-color:var(--indigo-wash-3)}
-  .pad.noting .key .d{font-size:17px}
   .key .d{font-family:var(--serif);font-size:24px;line-height:1.1}
   .key .c{font-size:10px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
   .key:hover{border-color:var(--indigo)}
@@ -458,8 +466,19 @@
        it does not move at all; in a browser tab, where about 140px goes to the
        URL bar, it gives up what the keypad took and the page still does not
        scroll, which is the trade this was chosen for. */
-    .board{max-width:min(520px,100%,max(288px,calc(100dvh - 392px)));margin:0 auto}
-    .controls{max-width:520px;margin:0 auto;width:100%}
+    .board{max-width:min(520px,100%,max(var(--board-floor),calc(100dvh - 392px)));margin:0 auto}
+    /* Narrower than the board and centred under it. At the full width of the
+       column the leftmost digits sit at the far end of a right thumb's arc, and
+       the rightmost at the far end of a left one; pulled in, every key is within
+       reach of either hand and of two. The board keeps the whole width, because
+       what it needs is size and what these need is to be reachable.
+
+       Capped at the board's own floor rather than at a number of its own, so it
+       can never come out wider than the grid it sits under: on the smallest
+       phone the board is on that floor, and anything wider overhangs it on both
+       sides. That leaves the keys about 90 wide, twice the 44px minimum, so
+       nothing here is traded for the reach. */
+    .controls{max-width:min(var(--board-floor),100%);margin:0 auto;width:100%}
     .tool .k{display:none}
     /* One row here: without the shortcut chips the two buttons are narrow
        enough that the mode fits between them, which is where a thumb wants it. */

@@ -622,10 +622,13 @@ test('notes mode is visible on the keypad without taking it out of flow', async 
     page.evaluate(() => {
       const pad = document.getElementById('pad');
       const rect = pad.getBoundingClientRect();
+      const key = document.querySelector('.key');
       return {
         position: getComputedStyle(pad).position,
         height: Math.round(rect.height),
-        keyBg: getComputedStyle(document.querySelector('.key')).backgroundColor,
+        keyBg: getComputedStyle(key).backgroundColor,
+        keyHeight: Math.round(key.getBoundingClientRect().height),
+        digitSize: getComputedStyle(key.querySelector('.d')).fontSize,
       };
     });
 
@@ -640,8 +643,74 @@ test('notes mode is visible on the keypad without taking it out of flow', async 
 
   expect(on.position, 'notes mode took the keypad out of flow').toBe('static');
   expect(on.height, 'notes mode changed the size of the keypad').toBe(off.height);
+  /* Colour is the whole of the difference. Notes mode used to redraw the digits
+     smaller as well, 22px against 17 on a phone, so the thing the eye was aiming
+     at changed shape at the moment the mode changed. */
+  expect(on.digitSize, 'the digits are a different size in notes mode').toBe(off.digitSize);
+  expect(on.keyHeight, 'the keys are a different height in notes mode').toBe(off.keyHeight);
   expect(on.keyBg, 'the keypad says nothing about the mode it is in').not.toBe(off.keyBg);
   await expect(page.locator('#pad')).toHaveClass(/noting/u);
+});
+
+/* At the full width of the column the leftmost digits sit at the far end of a
+   right thumb's arc and the rightmost at the far end of a left one. The board
+   keeps the whole width, because what it needs is size; the controls are pulled
+   in and centred, because what they need is to be within reach of either hand.
+   Capped at the board's own floor, so they can never come out wider than the
+   grid they stand under, which on the smallest phone they would. */
+test('the controls are narrower than the board and centred under it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('./');
+  await startGame(page);
+
+  /* Resized rather than reloaded between the two: a second visit restores the
+     board this one started and never offers the difficulty dialog again, and the
+     layout answers to the viewport either way. */
+  for (const size of [
+    { width: 390, height: 844 },
+    { width: 375, height: 667 },
+  ]) {
+    await page.setViewportSize(size);
+
+    const laid = await page.evaluate(() => {
+      const rect = (sel) => document.querySelector(sel).getBoundingClientRect();
+      const board = rect('.board');
+      const controls = rect('.controls');
+      return {
+        board: { left: Math.round(board.left), right: Math.round(board.right) },
+        controls: { left: Math.round(controls.left), right: Math.round(controls.right) },
+        boardWidth: Math.round(board.width),
+        controlsWidth: Math.round(controls.width),
+        key: {
+          w: Math.round(rect('.key').width),
+          h: Math.round(rect('.key').height),
+        },
+      };
+    });
+
+    const where = `${size.width} wide`;
+    expect(laid.controlsWidth, `the controls overhang the board at ${where}`).toBeLessThanOrEqual(
+      laid.boardWidth,
+    );
+    expect(
+      laid.controls.left,
+      `the controls start left of the board at ${where}`,
+    ).toBeGreaterThanOrEqual(laid.board.left);
+    expect(
+      laid.controls.right,
+      `the controls end right of the board at ${where}`,
+    ).toBeLessThanOrEqual(laid.board.right);
+    /* Centred, to within the rounding of an odd number of pixels. */
+    const leftGap = laid.controls.left - laid.board.left;
+    const rightGap = laid.board.right - laid.controls.right;
+    expect(
+      Math.abs(leftGap - rightGap),
+      `the controls are not centred at ${where}`,
+    ).toBeLessThanOrEqual(1);
+    /* And none of the reach was bought with target size. */
+    expect(laid.key.w, `a key is under 44px wide at ${where}`).toBeGreaterThanOrEqual(44);
+    expect(laid.key.h, `a key is under 44px tall at ${where}`).toBeGreaterThanOrEqual(44);
+  }
 });
 
 /* Pista spends the flawless bonus and used to sit in the tool row beside the
