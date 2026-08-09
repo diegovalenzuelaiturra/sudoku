@@ -10,6 +10,15 @@ version: 2
 # and it is yanked within a day or two once someone notices. A week of soak time
 # means this repo never sees those versions at all, while a genuine CVE fix
 # still arrives the day it is published.
+#
+# A second note that applies to every entry, and the reason each one repeats
+# target-branch: Dependabot opens against the default branch unless told
+# otherwise, and the default branch here is main. Nothing else in this
+# repository is proposed against main. Work lands on development and reaches
+# main only through a release, which is a merge commit and never a squash, so a
+# bump opened against main would arrive on the published branch without ever
+# passing through the branch every other change is staged on. There is no
+# repository-wide setting for this, so it is said once per entry.
 
 updates:
   # Actions are pinned to commit SHAs, which never move on their own. Without
@@ -19,6 +28,7 @@ updates:
   # comment.
   - package-ecosystem: github-actions
     directory: /
+    target-branch: development
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -44,6 +54,7 @@ updates:
   # between advisories.
   - package-ecosystem: npm
     directory: /
+    target-branch: development
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -82,6 +93,7 @@ updates:
   # someone deals with it.
   - package-ecosystem: pre-commit
     directory: /
+    target-branch: development
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
