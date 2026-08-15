@@ -22,7 +22,7 @@
     "@html-eslint/eslint-plugin": "^0.64.0",
     "@j178/prek": "^0.4.11",
     "@playwright/test": "^1.62.1",
-    "eslint": "^10.8.0",
+    "eslint": "^10.8.1",
     "eslint-plugin-oxlint": "^1.76.0",
     "globals": "^17.8.0",
     "html-minifier-terser": "^7.2.0",
