@@ -20,7 +20,7 @@
     "@biomejs/biome": "^2.5.6",
     "@eslint/js": "^10.0.1",
     "@html-eslint/eslint-plugin": "^0.64.0",
-    "@j178/prek": "^0.4.11",
+    "@j178/prek": "^0.4.12",
     "@playwright/test": "^1.62.1",
     "eslint": "^10.8.0",
     "eslint-plugin-oxlint": "^1.76.0",
