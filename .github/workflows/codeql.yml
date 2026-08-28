@@ -8,7 +8,7 @@ name: CodeQL
 #
 # Worth being honest about the expected yield, so nobody reads a green run as a
 # stronger claim than it is. There is no server, no session, no secret and no
-# user input that survives a reload: the six innerHTML sites in app.js all
+# user input that survives a reload: the four innerHTML sites in app.js all
 # interpolate numbers and constants from the DIFF table, which is why they are
 # written that way. CodeQL will very likely find nothing here today. It is worth
 # running because it reads every future change rather than this snapshot, and

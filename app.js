@@ -1,9 +1,7 @@
 /* ============ GENERATOR CLIENT ============
    The generator moved to generator.js and runs in a worker. What is left here
    is the part that asks for a board and waits for it, which is the whole reason
-   the difficulty buttons no longer freeze the page: this file used to carry a
-   workaround for its own freeze, dropping clicks whose timeStamp fell inside
-   the hang, and that workaround is gone.
+   the difficulty buttons no longer freeze the page.
 
    Two paths, because a worker is not a given. Some engines refuse to construct
    one for a file:// document, and a hardened configuration or an extension can
@@ -306,11 +304,10 @@ const clockText = (s) => (s < 3600 ? `${pad2((s / 60) | 0)}:${pad2(s % 60)}` : f
    a board. It cannot un-see an answer or un-make a mistake, so what the player
    did is not its to rewrite.
 
-   7736ed4 put those two fields in here on purpose, and this reverts that half of
-   it with the cost taken knowingly: a mis-tapped digit, or a stray H, now
-   forfeits the bonus for the rest of the board. Its other half is why fixed is
-   still snapshotted, so undoing a hint unlocks the cell instead of leaving it
-   given and holding a value the player can no longer edit. */
+   The cost of that is taken knowingly: a mis-tapped digit, or a stray H,
+   forfeits the bonus for the rest of the board. fixed is still snapshotted, so
+   undoing a hint unlocks the cell instead of leaving it given and holding a
+   value the player can no longer edit. */
 function snapshot() {
   undoStack.push({ values: values.slice(), fixed: fixed.slice(), notes: notes.map((s) => [...s]) });
   if (undoStack.length > 300) undoStack.shift();
@@ -513,10 +510,8 @@ function syncWakeLock() {
    a half started game behind. */
 let generating = false;
 
-/* Disables the difficulty buttons and says what is happening. This replaces the
-   old defence against the freeze, which let every click through and then threw
-   away the ones whose timeStamp fell inside the hang. Nothing is thrown away
-   now: the buttons are genuinely unavailable while a board is being built. */
+/* Disables the difficulty buttons and says what is happening: they are
+   genuinely unavailable while a board is being built. */
 function setGenerating(busy) {
   generating = busy;
   /* Emptied on the way out and written on the way in, so a failure message from
@@ -635,8 +630,8 @@ function startGame(key, made) {
 
 /* ---- persistence ----
    saveGame() is called from every discrete player action (digit entry, erase,
-   undo, hint, pause, and selecting a cell with the pointer) rather than on a
-   timer: those are human-paced clicks and keypresses, not a text-input stream,
+   undo, hint, confirming settled cells, pause, and selecting a cell with the
+   pointer) rather than on a timer: those are human-paced clicks and keypresses,
    and the payload (a handful of 81-length arrays) is small enough that writing
    it synchronously on each one is cheap. The single exception is the arrow key
    path, which autorepeats while a key is held: it coalesces through
@@ -651,7 +646,7 @@ function startGame(key, made) {
    three, and the next keystroke here overwrote them with 0. Since the flawless
    bonus is gated on mistakes===0&&hints===0, that paid a forged prize with two
    tabs open and no storage editing at all, which is cheaper than the edited save
-   the clamp above closes.
+   the clamp in loadGame() closes.
 
    Both counters only ever rise within a game, so the higher of the two is the
    true count. Adopted into the live variables and not merely into the bytes,
@@ -783,9 +778,6 @@ function count(x) {
   const n = Math.floor(Number(x));
   return Number.isFinite(n) && n > 0 && n <= Number.MAX_SAFE_INTEGER ? n : 0;
 }
-/* The stored totals, or null if there is nothing readable and current there.
-   Separate from loadWallet() because banking a prize has to consult the key
-   again rather than trust what this tab read at boot. */
 /* One ledger entry, or null. Same rule as the totals: anything this build cannot
    make sense of is dropped rather than guessed at, and a dropped entry costs a
    line of history rather than the wallet it is attached to. `k` is 'win' or
@@ -860,9 +852,6 @@ function paintWallet() {
    pays one chocolate, announced as "1 chocolate" and written down in the
    history as "+1 chocolates". */
 const chocoWord = (n) => `${n} chocolate${Math.abs(n) === 1 ? '' : 's'}`;
-/* One ledger line as a sentence. Words rather than the emoji the chips use:
-   this is a history somebody reads, and an emoji is nothing at all to a screen
-   reader without a label beside it. */
 /* One prize on a ledger line: the emoji, then the count with its sign kept, so
    a spend reads as a spend without a word for it. */
 function chipSpan(emoji, n) {
@@ -871,6 +860,9 @@ function chipSpan(emoji, n) {
   span.textContent = `${emoji} ${n > 0 ? '+' : ''}${n}`;
   return span;
 }
+/* One ledger line as a sentence. Words rather than the emoji the chips use:
+   this is a history somebody reads, and an emoji is nothing at all to a screen
+   reader without a label beside it. */
 function describeEntry(e) {
   const bits = [];
   if (e.f) bits.push(`${e.f > 0 ? '+' : ''}${e.f} papas`);
@@ -1489,7 +1481,7 @@ function loadGame() {
      boot sanitised the stored best to 0 through the same count(), after which
      time<row.best could never be true again and that difficulty could never
      record a best time. Clamping here is what stops the record being poisoned;
-     repairing one already poisoned is not attempted, and is noted in the PR. */
+     repairing one already poisoned is not attempted. */
   mistakes = count(s.mistakes);
   hints = count(s.hints);
   seconds = count(s.seconds);
@@ -1739,15 +1731,6 @@ function undo() {
   render();
   saveGame();
 }
-/* Where a hint is worth most: the cell that needed the least to work out. The
-   candidates are counted against what is on the board right now, so a cell with
-   one is a naked single, which is the whole of the easiest tier. This replaced
-   a random pick, which was as likely to hand over the hardest cell on the board
-   as the obvious one, and a hint that skips the reasoning teaches nothing.
-
-   Deterministic on ties, lowest index first, for the reason the seeds exist:
-   the same board in the same state gives the same hint, so a test can assert it
-   and a player can be told what happened. Returns -1 when the board is done. */
 /* ---- confirming what the notes already say ----
    Placing a correct digit already deletes it from every peer's pencil marks, so
    late in a game the board keeps leaving cells with one mark left. That mark is
@@ -1803,6 +1786,15 @@ function settleSingles() {
   saveGame();
   if (values.every((v, i) => v === solution[i])) win();
 }
+/* Where a hint is worth most: the cell that needed the least to work out. The
+   candidates are counted against what is on the board right now, so a cell with
+   one is a naked single, which is the whole of the easiest tier. This replaced
+   a random pick, which was as likely to hand over the hardest cell on the board
+   as the obvious one, and a hint that skips the reasoning teaches nothing.
+
+   Deterministic on ties, lowest index first, for the reason the seeds exist:
+   the same board in the same state gives the same hint, so a test can assert it
+   and a player can be told what happened. Returns -1 when the board is done. */
 function easiestOpen() {
   let best = -1;
   let fewest = 10;

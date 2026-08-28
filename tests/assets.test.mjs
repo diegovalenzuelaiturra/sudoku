@@ -34,9 +34,9 @@ const PUBLISHED = [
   'icons/icon-512.png',
 ];
 
-/* LICENSE is deliberately not here. It is repository metadata, not site content:
-   it must exist in the repo, since a public repo without one reserves all rights,
-   but serving it from the game adds nothing. The build allowlist omits it. */
+/* LICENSE is deliberately not here. It is repository metadata: it must exist in
+   the repo, since a public repo without one reserves all rights, but serving it
+   from the game adds nothing. The build allowlist omits it. */
 
 /* Everything that must not. */
 const PRIVATE = ['tests', 'node_modules', 'package.json', 'package-lock.json', '.github'];

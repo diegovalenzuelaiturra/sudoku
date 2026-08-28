@@ -47,7 +47,7 @@ require(join(root, 'generator.js'));
 const { makePuzzle, gradePuzzle, countSolutions, GRADE_NAMES } = globalThis.SudokuGenerator;
 delete globalThis.SudokuGenerator;
 
-/* Kept in sync with the DIFF map in index.html, which the last test here checks
+/* Kept in sync with the DIFF map in app.js, which the last test here checks
    rather than trusts. `hits` is what was measured over the 24 seeds below, and
    the assertion is set at that number: with the seeds fixed there is no run to
    run variation to leave slack for, so a drop is a real regression in how often
@@ -167,7 +167,7 @@ test('a board is graded by technique, not by how many clues it shows', () => {
      represent: the same number of clues on the board, and a different technique
      needed to finish it.
 
-     Measured over the seeds below, seven different clue counts turn up at both
+     Measured over the seeds below, six different clue counts turn up at both
      bloques and pares, so this is not a lucky coincidence being pinned down. */
   const seen = new Map();
   for (const grade of [2, 3]) {

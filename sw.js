@@ -63,12 +63,10 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  /* Matched inside this app's own cache rather than through caches.match(),
-     which searches every cache on the origin and can answer out of a
-     neighbouring project's. ignoreSearch because the precached entry for the
-     app root is './': a visitor who arrives on a link carrying a query string
-     is asking for the same document, and without this the offline load misses
-     the cache and fails. */
+  /* Matched inside this app's own cache, opened by name. ignoreSearch because
+     the precached entry for the app root is './': a visitor who arrives on a
+     link carrying a query string is asking for the same document, and
+     without this the offline load misses the cache and fails. */
   event.respondWith(
     caches
       .open(CACHE_NAME)

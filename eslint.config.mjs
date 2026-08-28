@@ -1,5 +1,5 @@
 /* ESLint owns the markup and the scope analysis. The last entry hands
-   .oxlintrc.json to eslint-plugin-oxlint, which switches off the 68 rules oxlint
+   .oxlintrc.json to eslint-plugin-oxlint, which switches off the rules oxlint
    already reports and reuses its ignore list.
 
    .oxlintrc.json is plain JSON, so its three decisions are recorded here.
@@ -22,7 +22,7 @@
    no-unmodified-loop-condition flags the "while (left > 0)" search in
    generator.js, where left is decremented by a helper it cannot see through.
 
-   unicorn/no-new-array is off because all 38 sites are new Array(n).fill(x).
+   unicorn/no-new-array is off because all 33 sites are new Array(n).fill(x).
 
    .claude is ignored because it holds git worktrees, so from the main checkout
    a linter descending into it reads a second copy of the repository for every
@@ -44,7 +44,7 @@ export default defineConfig([
 
   /* A spec holds two languages: node outside page.evaluate, and page code
      inside it, which ESLint resolves against the same scope and reports as
-     undefined. All 109 hits were of that second kind. Declaring those names here
+     undefined. Every hit is of that second kind. Declaring those names here
      would be a copy of app.js's internals that nothing keeps honest. */
   {
     files: ['e2e/**/*.mjs'],
@@ -102,7 +102,7 @@ export default defineConfig([
     rules: {
       /* Pages serves this repository under /sudoku/, so a rooted path resolves
          against a different site and 404s in production only.
-         tests/assets.test.mjs checks five named files; this checks all of them. */
+         tests/assets.test.mjs checks seven named files; this checks all of them. */
       'html/no-restricted-attr-values': [
         'error',
         {

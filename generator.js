@@ -1,14 +1,14 @@
 /* Puzzle generation and grading, off the main thread.
 
-   This used to live inline in index.html, between LOGIC markers, and ran on the
-   main thread. Generating a Brígido board froze the page for long enough that
-   index.html carried a workaround for its own freeze: clicks made during the
-   hang were dropped by comparing their timeStamp against the moment generation
-   finished. That workaround is gone, and this file is why.
+   Peludo is the most expensive tier, because its band is narrow and a search
+   that misses it spends every attempt: measured over 200 seeds, 24 ms at the
+   median, 101 ms at the 95th percentile and 138 ms at the worst, on a desktop.
+   A phone is several times slower, which is long enough to stall the page if
+   this runs on the main thread.
 
    It is loaded two ways and must work under both:
      - as a worker, `new Worker('./generator.js')`, which is the normal path;
-     - as a plain <script>, injected by index.html only if constructing that
+     - as a plain <script>, injected by app.js only if constructing that
        worker throws, which puts window.SudokuGenerator on the page and lets the
        game generate synchronously rather than not at all.
    So nothing here may touch `document`, and the worker wiring at the bottom is
@@ -21,18 +21,16 @@
 
 /* Everything below is wrapped so that the generator and the page share no
    global names at all. That is not tidiness: on the fallback path this file is
-   injected into the document as a plain script, and index.html declares its own
+   injected into the document as a plain script, and app.js declares its own
    `boxOf` and `PEERS` for highlighting the selected cell. Two classic scripts
    declaring the same const at global scope is a SyntaxError, so the fallback
    loaded a file the engine refused to run and the player got no board at all.
    One name is exported instead, and it is the only one this file adds. */
 (function (root) {
   /* ---- seeded randomness ----
-     Every puzzle is now a pure function of its seed, which is the point: the same
-     seed rebuilds the same board on any machine, so a puzzle can be reproduced
-     from a bug report and the tests can stop asserting over whatever the last run
-     happened to produce. Math.random cannot do that, and it was the only source
-     of randomness here before.
+     Every puzzle is a pure function of its seed: the same seed rebuilds the same
+     board on any machine, so a puzzle can be reproduced from a bug report and the
+     tests assert over fixed seeds. Math.random cannot do that.
 
      mulberry32: 32 bits of state, passes the usual smoke tests for this kind of
      use, and is nine lines. Nothing here is security sensitive, so a cryptographic
@@ -441,16 +439,7 @@
   /* Removing a clue can only take information away, so it never makes a board
      easier: this walks the remaining clues in seeded order, dropping any whose
      removal keeps the solution unique, and stops the moment the grade reaches the
-     target. Bounded by the clues on the board, so it always terminates.
-
-     `strict` is what makes the middle grades reachable. One removal can take a
-     board from bloques straight past pares to avanzado, and the pares tier is
-     narrow enough that stepping over it was the usual outcome: measured 9 hits in
-     20 on Peludo before this existed. A strict pass refuses any removal that
-     overshoots and keeps looking for one that lands, which costs a grade per
-     rejected cell and finds the tier far more often. The permissive pass runs
-     after it, for the boards where nothing lands and something is better than a
-     board that never got harder at all. */
+     target. Bounded by the clues on the board, so it always terminates. */
   function tighten(board, target) {
     const order = shuffle(
       [...Array(81).keys()].filter((i) => board.puzzle[i] !== 0),
@@ -529,11 +518,8 @@
   /* One attempt at a board for the requested grade: dig to roughly the requested
      density, then walk the grade to the target from whichever side it landed on.
 
-     The clue count is the starting point, not the promise. It used to be the
-     promise, advertised on the difficulty buttons as "34 números", and that is
-     exactly the number this has to be free to move in order to hit a grade. The
-     buttons now advertise the technique instead, which is the thing the player
-     actually feels. */
+     The clue count is the starting point, and it has to be free to move in order
+     to hit a grade, so nothing may advertise a fixed number of clues. */
   function attemptPuzzle(clues, target, seed) {
     const random = rngFrom(seed);
     const dug = dig(clues, random);
@@ -549,12 +535,11 @@
     };
     record(board, target);
 
-    /* Repeated rather than single, and this is not belt and braces. A removal
-       rejected for overshooting is rejected against the board as it stood then,
-       and every later removal changes that board, so a cell refused on one pass
-       can be exactly the cell that lands on the next. Bounded by a pass that
-       removes nothing, and by the count, so a board that cannot be tightened
-       costs one wasted pass rather than a loop. */
+    /* A removal rejected for overshooting is judged against the board as it stood
+       then, and every later removal changes that board, so a cell refused on one
+       pass can be the cell that lands on the next. The pass count and a pass that
+       removes nothing both stop the loop, so a board that cannot be tightened
+       costs one wasted pass. */
     for (let pass = 0; pass < 3 && board.grade < target; pass++) {
       const before = board.clues;
       tighten(board, target);
@@ -574,7 +559,7 @@
   /* Tries whole boards until one grades exactly on target, and returns the
      closest it saw if none does. The returned grade is always the board's real
      grade, never the one that was asked for: a near miss has to be visible to the
-     caller, because index.html shows the player what they are actually playing.
+     caller, because app.js shows the player what they are actually playing.
 
      Attempts are seeded off the caller's seed, so the whole search is replayable
      from the one number in the save file. */
@@ -637,8 +622,8 @@
         result.ok = true;
         self.postMessage(result);
       } catch (error) {
-        /* Posted rather than thrown: index.html is waiting on a reply and an
-           uncaught worker error would leave it waiting forever. */
+        /* app.js is waiting on a reply, and an uncaught worker error fails every
+           job in flight and costs the worker for the rest of the session. */
         self.postMessage({
           id: request.id,
           ok: false,

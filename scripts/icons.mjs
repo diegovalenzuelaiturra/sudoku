@@ -1,19 +1,13 @@
 /* Rasterises icons/icon.svg into the PNG sizes the web app manifest declares.
 
-   Why this exists: the PNGs were originally produced by a hand run
-   chrome-headless-shell command that lived only in a pull request description.
-   That had two problems. The command hard coded a Playwright build number in its
-   path, so a Playwright update silently invalidated it. And nothing tied the
-   PNGs to the SVG, so editing the artwork left Android serving the old icon
-   forever with every test still green.
-
-   This drives Playwright's own API instead of a binary path, so the browser is
-   resolved by the library that installed it and there is nothing to rot.
+   Playwright's own API resolves the browser through the library that installed
+   it. A hard coded browser path is invalidated silently by the next Playwright
+   update, so nothing here names one.
 
    Run: npm run icons     Check for drift: npm test (tests/icons.test.mjs)
 
-   The PNGs are committed rather than generated at build time on purpose. The
-   deploy job installs no browser, and a static site should not need one. */
+   The PNGs are committed on purpose. The deploy job installs no browser, and a
+   static site should not need one. */
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -25,9 +19,10 @@ const SVG = join(ROOT, 'icons', 'icon.svg');
 /* Sizes the manifest declares. Keep in step with manifest.webmanifest. */
 export const SIZES = [192, 512];
 
-/* Recorded so a test can tell whether the PNGs still match the artwork. Bump it
-   by running this script, never by hand: editing it to silence the test is
-   exactly the failure the test exists to catch. */
+/* Recorded so a test can tell whether the PNGs still match the artwork:
+   without it, editing icon.svg leaves Android serving the old icon with every
+   test still green. Bump it by running this script, never by hand: editing it
+   to silence the test is exactly the failure the test exists to catch. */
 export const SOURCE_SHA256 = '765d8ffa1730977308c2f967a6ace5630f28830304a4be85b2428daa6ea02149';
 
 export const svgHash = () => createHash('sha256').update(readFileSync(SVG)).digest('hex');
