@@ -20,9 +20,21 @@ name: OSV-Scanner
 #   after publication in one case and more than a day in another, and the
 #   cooldown is what covers that gap.
 #
-# Deliberately NOT a required status check. It reaches the OSV API, so a
-# network failure should never be able to wedge a merge. A red mark a human can
-# read and override is the right shape for a one-maintainer repo.
+# This gates a merge into development, through the code scanning rule in
+# "development protection" and not through required_status_checks. The rule
+# reads alerts: an error level finding, or a security finding of high or higher,
+# blocks the merge, and the same rule already carries CodeQL and zizmor. A
+# maintainer who has read the finding can still merge, by resolving or
+# dismissing the alert, which is the override this repo needs.
+#
+# The gate lives in the ruleset because a ruleset binds every path into
+# development at once: this workflow, GitHub's auto-merge queue, and a person
+# clicking the button. A check consulted by the Dependabot merge job alone would
+# bind that job alone.
+#
+# The price is paid here, and it is real. The scan reaches the OSV API, so an
+# outage there now holds a merge until an analysis can be produced, where before
+# it could only leave a red mark next to one.
 #
 # Using this at all needed a policy change. The repository's Actions setting is
 # "selected", and the GitHub-owned and verified-creator checkboxes do not cover
@@ -45,27 +57,15 @@ name: OSV-Scanner
 # a schedule as well as a pull request trigger. OSV publishes advisories
 # continuously and retroactively, so a version locked one month can be flagged
 # the next with nothing in the diff to notice, and three dev-only dependencies
-# behind a seven-day cooldown can sit still for a long time. The path filters
-# catch a lockfile as it moves; the schedule re-asks about one that has not.
+# behind a seven-day cooldown can sit still for a long time. A pull request run
+# answers for the tree as that pull request leaves it; the schedule re-asks
+# about one that has not moved.
 #
-# Those filters are only harmless because of what is said above: this is
-# deliberately not a required status check, so a pull request that touches
-# neither manifest skips this workflow, reports nothing, and blocks nothing.
-# Making it required later would have to undo the filters in the same commit,
-# since a required check that never runs leaves the merge waiting for a result
-# that will not arrive.
+# Every pull request, with no path filter. A code scanning rule that names a
+# tool waits for an analysis from that tool, so a pull request that skipped this
+# workflow would wait for a result that never arrives.
 on:
   pull_request:
-    paths:
-      - package-lock.json
-      - package.json
-      # This file too, or a pull request rewriting the scan is the one pull
-      # request the scan does not run on. It buys scan-pr and nothing more:
-      # scan-full is gated on the event and still cannot be exercised by a pull
-      # request at all, so a change to that job has to be checked with a
-      # workflow_dispatch run rather than left to first execute unattended on a
-      # Monday cron against the default branch.
-      - .github/workflows/osv-scanner.yml
   # Mondays at 06:00 UTC. Weekly rather than daily because a re-scan only
   # changes its answer when OSV publishes something, and the start of the week
   # puts this beside Dependabot's weekly run rather than five days after it.

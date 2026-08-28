@@ -3,9 +3,15 @@ name: Dependabot auto-merge
 # Turns on GitHub's auto-merge for open Dependabot pull requests. It does not
 # merge anything itself: auto-merge is a queue, and GitHub releases it only once
 # every rule in "development protection" is satisfied, which here means Test
-# green, Lint green, CodeQL and zizmor reporting no error level alerts, the
-# branch up to date with its base, and the commit signed. A red check leaves the
-# pull request sitting open exactly as it does today.
+# green, Lint green, CodeQL, zizmor and osv-scanner reporting no error level
+# alerts, the branch up to date with its base, and the commit signed. A red
+# check leaves the pull request sitting open exactly as it does today.
+#
+# The OSV scan belongs in that list, and putting it there is what makes this
+# file safe to run. A queue releases on the ruleset alone, so a rule is the only
+# thing that binds every route into development at once: this job, the queue it
+# arms, and a maintainer clicking the button. osv-scanner.yml records what that
+# costs and why the path filters had to go with it.
 #
 # What this replaces is a person typing "gh pr merge" after watching the checks
 # go green on a one line version bump. The judgement worth a human stays where
@@ -82,11 +88,19 @@ jobs:
             exit 0
           fi
 
+          # An empty body, because the repository default for a squash body is
+          # PR_BODY, and a Dependabot body runs to tens of thousands of
+          # characters of changelog HTML that has carried the em dashes this
+          # tree bans into a commit message.
+          #
+          # Reading from /dev/null, because the loop's own input is this file
+          # and a command that reached for stdin would eat the rest of it.
+          #
           # One failure does not stop the rest. A pull request that cannot be
           # queued, because it conflicts or because auto-merge is already on, is
           # reported and skipped rather than failing a run whose other work
           # succeeded.
           while read -r pr; do
             echo "Queueing #${pr}"
-            gh pr merge --auto --squash --repo "$REPO" "$pr" || echo "Could not queue #${pr}, leaving it open"
+            gh pr merge --auto --squash --body "" --repo "$REPO" "$pr" < /dev/null || echo "Could not queue #${pr}, leaving it open"
           done < numbers.txt
