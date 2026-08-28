@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24'
+          node-version: '26'
           cache: npm
 
       # --ignore-scripts: dependency lifecycle scripts would otherwise execute
@@ -165,7 +165,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24'
+          node-version: '26'
           cache: npm
 
       # prek arrives as an ordinary devDependency rather than through its own
