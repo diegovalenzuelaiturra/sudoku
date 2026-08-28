@@ -1,9 +1,10 @@
 # Editor defaults for this repo. https://editorconfig.org
 #
 # These values were not chosen, they were measured: every tracked text file here
-# already uses two-space indents, LF endings, a final newline and no trailing
-# whitespace. This file just stops an editor with different defaults from
-# quietly reformatting a file on save and burying a real change in noise.
+# already uses LF endings, a final newline, no trailing whitespace and two-space
+# indents, HTML excepted below. This file just stops an editor with different
+# defaults from quietly reformatting a file on save and burying a real change in
+# noise.
 #
 # The line-ending rule is deliberately the same one .gitattributes enforces
 # ("* text=auto eol=lf"). .gitattributes normalises on the way into the object

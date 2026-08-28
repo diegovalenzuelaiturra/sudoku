@@ -14,8 +14,8 @@
         <meta name="theme-color" content="#EDEFE7">
         <!-- Baseline says the same about rel=manifest, and this is the one link that
             makes the app installable, so the app either declares it or stops being a
-            PWA. tests/site.test.mjs and tests/assets.test.mjs both assert it is here
-            and that it stays relative. -->
+            PWA. tests/assets.test.mjs asserts the link is here, and
+            tests/site.test.mjs asserts every published reference stays relative. -->
         <!-- eslint-disable-next-line html/use-baseline -->
         <link rel="manifest" href="manifest.webmanifest">
         <!-- iOS Safari ignores the manifest entirely when it builds a home screen icon:
@@ -235,7 +235,7 @@
      wide on a 390 wide iPhone against a 44px minimum, and left 40px of gap
      between them that swallowed a tap whole: measured by hit testing every
      pixel of the strip, 9.2 percent of it answered to nothing. Three across
-     makes each key about 118px, so the gaps stop competing with the fingers. */
+     makes each key about 90px, so the gaps stop competing with the fingers. */
   .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
   .key{
     border:1px solid var(--line);border-radius:9px;background:var(--paper-raised);cursor:pointer;
@@ -278,8 +278,6 @@
   .tool:hover{border-color:var(--ink-soft)}
   .tool:active{transform:scale(.96)}
   .tool .k{font-size:10px;color:var(--ink-soft);border:1px solid var(--line);border-radius:4px;padding:1px 4px}
-  /* Takes only the width of its own count, so appearing costs the mode a little
-     room and the column no height at all. */
   /* Both halves on screen, one of them filled. The track is what makes it read
      as a choice already made rather than as two buttons waiting to be pressed. */
   /* min-width:0 because a flex item will not shrink below the content of its
@@ -365,8 +363,8 @@
      which reads as an underlined icon rather than a link. */
   .quiet:has(.ico){display:inline-flex;align-items:center;gap:5px;text-decoration:none}
   .quiet .label{text-decoration:underline}
-  /* A disabled difficulty button is not broken, it is busy: keep it legible
-     rather than greying it into something that looks unavailable for good. */
+  /* A disabled difficulty button is busy: keep it legible, since greying it
+     out reads as unavailable for good. */
   .diff[disabled],.quiet[disabled]{opacity:.5;cursor:default}
   .diff[disabled]:hover{border-color:var(--line);color:var(--ink)}
   .genstatus{margin-top:12px;font-size:11.5px;color:var(--ink-soft);letter-spacing:.06em}
@@ -463,19 +461,16 @@
 
        dvh, not vh: on iOS vh is the large viewport, the one that pretends the
        toolbars are not there, which is exactly what needs compensating for.
-       330px is the rest of the column, header, status, pad, tools, button and
-       the body padding, measured at 325 and rounded up.
+       392px is the rest of the column, header, status, pad, tools, button and
+       the body padding: the keypad is three rows, which is what bought the keys
+       their width. Everything above and below the board adds to 390 at this
+       width, and the two spare pixels are for the rounding.
 
        The floor matters as much as the cap. Without it a 560px viewport asks
        for a 230px board, whose cells are 25px, and a cell too small to hit is
        worse than a page that scrolls. At 288px they are 32px and the page
        scrolls again, which is where this started.
 
-       392px is the rest of the column now, not 330: the keypad is three rows
-       instead of one, which is what bought the keys their width, and the
-       subtraction is what keeps that off the end of the page rather than off
-       the board. Measured, not guessed: everything above and below the board
-       adds to 390 at this width, and the two spare pixels are for the rounding.
        On a 390 by 844 iPhone the board is still limited by the column width, so
        it does not move at all; in a browser tab, where about 140px goes to the
        URL bar, it gives up what the keypad took and the page still does not
@@ -586,11 +581,11 @@
                     hard end of a top row is the far side of the screen and the easy end
                     is the near one: rightmost is the most reachable, not the least.
 
-                    So Pista leads. It spends the flawless bonus and is the one button
-                    here that should take a deliberate reach, and Nueva partida stands
-                    between it and the rest, which is a mis-tap into a dialog with a
-                    cancel rather than into a spent bonus. Confirmar is last because it
-                    is pressed several times over an endgame. -->
+                    So Pista is the first of the three permanent buttons. It spends
+                    the flawless bonus and is the one button here that should take a
+                    deliberate reach, and Nueva partida stands between it and the rest,
+                    which is a mis-tap into a dialog with a cancel rather than into a
+                    spent bonus. -->
                 <div class="actions">
                     <!-- Kept in the layout at all times and only made invisible, so the
                         three permanent buttons never shuffle sideways when the late game

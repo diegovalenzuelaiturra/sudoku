@@ -85,7 +85,7 @@ jobs:
 
       # Runs the unit suite with a coverage floor rather than a bare "npm test".
       # The thresholds sit a few points under what the suite measures today
-      # (88.65 line, 77.19 branch, 89.47 function), so they catch a real
+      # (95.11 line, 93.73 branch, 96.55 function), so they catch a real
       # regression without failing on a rounding wobble.
       #
       # Worth knowing what this does not do: V8 only reports files that were
@@ -104,12 +104,12 @@ jobs:
         run: npm run test:coverage
 
       # Browsers are not part of the npm package and have to be fetched
-      # separately. This step is not a workaround for --ignore-scripts, whatever
-      # a previous version of this comment claimed: @playwright/test 1.62
-      # declares no lifecycle scripts at all, so the download would not happen
-      # with or without that flag. Both engines the suite declares as projects:
-      # chromium, and webkit because every copy of this app installed to an iOS
-      # home screen runs on WebKit, whichever browser installed it.
+      # separately. --ignore-scripts on the install above makes no difference
+      # here: @playwright/test 1.62 declares no lifecycle scripts at all, so the
+      # download would not happen with or without that flag. Both engines the
+      # suite declares as projects: chromium, and webkit because every copy of
+      # this app installed to an iOS home screen runs on WebKit, whichever
+      # browser installed it.
       - name: Install browsers for Playwright
         id: browsers
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
@@ -170,9 +170,9 @@ jobs:
 
       # prek arrives as an ordinary devDependency rather than through its own
       # GitHub Action or a hand-pinned pipx install. Three reasons, in order of
-      # weight. This repo's Actions policy admits GitHub-owned and
-      # verified-creator actions only, with an empty pattern allowlist, so
-      # j178/prek-action would be refused at run time. package-lock.json pins
+      # weight. This repo's Actions policy is selected: GitHub-owned actions,
+      # verified creators, and a pattern allowlist that does not cover j178/*,
+      # so j178/prek-action would be refused at run time. package-lock.json pins
       # the exact build for both this runner and a maintainer's laptop. And
       # Dependabot already watches npm here, so the version stays current on
       # its own, which a version number typed into a run step would not.

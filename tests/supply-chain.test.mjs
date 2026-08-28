@@ -1,5 +1,5 @@
-/* Three invariants that hold today, that nothing enforced, and that a single
-   careless install can flip without touching a line of source.
+/* Four invariants that hold today, that nothing enforced, and that a single
+   careless install or workflow edit can flip without touching a line of source.
 
    OSV-Scanner answers a different question. It asks whether a package this tree
    depends on has a published advisory, and it is the right tool for that. It

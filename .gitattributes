@@ -32,9 +32,9 @@
 package-lock.json merge=binary
 
 # The shipped site is index.html, 404.html and sw.js. tests/, e2e/ and scripts/
-# are the harness and the build: roughly 118 KB of tooling against 42 KB of
-# markup, enough that GitHub reports this as a three quarter JavaScript
-# project. Keep them out of the language bar only. Unlike linguist-vendored or
+# are the harness and the build: roughly 400 KB of tooling against 65 KB of
+# markup, enough that GitHub reports this as roughly three quarters JavaScript.
+# Keep them out of the language bar only. Unlike linguist-vendored or
 # linguist-generated this does not collapse them in diffs or hide them from
 # blame, so they stay reviewable.
 e2e/** linguist-detectable=false

@@ -10,18 +10,18 @@
 
 import { readFileSync, writeSync } from 'node:fs';
 
-/* Accessibility is a gate, not a budget, so it takes no environment override:
-   it was measured at 100 and is not allowed to regress. Every audit in the
-   category scores 0 or 1, so the category score is a weighted mean of binary
-   results and a single failing audit drops it below 1.0. There is no rounding
-   band for a regression to hide in, which is why this compares exactly. */
+/* Accessibility takes no environment override: it was measured at 100 and is
+   not allowed to regress. Every audit in the category scores 0 or 1, so the
+   category score is a weighted mean of binary results and a single failing
+   audit drops it below 1.0. There is no rounding band for a regression to hide
+   in, which is why this compares exactly. */
 const REQUIRED_ACCESSIBILITY = 1;
 
 /* The timing ceilings sit well above what this page measures, deliberately.
    Runners are shared, 2 vCPU and noisy, and a budget that flakes gets disabled
    within a week, which protects less than a loose budget that never lies. Each
-   number below is a published threshold rather than a value fitted just above
-   the last run, so it does not need renegotiating after every commit. */
+   number below is a published threshold, so it does not need renegotiating
+   after every commit. */
 const CHECKS = [
   {
     key: 'LCP',
@@ -32,7 +32,7 @@ const CHECKS = [
        throttling that CI uses, so this leaves a factor of ten. A tighter
        ceiling, say 500 ms, sits inside the spread that a cold Chrome start on
        a contended runner produces by itself. 2500 ms still catches anything
-       worth catching: the page is one self contained 30 KB document, so a web
+       worth catching: the page is one self contained 56 KB document, so a web
        font, a blocking script or a hero image overshoots it easily. */
     budget: 2500,
     format: (value) => `${Math.round(value)} ms`,
@@ -41,11 +41,11 @@ const CHECKS = [
     key: 'CLS',
     audit: 'cumulative-layout-shift',
     env: 'LH_BUDGET_CLS',
-    /* 0.10, the Core Web Vitals "good" boundary. CLS is a layout property
-       rather than a timing one, so it barely moves with hardware speed:
-       measured 0.00, and the page loads no late arriving image or font that
-       could reflow it. The margin covers sub pixel differences between Chrome
-       builds; a real unreserved space regression clears 0.10 in one shift. */
+    /* 0.10, the Core Web Vitals "good" boundary. CLS measures layout
+       stability, so it barely moves with hardware speed: measured 0.00, and
+       the page loads no late arriving image or font that could reflow it. The
+       margin covers sub pixel differences between Chrome builds; a real
+       unreserved space regression clears 0.10 in one shift. */
     budget: 0.1,
     format: (value) => value.toFixed(3),
   },
@@ -65,10 +65,11 @@ const CHECKS = [
   },
 ];
 
-/* writeSync rather than console.error: writes to stderr are asynchronous when
-   it is a pipe, which is what CI hands us, and process.exit() can drop one in
-   flight. Losing the exit code would be worse, but losing the reason for the
-   failure is how a gate ends up being deleted instead of fixed. */
+/* writeSync puts the message on stderr synchronously. console.error's writes
+   are asynchronous when stderr is a pipe, which is what CI hands us, and
+   process.exit() can drop one in flight. Losing the exit code would be worse,
+   but losing the reason for the failure is how a gate ends up being deleted
+   instead of fixed. */
 function abort(message) {
   writeSync(2, `check-budget: ${message}\n`);
   process.exit(2);

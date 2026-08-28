@@ -147,9 +147,8 @@ test('a win with a mistake pays papas fritas at face value and no chocolate', as
   expect(await page.evaluate(() => solved), 'the board did not register as solved').toBe(true);
 
   await expect(page.locator('#fries')).toHaveText(String(NORMAL.fries));
-  /* The chip has to stay at zero, not merely fail to reach two: a chocolate
-     paid for a spoiled game is the one thing that would make the count
-     meaningless. */
+  /* The chip has to stay at zero: a chocolate paid for a spoiled game is the
+     one thing that would make the count meaningless. */
   await expect(page.locator('#chocos')).toHaveText('0');
   expect(await readWallet(page)).toMatchObject({ fries: NORMAL.fries, choco: 0 });
   expect(problems).toEqual([]);

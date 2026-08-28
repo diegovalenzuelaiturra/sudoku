@@ -8,7 +8,7 @@
    Scoped hard on purpose. Run over the whole tree with the default settings
    this finds nothing useful and a great deal of noise, because a source file is
    mostly identifiers, and an identifier is not a word. So the file list is the
-   two documents that hold player-facing text, and the patterns below delete the
+   three files that hold player-facing text, and the patterns below delete the
    parts of them that are code before a single word is checked.
 
    es-ES and en are both on. The interface is Spanish, the comments and the

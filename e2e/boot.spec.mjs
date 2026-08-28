@@ -1,34 +1,26 @@
 /* Boots the published page in Chrome and asserts it comes up clean.
 
-   Ported from tests/boot.test.mjs, which booted the same page in a DOM
-   simulator and has been deleted now that this file stands in for it. The
-   regression that suite was written for still stands: `notes` was declared as
-   an empty array while render() read notes[i].has(d) for all 81 cells, so the
-   boot-time render() threw on the first cell, the statements after it never
-   ran, and the page loaded to a dead grid with no difficulty picker. Every
-   assertion below fails on that bug.
+   The regression it guards: `notes` was declared as an empty array while
+   render() read notes[i].has(d) for all 81 cells, so the boot-time render()
+   threw on the first cell, the statements after it never ran, and the page
+   loaded to a dead grid with no difficulty picker. Every assertion below fails
+   on that bug.
 
-   What changed by moving to a browser:
+   Four things a browser answers directly:
 
    1. The accessibility assertions are made against the tree Chrome actually
-      exposes, read over CDP, instead of against the attributes the page set.
-      The simulator had no accessibility tree, so it could only check that
-      .app.inert was assigned; it could not check that assigning it takes the
-      81 cells behind the start dialog out of what a screen reader can reach,
-      which is the whole point of the attribute.
-   2. The board is checked as a laid out nine by nine grid. The simulator had
-      no layout engine, so "the grid rendered" meant "the elements exist".
+      exposes, read over CDP, so .app.inert is checked by its effect: setting
+      it takes the 81 cells behind the start dialog out of what a screen reader
+      can reach, which is the whole point of the attribute.
+   2. The board is checked as a laid out nine by nine grid.
    3. The focus ring is checked as something painted, under the same
       :focus-visible rules a player is subject to.
    4. The service worker is registered, its scope asserted, and the path that
       produced it proved to be relative by serving the same bytes under a
-      second prefix. The simulator had no service worker at all, so the one
-      line of boot code that decides whether the app works offline was never
-      covered.
+      second prefix. That one line of boot code decides whether the app works
+      offline.
 
-   Pausing is not covered here. That suite asserted it through the inert
-   property, and that test is already ported, in its much stronger form, in
-   e2e/pause.spec.mjs. */
+   Pausing is covered in e2e/pause.spec.mjs. */
 
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
@@ -36,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
-/* Kept in sync with the DIFF map in index.html. The clue count each difficulty
+/* Kept in sync with the DIFF map in app.js. The clue count each difficulty
    used to advertise is deliberately not here: difficulty is the technique a
    board needs now, and the generator moves the clue count to reach one, so
    there is no fixed number left to assert. tests/generator.test.mjs owns what
@@ -86,9 +78,8 @@ function expectExposedCells(cdp, pattern, count, what) {
     .toBe(count);
 }
 
-/* Every test in the deleted suite ended by asserting nothing had gone wrong on
-   the console. Kept, but reading the real one: an exception thrown by a
-   platform feature a simulator stubs out can only surface here. */
+/* Every test ends by asserting the real console stayed clean: an exception
+   thrown by a platform feature surfaces nowhere else. */
 const problems = [];
 
 test.beforeEach(async ({ page }) => {
@@ -135,16 +126,15 @@ test('the start dialog is a named modal and the page behind it is unreachable', 
   expect(dialogs.map((node) => node.name)).toContain('SUDOKU');
   expect(dialogs.find((node) => node.name === 'SUDOKU').properties.modal).toBe(true);
 
-  /* The deleted suite could only assert that the page had set .app.inert,
-     never what inert does. This is what it does: the whole board goes out of
+  /* What .app.inert does, asserted by its effect: the whole board goes out of
      the tree while the dialog is up. */
   await expectExposedCells(cdp, CELL_NAME, 0, 'board cells');
 
   await expect(page.locator(`#startOverlay button.diff[data-d="${PRESETS[0].key}"]`)).toBeFocused();
 
-  /* The other half of a trapped dialog is the tab order, which a simulated
-     DOM does not model either. Walking forward and back from the focused
-     button must never land on the board or the controls behind the dialog. */
+  /* The other half of a trapped dialog is the tab order. Walking forward and
+     back from the focused button must never land on the board or the controls
+     behind the dialog. */
   const visited = [];
   for (const key of ['Tab', 'Shift+Tab']) {
     await page.locator(`#startOverlay button.diff[data-d="${PRESETS[0].key}"]`).focus();
@@ -172,8 +162,8 @@ test('the board is 81 named cells laid out as a nine by nine grid', async ({ pag
      reader cannot name is the failure worth catching. */
   await expect(page.getByRole('button', { name: /^Fila \d, columna \d, vacía$/u })).toHaveCount(81);
 
-  /* A simulated DOM has no layout, so the old suite could not tell a rendered
-     board from 81 elements stacked at 0 by 0. */
+  /* Layout is the check: 81 elements stacked at 0 by 0 are not a rendered
+     board. */
   const grid = await page.evaluate(() => {
     const boxes = [...document.querySelectorAll('#board .cell')].map((cell) =>
       cell.getBoundingClientRect(),
