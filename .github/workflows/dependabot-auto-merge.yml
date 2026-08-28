@@ -1,78 +1,92 @@
 name: Dependabot auto-merge
 
-# Turns on GitHub's auto-merge for a Dependabot pull request. It does not merge
-# anything itself: auto-merge is a queue, and GitHub releases it only once every
-# rule in "development protection" is satisfied, which here means Test green,
-# Lint green, CodeQL and zizmor reporting no error level alerts, the branch up
-# to date with its base, and the commit signed. A red check leaves the pull
-# request sitting open exactly as it does today.
+# Turns on GitHub's auto-merge for open Dependabot pull requests. It does not
+# merge anything itself: auto-merge is a queue, and GitHub releases it only once
+# every rule in "development protection" is satisfied, which here means Test
+# green, Lint green, CodeQL and zizmor reporting no error level alerts, the
+# branch up to date with its base, and the commit signed. A red check leaves the
+# pull request sitting open exactly as it does today.
 #
 # What this replaces is a person typing "gh pr merge" after watching the checks
-# go green on a one line version bump, which is the whole of the work for most
-# of them. The judgement that is worth a human stays where it was: the seven day
-# cooldown in dependabot.yml is what decides whether a release is old enough to
-# be trusted, and this runs long after that decision has already been made.
+# go green on a one line version bump. The judgement worth a human stays where
+# it was: the seven day cooldown in dependabot.yml decides whether a release is
+# old enough to trust, and this runs long after that decision was made.
 #
-# Deliberately not conditioned on the update being a patch. Every dependency
-# here is dev-only, the build and the browser suite run over the result on the
-# way in, and a major that breaks something breaks a required check, which is
-# the same gate a minor gets.
+# A schedule rather than a pull request trigger, and that is the whole design.
+# The obvious shape for this is pull_request_target, because a workflow
+# Dependabot triggers through pull_request gets a read only token and cannot
+# enable auto-merge on anything. zizmor rejects that shape twice over, and it is
+# right to: dangerous-triggers, because pull_request_target hands the base
+# repository's token to a run started by a pull request, and bot-conditions,
+# because github.actor is spoofable and is therefore not something to gate a
+# merge on. Both are high severity, both block the merge through the code
+# scanning rule, and suppressing them would have been the wrong answer to a
+# correct finding.
+#
+# On a schedule none of that arises. The run belongs to this branch, nothing
+# from a pull request is checked out or executed, and the author filter below is
+# answered by the API rather than by an event payload an attacker can shape.
+#
+# The cost is that a schedule only ever runs on the default branch, so this file
+# does nothing until it reaches main through a release, and a new pull request
+# waits at most six hours to be queued. Neither matters for a dependency bump
+# that already waited a week to exist.
 on:
-  pull_request_target:
-    branches: [development]
+  schedule:
+    # Four times a day, off the hour. GitHub drops scheduled runs when too many
+    # land on the same minute, and the top of the hour is where everyone puts
+    # them.
+    - cron: "25 */6 * * *"
+  workflow_dispatch:
 
 permissions: {}
 
 concurrency:
-  group: automerge-${{ github.event.pull_request.number }}
+  group: dependabot-auto-merge
   cancel-in-progress: false
 
 jobs:
-  # pull_request_target is required rather than chosen. A workflow triggered by
-  # Dependabot through "pull_request" is handed a read only token, so it cannot
-  # enable auto-merge on anything, and no permissions block can grant a scope
-  # the event does not carry.
-  #
-  # The danger in that trigger is running the pull request's own code with the
-  # base repository's token. This job checks nothing out, installs nothing and
-  # runs nothing from the pull request. It reads one number out of the event and
-  # calls one API, so nothing under a contributor's control is executed, which
-  # is the condition the audit exists to protect.
-  #
-  # zizmor passes this file with no suppression, checked both ways rather than
-  # assumed: its dangerous-triggers audit reports nothing here. Do not add a
-  # checkout step. That is what would make the trigger mean what its reputation
-  # says, and it would turn the audit red on the way in.
-  enable:
-    name: Enable auto-merge
-    # Both halves matter. The actor is who triggered the run, and the user is
-    # who opened the pull request; requiring the pair means a rerun triggered by
-    # somebody else on a Dependabot pull request, or a Dependabot rerun on
-    # somebody else's, does nothing.
-    if: >-
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.actor == 'dependabot[bot]'
+  queue:
+    name: Queue Dependabot merges
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       # Enabling auto-merge writes to the pull request, and the merge it later
-      # performs writes to the branch. Nothing else in this file needs a scope,
-      # and the workflow level default above is none at all.
+      # performs writes to the branch. Nothing else here needs a scope, and the
+      # workflow level default above is none at all.
       contents: write
       pull-requests: write
     steps:
-      # Squash, matching how every pull request reaches development. The commit
-      # message is not passed here: the repository is configured for a PR_TITLE
-      # subject and a BLANK body, so the squash lands with the same shape as the
-      # bumps that were merged by hand, rather than carrying an entire changelog
-      # into the log.
-      - name: Queue the merge
+      # Squash, matching how every pull request reaches development. Releases
+      # are merge commits and are untouched by this: it only ever looks at pull
+      # requests based on development.
+      - name: Queue every open Dependabot pull request
         env:
-          # Read into the environment rather than interpolated into the run
-          # block. The number is a number, so this is not the injection that
-          # usually motivates the rule, but a URL or a title here later would
-          # be, and the shape is what stops that.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
-        run: gh pr merge --auto --squash --repo "$REPO" "$PR"
+        run: |
+          set -euo pipefail
+
+          # "app/dependabot" is how the API names the bot, and asking the API
+          # who opened a pull request is what makes this unspoofable. A title or
+          # a branch name would not be.
+          gh pr list --repo "$REPO" \
+            --author "app/dependabot" \
+            --base development \
+            --state open \
+            --json number \
+            --jq '.[].number' > numbers.txt
+
+          if [ ! -s numbers.txt ]; then
+            echo "No open Dependabot pull requests."
+            exit 0
+          fi
+
+          # One failure does not stop the rest. A pull request that cannot be
+          # queued, because it conflicts or because auto-merge is already on, is
+          # reported and skipped rather than failing a run whose other work
+          # succeeded.
+          while read -r pr; do
+            echo "Queueing #${pr}"
+            gh pr merge --auto --squash --repo "$REPO" "$pr" || echo "Could not queue #${pr}, leaving it open"
+          done < numbers.txt
