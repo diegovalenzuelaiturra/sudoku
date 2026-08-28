@@ -1,0 +1,92 @@
+name: Dependabot auto-merge
+
+# Turns on GitHub's auto-merge for open Dependabot pull requests. It does not
+# merge anything itself: auto-merge is a queue, and GitHub releases it only once
+# every rule in "development protection" is satisfied, which here means Test
+# green, Lint green, CodeQL and zizmor reporting no error level alerts, the
+# branch up to date with its base, and the commit signed. A red check leaves the
+# pull request sitting open exactly as it does today.
+#
+# What this replaces is a person typing "gh pr merge" after watching the checks
+# go green on a one line version bump. The judgement worth a human stays where
+# it was: the seven day cooldown in dependabot.yml decides whether a release is
+# old enough to trust, and this runs long after that decision was made.
+#
+# A schedule rather than a pull request trigger, and that is the whole design.
+# The obvious shape for this is pull_request_target, because a workflow
+# Dependabot triggers through pull_request gets a read only token and cannot
+# enable auto-merge on anything. zizmor rejects that shape twice over, and it is
+# right to: dangerous-triggers, because pull_request_target hands the base
+# repository's token to a run started by a pull request, and bot-conditions,
+# because github.actor is spoofable and is therefore not something to gate a
+# merge on. Both are high severity, both block the merge through the code
+# scanning rule, and suppressing them would have been the wrong answer to a
+# correct finding.
+#
+# On a schedule none of that arises. The run belongs to this branch, nothing
+# from a pull request is checked out or executed, and the author filter below is
+# answered by the API rather than by an event payload an attacker can shape.
+#
+# The cost is that a schedule only ever runs on the default branch, so this file
+# does nothing until it reaches main through a release, and a new pull request
+# waits at most six hours to be queued. Neither matters for a dependency bump
+# that already waited a week to exist.
+on:
+  schedule:
+    # Four times a day, off the hour. GitHub drops scheduled runs when too many
+    # land on the same minute, and the top of the hour is where everyone puts
+    # them.
+    - cron: "25 */6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: dependabot-auto-merge
+  cancel-in-progress: false
+
+jobs:
+  queue:
+    name: Queue Dependabot merges
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      # Enabling auto-merge writes to the pull request, and the merge it later
+      # performs writes to the branch. Nothing else here needs a scope, and the
+      # workflow level default above is none at all.
+      contents: write
+      pull-requests: write
+    steps:
+      # Squash, matching how every pull request reaches development. Releases
+      # are merge commits and are untouched by this: it only ever looks at pull
+      # requests based on development.
+      - name: Queue every open Dependabot pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # "app/dependabot" is how the API names the bot, and asking the API
+          # who opened a pull request is what makes this unspoofable. A title or
+          # a branch name would not be.
+          gh pr list --repo "$REPO" \
+            --author "app/dependabot" \
+            --base development \
+            --state open \
+            --json number \
+            --jq '.[].number' > numbers.txt
+
+          if [ ! -s numbers.txt ]; then
+            echo "No open Dependabot pull requests."
+            exit 0
+          fi
+
+          # One failure does not stop the rest. A pull request that cannot be
+          # queued, because it conflicts or because auto-merge is already on, is
+          # reported and skipped rather than failing a run whose other work
+          # succeeded.
+          while read -r pr; do
+            echo "Queueing #${pr}"
+            gh pr merge --auto --squash --repo "$REPO" "$pr" || echo "Could not queue #${pr}, leaving it open"
+          done < numbers.txt
