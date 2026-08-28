@@ -84,17 +84,24 @@ jobs:
         with:
           persist-credentials: false
 
-      # Pinned to the same SHA the OSV workflow already uses for this action,
-      # rather than to the newest tag. v4.37.6 exists and is two days old, and
-      # dependabot.yml refuses any release younger than a week on the grounds
-      # that a compromised one is usually recognised inside that window. Taking
-      # a fresher pin here by hand would step around the control this repository
-      # chose. Dependabot moves both files together when the week is up.
+      # Pinned to the same SHA the OSV workflow uses for this action. Those two
+      # files are the only ones that name codeql-action directly, so they move
+      # together or not at all. They do not account for every SARIF this
+      # repository uploads: the OSV reusable workflow and the zizmor action each
+      # carry a codeql-action of their own, pinned inside somebody else's
+      # repository and older than this one. An advisory against codeql-action
+      # has to be answered in three places, and only two of them are here.
+      #
+      # The tag is the newest one that clears the seven-day cooldown in
+      # dependabot.yml, which refuses any release younger than a week on the
+      # grounds that a compromised one is usually recognised inside that window.
+      # Reaching past it by hand would step around the control this repository
+      # chose.
       #
       # No build-mode and no autobuild step: neither of these languages is
       # compiled, and this repository has no build in the sense CodeQL means.
-      - uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+      - uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           languages: javascript-typescript,actions
 
-      - uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+      - uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7

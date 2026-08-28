@@ -34,7 +34,7 @@ name: OSV-Scanner
 # One caveat, recorded rather than hidden, and it applies to that job alone.
 # Every "uses:" inside the reusable workflow it calls is a full commit SHA, but
 # it bottoms out in an action whose runtime is
-# "image: docker://ghcr.io/google/osv-scanner-action:v2.3.8", an image tag
+# "image: docker://ghcr.io/google/osv-scanner-action:v2.5.1", an image tag
 # rather than a digest. Pinning the reference does not pin that image, so that
 # job is the one exception to the repository's otherwise total SHA pinning.
 # Accepted knowingly, in exchange for upstream maintenance and the
@@ -101,10 +101,8 @@ jobs:
     # The PR variant rather than the full-scan one. It scans base and head and
     # reports only what the pull request newly introduces, so a long-lived
     # advisory in a dev-only transitive dependency does not re-flag every
-    # unrelated change. The full-scan sibling is also the worse-pinned of the
-    # two: it calls actions/download-artifact@v8, a mutable major tag, where
-    # every reference in this one is a SHA.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@8deb546fdb875b9996d27d4950be7312dac076a1 # v2.5.0
+    # unrelated change.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
     # Restated rather than inherited. The workflow-level default above is no
     # permissions at all, and a called workflow cannot be granted more than its
     # caller holds, so leaving this out would starve it.
@@ -122,20 +120,10 @@ jobs:
   # reusable workflow above, which is what a schedule needs: that variant scans
   # base against head, and on a schedule there is no base to diff against.
   #
-  # Calling it is not possible here, which was learned by trying. This
-  # repository sets "require actions to be pinned to a full-length commit SHA",
-  # and osv-scanner-reusable.yml contains "uses: actions/download-artifact@v8",
-  # a mutable major tag and the only unpinned reference in either variant. That
-  # policy is evaluated when the workflow graph is resolved, before any job
-  # runs, so the step's "inputs.download-artifact != ''" guard does not help:
-  # the run ends as startup_failure with no jobs created, and it takes the
-  # working scan-pr job in this same file down with it. Measured on this branch
-  # at run 30198856055, against the pull request that introduced the job.
-  #
-  # So the scan is run directly instead. Every reference below is a commit SHA
-  # or a checksum, which removes the exception rather than documenting it, and
-  # this is the shape this repository used before the reusable workflow was
-  # adopted. What is given up is upstream maintenance of the scan invocation.
+  # The scan is run directly. Every reference below is a commit SHA or a
+  # checksum, so this job carries none of the docker image tag exception
+  # recorded at the top of this file. What is given up is upstream maintenance
+  # of the scan invocation.
   scan-full:
     name: Scheduled scan
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -160,8 +148,8 @@ jobs:
       # is what makes this equivalent to a SHA pin.
       - name: Install osv-scanner
         env:
-          OSV_VERSION: v2.4.0
-          OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
+          OSV_VERSION: v2.5.1
+          OSV_SHA256: f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --location \
@@ -184,7 +172,7 @@ jobs:
 
       - name: Publish findings to code scanning
         if: ${{ !cancelled() && steps.scan.outcome != 'skipped' }}
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           sarif_file: osv.sarif
           category: osv-scanner
