@@ -468,6 +468,47 @@ test('the published page still carries the Apache-2.0 sprite attribution', (t) =
   );
 });
 
+/* The minifier can turn a valid declaration into an invalid one, and a source
+   diff cannot show it. clean-css rewrote animation-duration:.01ms as NaNs,
+   which is not a time, so the browser dropped the declaration and every reader
+   who asked for reduced motion got the animations at full length anyway. The
+   leading zero avoids it. This asks the published bytes instead of trusting
+   the source, because the source was correct the whole time. */
+test('the published styles carry no value the minifier broke', (t) => {
+  if (!checkable) return t.skip(SKIPPED);
+  const published = readFileSync(join(siteDir, 'index.html'), 'utf8');
+
+  /* Only the stylesheet. The inlined game holds Number.isNaN legitimately, and
+     a search over the whole page would fail on it forever. */
+  const styles = [...published.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gu)]
+    .map((match) => match[1])
+    .join('\n');
+  assert.ok(styles !== '', '_site/index.html publishes no inline stylesheet');
+
+  assert.doesNotMatch(
+    styles,
+    /NaN/u,
+    '_site/index.html holds a NaN in a declaration value. A minifier produced it from a ' +
+      'value the source spells legally, so look for a number written without its leading zero.',
+  );
+
+  const reduced = styles.match(/prefers-reduced-motion:\s*reduce\)\s*\{([^}]*)\}/u);
+  assert.ok(reduced, '_site/index.html publishes no prefers-reduced-motion block');
+
+  /* Both properties, because the bug hit them one at a time and a rule that
+     stills the animations while the transitions run is still broken. */
+  for (const property of ['animation-duration', 'transition-duration']) {
+    const declared = reduced[1].match(new RegExp(`${property}:\\s*([^;!}]+)`, 'u'));
+    assert.ok(declared, `the reduced motion rule no longer sets ${property}`);
+    assert.match(
+      declared[1].trim(),
+      /^(0|0s|0ms|[\d.]+m?s)$/u,
+      `the reduced motion rule sets ${property} to "${declared[1].trim()}", which is not a time, ` +
+        'so the browser drops it and the animation plays in full',
+    );
+  }
+});
+
 test('the published service worker carries a substituted cache name', (t) => {
   if (!checkable) return t.skip(SKIPPED);
   const worker = join(siteDir, 'sw.js');

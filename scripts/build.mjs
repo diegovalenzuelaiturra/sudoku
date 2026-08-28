@@ -32,6 +32,7 @@ import { gzipSync } from 'node:zlib';
    imports them back. Both are plain JavaScript with no lifecycle scripts and
    no native build, so npm ci --ignore-scripts installs them completely. */
 import { minify as minifyHtml } from 'html-minifier-terser';
+import { transform as transformCss } from 'lightningcss';
 import { minify as minifyJs } from 'terser';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..');
@@ -262,6 +263,54 @@ export function build({ root = REPO_ROOT, outDir, buildId } = {}) {
    one of its own: several exist specifically to stop a fixed bug being put
    back, so deleting them from the file people edit would be the regression
    this is supposed to be an optimisation for. */
+/* The browser floor, in the encoding lightningcss wants: major, minor and patch
+   packed one byte apart. Safari 15.4 is the floor this repository states, and
+   the others are its contemporaries from March 2022, so nothing here is
+   prefixed or lowered for a browser nobody is asked to support.
+
+   Naming the floor to the minifier rather than only writing it down is the
+   point. user-select and backdrop-filter both need -webkit- at Safari 15.4 and
+   neither carries it in the source, so the built page now grows the prefixes
+   instead of quietly dropping the declarations on the oldest browser in scope. */
+const CSS_TARGETS = {
+  safari: (15 << 16) | (4 << 8),
+  chrome: 100 << 16,
+  firefox: 98 << 16,
+  edge: 100 << 16,
+};
+
+/* clean-css, which html-minifier-terser bundles and uses when minifyCSS is
+   true, rewrote animation-duration:.01ms as NaNs. That is not a time, so the
+   browser dropped the declaration and the whole prefers-reduced-motion rule
+   stopped working in the published page while the source stayed correct.
+   Writing the value with its leading zero avoids that one case; handing the
+   CSS to a different minifier removes the class.
+
+   html-minifier-terser calls this for three kinds of text and says which:
+   a <style> body, a style attribute, and a media attribute. lightningcss parses
+   a stylesheet, so the last two are wrapped into one and unwrapped after.
+   Anything it cannot parse throws, which fails the build, and that is wanted:
+   the alternative is publishing CSS that silently lost a rule. */
+const minifyCss = (text, type) => {
+  const run = (code) =>
+    transformCss({
+      filename: 'index.css',
+      code: Buffer.from(code),
+      minify: true,
+      targets: CSS_TARGETS,
+    }).code.toString();
+
+  if (type === 'inline') {
+    const out = run(`a{${text}}`);
+    return out.slice(out.indexOf('{') + 1, out.lastIndexOf('}'));
+  }
+  if (type === 'media') {
+    const out = run(`@media ${text}{a{color:red}}`);
+    return out.slice('@media '.length, out.indexOf('{'));
+  }
+  return run(text);
+};
+
 const HTML_MINIFY_OPTIONS = {
   removeComments: true,
   /* One exception, and it is not a preference. The button sprite is Material
@@ -282,7 +331,7 @@ const HTML_MINIFY_OPTIONS = {
      1189 elements and the visible text. Nothing moved, and it saves 181 bytes
      of the ones the formatter's line breaks put there. */
   collapseWhitespace: true,
-  minifyCSS: true,
+  minifyCSS: minifyCss,
   minifyJS: true,
 };
 

@@ -68,7 +68,7 @@ function loadGeneratorScript() {
     el.addEventListener('error', () => {
       /* The memo is dropped along with the element, so a failure is forgotten
          rather than cached. A rejected promise kept here made the only thing
-         the player is told to do, "probá de nuevo", impossible to follow: one
+         the player is told to do, "Prueba de nuevo.", impossible to follow: one
          request that lost the network took the fallback out for the life of the
          page, and every later press answered instantly from the same rejection
          without touching the network again. */

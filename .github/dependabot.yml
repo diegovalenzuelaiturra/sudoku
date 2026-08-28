@@ -70,6 +70,21 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 14
+    # oxlint and eslint-plugin-oxlint cannot move one at a time. The plugin
+    # declares a tilde peer on oxlint, so a pull request that raises either one
+    # alone leaves a lockfile npm ci refuses, and the refusal lands at the
+    # install step, before Test or Lint has run a single check. That is not a
+    # theory: it is what happened, and the repair was closing one pull request
+    # by hand and rebasing the other onto it.
+    #
+    # Only the pair is grouped. Everything else stays a pull request of its
+    # own, so a single bad release is still one revert rather than a bisect
+    # through five packages.
+    groups:
+      oxlint:
+        patterns:
+          - oxlint
+          - eslint-plugin-oxlint
 
   # The third set of pins in this repo, and the one neither entry above can
   # see. .pre-commit-config.yaml pins each hook to a tag on somebody else's

@@ -36,6 +36,26 @@ repos:
     hooks:
       - id: actionlint
 
+  # The two files above cover .github/workflows and stop there, which leaves
+  # .github/dependabot.yml judged by nothing but check-yaml, and check-yaml
+  # only asks whether the bytes are YAML. A misspelled key there is valid YAML
+  # and silently does nothing: Dependabot ignores what it does not recognise,
+  # so a cooldown that never applies or a group that never groups looks exactly
+  # like one that works. This validates the file against the schema GitHub
+  # publishes for it.
+  #
+  # require-timeout is the second half. actionlint judges a workflow valid and
+  # a missing timeout-minutes is valid; zizmor judges it safe and a missing one
+  # is safe. Neither objects, and the job then runs to GitHub's six hour
+  # default. Every job in this repository sets a timeout today, and this is
+  # what keeps the next one from forgetting.
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.38.0
+    hooks:
+      - id: check-dependabot
+      - id: check-github-workflows
+      - id: check-github-workflows-require-timeout
+
   # Security review of the workflows themselves: script injection through
   # untrusted event data, credential persistence, over-broad permissions,
   # unpinned actions. Complements actionlint rather than repeating it, since
@@ -262,6 +282,25 @@ repos:
         language: system
         pass_filenames: false
         files: \.(m?js|html|css)$|^biome\.json$
+
+      # The only check here that reads the copy rather than the code. A
+      # misspelling in the Spanish interface compiles, lints, passes the browser
+      # suite and is seen by every single visitor, which makes it the one class
+      # of defect this repository had no guard against at all.
+      #
+      # Scoped to the three files holding player-facing text, with the
+      # stylesheet, the icon sprite and the data URIs stripped before a word is
+      # read. Run over the whole tree instead, it reports identifiers and finds
+      # nothing, which is how a spell checker gets switched off in a week.
+      #
+      # It cannot see a missing accent, because the unaccented spelling is
+      # usually another real Spanish word. tests/accents.test.mjs is that half.
+      - id: cspell
+        name: cspell
+        entry: npm run --silent lint:spelling
+        language: system
+        pass_filenames: false
+        files: ^(index\.html|404\.html|app\.js|cspell\.config\.mjs)$
 
       # The unit suite plus a coverage floor, the same command CI runs. It takes
       # roughly a second and a half, which is cheap enough to pay per commit and

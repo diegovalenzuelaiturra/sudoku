@@ -11,6 +11,7 @@
     "lint:eslint": "eslint .",
     "lint:fix": "oxlint --fix && eslint . --fix && biome check --write",
     "lint:oxlint": "oxlint",
+    "lint:spelling": "cspell --config cspell.config.mjs --no-progress index.html app.js 404.html",
     "preview": "node scripts/build.mjs && node e2e/static-server.mjs",
     "test": "node --test --test-timeout=30000",
     "test:coverage": "node --test --test-timeout=30000 --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=88 --test-coverage-functions=90",
@@ -18,14 +19,19 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.9",
+    "@cspell/dict-es-es": "^3.0.8",
+    "@eslint/css": "^1.4.0",
     "@eslint/js": "^10.0.1",
     "@html-eslint/eslint-plugin": "^0.65.0",
     "@j178/prek": "^0.4.14",
     "@playwright/test": "^1.62.1",
+    "cspell": "^10.1.1",
     "eslint": "^10.8.1",
     "eslint-plugin-oxlint": "^1.79.0",
+    "fast-check": "^4.9.0",
     "globals": "^17.11.0",
     "html-minifier-terser": "^7.2.0",
+    "lightningcss": "^1.33.0",
     "oxlint": "^1.79.0",
     "terser": "^5.50.0"
   }
