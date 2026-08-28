@@ -328,8 +328,8 @@ test('too few games shows nothing at all, heading included', async ({ page }) =>
   expect(problems).toEqual([]);
 });
 
-/* The first dialog every existing player sees after this update. sudoku:stats
-   is deliberately left alone by this build, so their wins are in the table while
+/* A player with wins in sudoku:stats and no ring yet. sudoku:stats is
+   deliberately left alone by this build, so their wins are in the table while
    the ring under it starts empty. Any sentence there would be talking about a
    ring the player has no idea exists, beside a table of their own wins, so the
    block is simply absent until it has something of theirs to report. */

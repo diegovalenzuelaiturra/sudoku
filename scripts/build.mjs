@@ -20,17 +20,18 @@ import { lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync 
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-/* The only two imports here that are not node builtins, and they cost the
-   deploy job an npm ci. That job used to install nothing, which kept the whole
-   dependency tree out of the one place that can publish to Pages and mint an
-   OIDC token, so this is a real trade and not a free one. It is made because
-   minifying the page is worth about a third of what it costs on the wire and
+/* The only three imports here that are not node builtins, and they cost the
+   verify job an npm ci. That job can read the repository and nothing else, so
+   the dependency tree never sits beside the Pages and OIDC credentials, which
+   the deploy job holds alone. The cost is paid because minifying the page
+   removes about seven tenths of what it would otherwise cost on the wire, and
    there is no way to do that with builtins alone.
 
-   Both are devDependencies and neither is ever served: they run here, at build
-   time, over bytes that have already been written, and nothing they produce
-   imports them back. Both are plain JavaScript with no lifecycle scripts and
-   no native build, so npm ci --ignore-scripts installs them completely. */
+   All three are devDependencies and none is ever served: they run here, at
+   build time, over bytes that have already been written, and nothing they
+   produce imports them back. npm ci --ignore-scripts installs all three
+   completely: none of them runs an install script, and lightningcss ships its
+   native code as prebuilt per-platform packages. */
 import { minify as minifyHtml } from 'html-minifier-terser';
 import { transform as transformCss } from 'lightningcss';
 import { minify as minifyJs } from 'terser';
@@ -239,25 +240,23 @@ export function build({ root = REPO_ROOT, outDir, buildId } = {}) {
   return { buildId: id, idSource, outDir: target, files: published, skipped };
 }
 
-/* Conservative on purpose, and the numbers are why rather than an instinct.
-   Measured on this page, against gzip, which is what GitHub Pages actually
-   serves and therefore the only size a visitor pays. Each line switches on one
-   more option than the line above it:
+/* Conservative on purpose. Measured on this page, against gzip, which is what
+   GitHub Pages actually serves and therefore the only size a visitor pays. Each
+   line switches on one more option than the line above it:
 
-     unminified                       15276 gzipped
-     removeComments                   14531
-     + collapseWhitespace below       14457
-     + minifyCSS and minifyJS         10457
-     + removeAttributeQuotes          10426
-     + collapseBooleanAttributes      10426
+     unminified                       59887 gzipped
+     removeComments                   56255
+     + collapseWhitespace below       55919
+     + minifyCSS and minifyJS         18611
+     + removeAttributeQuotes          18601
+     + collapseBooleanAttributes      18599
 
-   So the entire win is the two sub-minifiers: the document is 25 percent CSS
-   and 52 percent JS, and everything a markup only pass can do is worth 819 of
-   the 4819 bytes. The last two lines are the reason the aggressive options are
-   off. Thirty one gzipped bytes, three tenths of one percent of what is
-   served, in exchange for rewriting every attribute in an inline SVG sprite,
-   and the boolean attributes on this page are worth exactly nothing. That is
-   not a trade, it is a dare.
+   So the entire win is the two sub-minifiers: the document is 15 percent CSS
+   and 68 percent JS, and everything a markup only pass can do is worth 3968 of
+   the 41276 bytes. The last two lines are the reason the aggressive options are
+   off. Twelve gzipped bytes, six hundredths of one percent of what is served,
+   in exchange for rewriting every attribute in an inline SVG sprite, and the
+   boolean attributes on this page are worth two of those twelve.
 
    Dropping comments applies to the published copy only. index.html keeps every
    one of its own: several exist specifically to stop a fixed bug being put

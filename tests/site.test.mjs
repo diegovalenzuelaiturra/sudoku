@@ -8,9 +8,10 @@
    And macOS matches filenames without regard to case while the Pages server
    does not, so Icon.png happily resolves locally and 404s once deployed.
 
-   The manifest, the service worker and their icons are optional on purpose:
-   they are landing on a sibling branch, so anything absent is skipped rather
-   than failed, and starts being enforced the moment it appears. */
+   The manifest, the service worker and their icons are optional entries in the
+   build allowlist, so a build without them still succeeds. These checks match
+   that: an absent file is a skip, and enforcement begins the moment it
+   appears. */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

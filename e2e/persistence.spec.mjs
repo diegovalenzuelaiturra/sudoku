@@ -6,24 +6,14 @@
    private mode throws from setItem, so a dead localStorage must cost the save
    and nothing else.
 
-   This is the browser version of what tests/persistence.test.mjs asked a DOM
-   simulator before it was deleted. Three things it can assert that the
-   simulator could not:
-
-   1. The reload is a real reload. Every simulated document got its own
-      localStorage, so the old suite had to hand the page an in-memory
-      stand-in and boot a second document against it. Here the page writes to
-      the browser's own storage and page.reload() re-runs the same document
-      the player would get.
-   2. Restoring means the board is exposed again. The old suite could only read
-      back the inert property it had just seen the page set; with no
-      accessibility tree, it could not tell whether the 81 cells were
-      actually readable. These tests ask Chrome over CDP for the tree it hands
-      assistive tech, where an inert subtree is dropped wholesale, and compare
-      the names it exposes before and after the reload.
-   3. A service worker exists. The simulator had none, so the half of the reload
-      path where the app shell comes out of the cache instead of off the server
-      was invisible to the old suite. */
+   Three facts hold only in a real browser, and each one is asserted below. The
+   reload is real: the page writes to the browser's own storage and
+   page.reload() re-runs the same document the player gets. Restoring exposes
+   the board again: these tests ask Chrome over CDP for the tree it hands
+   assistive tech, where an inert subtree is dropped wholesale, and compare the
+   names it exposes before and after the reload. A service worker controls the
+   page, so a reload can serve the app shell out of its cache, and the restore
+   has to survive that. */
 
 import { expect, test } from '@playwright/test';
 
@@ -32,9 +22,9 @@ const SAVE_KEY = 'sudoku:save';
 /* The name render() gives every cell: "Fila 3, columna 7, 4, dada". */
 const CELL_NAME = /^Fila \d, columna \d/u;
 
-/* Loads the page with the console under watch. The returned array is the
-   browser's answer to the old helper's `errors`: it is filled by uncaught
-   exceptions and console errors for the rest of the test, reloads included. */
+/* Loads the page with the console under watch. The returned array is filled by
+   uncaught exceptions and console errors for the rest of the test, reloads
+   included. */
 async function boot(page) {
   const problems = [];
   page.on('console', (message) => {
@@ -117,9 +107,8 @@ async function exposedBoard(page, cdp) {
 }
 
 /* Leaves a pencil mark, a placed digit and a non-zero clock. The moves go
-   through the same clicks and keypresses a player would use, which the old
-   suite could not do: it called inputDigit() directly, so it never exercised
-   the path from a real event to a written save. */
+   through the same clicks and keypresses a player would use, which exercises
+   the real path from a browser event to a written save. */
 async function playAndSave(page) {
   const plan = await page.evaluate(() => {
     const a = values.findIndex((_v, i) => !fixed[i]);
@@ -185,8 +174,8 @@ test('a game in progress survives a reload', async ({ page, context }) => {
   ).toBe(true);
   expect(saved.seconds).toBe(42);
 
-  /* A genuine reload of the genuine save, not a second document pointed at a
-     stand-in for storage. */
+  /* A genuine reload of the genuine save: the page reads back through the same
+     localStorage it wrote to. */
   await page.reload();
   expect(problems, 'restoring threw').toEqual([]);
 
@@ -195,10 +184,9 @@ test('a game in progress survives a reload', async ({ page, context }) => {
     'the difficulty picker interrupted a resumable game',
   ).toBeHidden();
   expect(await readBoard(page), 'the restored board differs').toEqual(before);
-  /* The old suite could only check that .app.inert was not true. This is what
-     that property was standing in for: all 81 cells are back in the tree
-     Chrome exposes, under the same names, so nothing was left inert and
-     nothing came back wrong. */
+  /* All 81 cells are back in the tree Chrome exposes, under the same names: an
+     inert subtree is dropped wholesale, so this fails if the restore left the
+     board unreachable as well as if a value came back wrong. */
   expect(
     await exposedBoard(page, cdp),
     'the restored board is not the board that was saved',
@@ -500,9 +488,8 @@ test('pausing captures the clock', async ({ page }) => {
   await startGame(page, 'medium');
 
   /* The runner cannot wait out two minutes, so the clock is set by hand.
-     Stopping the tick first is what makes the assertion exact: unlike a
-     simulator driven by the test, a real browser keeps firing the interval
-     between these two steps. */
+     Stopping the tick first is what makes the assertion exact: the browser
+     keeps firing the interval between these two steps. */
   await page.evaluate(() => {
     clearInterval(tick);
     seconds = 123;
@@ -526,10 +513,8 @@ test('a save survives a reload the service worker serves from cache', async ({ p
   await playAndSave(page);
   const before = await readBoard(page);
 
-  /* Without a browser there is no service worker, so this reload path never
-     existed for the old suite. Once the worker controls the page the next load comes out of
-     its cache rather than off the server, and the restore has to survive
-     being handed a cached app shell. */
+  /* Once the service worker controls the page, the next load is served from its
+     cache, so the restore has to survive being handed a cached app shell. */
   await expect
     .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null), {
       message: 'the service worker never took control of the page',

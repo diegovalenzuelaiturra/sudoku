@@ -1,4 +1,4 @@
-# Git hooks for this repo. See CONTRIBUTING notes in README.md.
+# Git hooks for this repo. See the "Git hooks" section of README.md.
 #
 # The runner is prek (https://github.com/j178/prek), a Rust reimplementation of
 # pre-commit that reads this exact file format. Plain pre-commit also works if
@@ -8,10 +8,12 @@
 #   npx prek install         # writes .git/hooks/pre-commit
 #   npm run lint             # run everything once, without committing
 #
-# These hooks are a fast local warning, not the gate. Anyone can bypass them
-# with "git commit --no-verify", so CI runs the same set over every file on
-# every pull request. If you change a hook here, that CI job picks it up
-# automatically, because it runs this file rather than a copy of it.
+# These hooks are a fast local warning. Anyone can bypass them with
+# "git commit --no-verify", so CI runs them over every file on every pull
+# request, leaving out the unit suite, which the Test job runs with the same
+# coverage floor, and the branch guard, which a runner checking out main would
+# fail for a commit that already merged. If you change a hook here, that CI job
+# picks it up automatically: it runs this file itself.
 
 # Raised from 3.0.0 when the hygiene hooks below arrived. Three of them,
 # check-added-large-files, end-of-file-fixer and trailing-whitespace, declare
@@ -89,9 +91,8 @@ repos:
   # file rather than a behaviour, which is precisely the class the unit suite
   # cannot see: it loads the handful of files it tests and nothing else.
   #
-  # This is a subset of the same block in the repo the CI setup here was
-  # modelled on. The Python only hooks are left out, along with check-toml and
-  # the two symlink hooks, because this tree has neither TOML nor symlinks.
+  # The Python only hooks are left out, along with check-toml and the two
+  # symlink hooks, because this tree has neither TOML nor symlinks.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -107,8 +108,8 @@ repos:
       # ends. Sizes below are KiB to the nearest whole, matching the getsize()
       # / 1024 this hook itself compares, and they are re-measured when the
       # commit that moves them lands rather than once. The largest tracked files
-      # are package-lock.json at 79 KB, app.js at 73 KB and index.html at 34 KB,
-      # so a megabyte is roughly thirteen times the biggest thing here and
+      # are package-lock.json at 136 KB, app.js at 104 KB and index.html at
+      # 58 KB, so a megabyte is over seven times the biggest thing here and
       # nothing legitimate is near it. package-lock.json is the one most likely
       # to grow into the ceiling, since it grows with the dependency tree and
       # would fail the Lint job with a message about a large file rather than
@@ -217,13 +218,12 @@ repos:
       # Fixes: these rewrite the file and stage nothing, so a failure means read
       # the diff and commit again.
       #
-      # No exclude for package-lock.json, unlike the lockfile exclude in the
-      # repo this block came from. Every tracked file here, that one included,
-      # is already LF, already ends in a newline and already has no trailing
-      # whitespace, so all three fixers are no-ops today and there is nothing
-      # for a generator and a hook to take turns undoing. That was measured over
-      # the whole tree, not reasoned about. Leaving the lockfile in scope means
-      # a hand edit that introduces CRLF is still caught.
+      # No exclude for package-lock.json. Every tracked file here, that one
+      # included, is already LF, already ends in a newline and already has no
+      # trailing whitespace, so all three fixers are no-ops today and there is
+      # nothing for a generator and a hook to take turns undoing. That was
+      # measured over the whole tree, not reasoned about. Leaving the lockfile
+      # in scope means a hand edit that introduces CRLF is still caught.
       - id: end-of-file-fixer
 
       # .gitattributes already declares "* text=auto eol=lf", so this covers
@@ -303,7 +303,7 @@ repos:
         files: ^(index\.html|404\.html|app\.js|cspell\.config\.mjs)$
 
       # The unit suite plus a coverage floor, the same command CI runs. It takes
-      # roughly a second and a half, which is cheap enough to pay per commit and
+      # roughly twenty five seconds, which is cheap enough to pay per commit and
       # is the difference between finding a broken build script now and finding
       # it after a push.
       #

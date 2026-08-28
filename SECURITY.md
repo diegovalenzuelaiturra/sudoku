@@ -12,12 +12,13 @@ project, so please treat that as best effort rather than a guarantee.
 ## Scope
 
 The published site is a handful of static files served by GitHub Pages: the
-whole app inline in `index.html`, plus a web app manifest, a service worker
-that precaches that shell, an icon and an error page. It has no
-backend, no accounts and no personal data, and it talks to no third party: the
-only requests it makes are the service worker fetching its own same-origin
-files. The game in progress (board, notes, timer, mistakes, hints) is saved to
-`localStorage` on the device and never leaves it.
+whole app inline in `index.html`, the puzzle generator in `generator.js`,
+which the page loads as a worker or a plain script, plus a web app manifest, a
+service worker that precaches that shell, an icon and an error page. It has no
+backend, no accounts and no personal data, and it talks to no third party:
+every request it makes is for its own same-origin files. The game in progress
+(board, notes, timer, mistakes, hints) is saved to `localStorage` on the
+device and never leaves it.
 
 That narrows what a vulnerability here can realistically be. Things worth
 reporting:

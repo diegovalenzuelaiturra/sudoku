@@ -21,7 +21,7 @@ failed without this diff.
 The local gate, which is what CI runs:
   npm run lint            the git hooks from .pre-commit-config.yaml, every file
   npm run test:coverage   the unit suite, with the coverage floor CI enforces
-  npm run test:e2e        Playwright against a real Chromium
+  npm run test:e2e        Playwright against a real Chromium and a real WebKit
   npm run build           worth running alone only if you touched the build
 -->
 

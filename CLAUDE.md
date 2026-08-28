@@ -6,8 +6,9 @@ enforced by a test or exists because breaking it shipped a bug.
 
 ## What ships
 
-Four things reach the browser: `index.html`, `generator.js`, `sw.js` and
-`icons/`. `index.html` is the whole interface, with its styles inline.
+Six things reach the browser: `index.html`, `404.html`, `manifest.webmanifest`,
+`sw.js`, `generator.js` and `icons/`. `index.html` is the whole interface, with
+its styles inline.
 
 Two more files are loaded by `index.html` and published by neither name:
 `app.js`, which is the game, and `stats.js`, which is the arithmetic behind the
@@ -21,8 +22,11 @@ coverage report can see it. Add another such file to `INLINED_SCRIPTS` in
 hash, so a script left out of it would change the game without changing the
 build id and every returning visitor would keep the cached copy.
 
-Adding a published file means adding it in three places, and a test fails if you
-miss one:
+Adding a published file means adding it in three places. One direction is
+checked: `tests/assets.test.mjs` walks `PUBLISHED` and fails when `ALLOWLIST`
+omits an entry, so an `ALLOWLIST` entry with no `PUBLISHED` line passes. Nothing
+compares `APP_SHELL` with either list, so `404.html` and `sw.js` ship today
+without being precached and the suite stays green:
 
 - `ALLOWLIST` in `scripts/build.mjs`, which is fail closed: anything not named
   there is never read, so a forgotten entry is a silent 404 in production.
@@ -49,7 +53,7 @@ worker normally, but `app.js` injects it as a plain `<script>` when constructing
 a worker throws. Two classic scripts declaring the same top level `const` is a
 SyntaxError, and `app.js` has its own `boxOf` and `PEERS`, so anything else
 leaking out of that file breaks the fallback silently. `no-implicit-globals` in
-`eslint.config.mjs` now enforces this rather than leaving it to memory.
+`eslint.config.mjs` enforces this.
 
 **Comments are load bearing.** Several exist specifically to stop a fixed bug
 being reintroduced, and they record measurements that were expensive to take.
@@ -77,7 +81,13 @@ git switch development && git merge --ff-only main && git push origin developmen
 ```
 
 Both branches then sit on the same commit and the next release starts from
-common ground. Skipping this is what turned one mis-click into three releases of
+common ground. The push is refused at first: `development protection` requires
+`Test`, `Lint` and the code scanning results on the exact commit being pushed,
+and those runs start only once the merge commit is on `main`. Every gating
+workflow carries a `push: branches: [main]` trigger for that reason. Retry the
+push every minute until it lands, and never force past it.
+
+Skipping the fast-forward is what turned one mis-click into three releases of
 drift: once the branches had diverged the fast-forward was impossible, so it
 stopped happening, and `development` trailed `main` by every release merge.
 Development's ruleset deliberately has no pull request rule, because that would
@@ -94,17 +104,24 @@ board is reported at is always the grade it was measured at, never the one that
 was requested: the search is allowed to miss, and the player is told the truth.
 
 Every board is a pure function of a 32 bit seed, so a puzzle can be rebuilt from
-the code shown at the end of a game, and the tests assert over fixed seeds
-rather than over whatever the last run produced.
+the code shown at the end of a game. `tests/generator.test.mjs` and
+`tests/oracle.test.mjs` drive 24 seeds written down once, which makes a hit rate
+a constant and any drop in it a regression. `tests/properties.test.mjs` draws
+seeds across the whole 32 bit space with fast-check and shrinks a failure to the
+smallest seed that still breaks.
 
-Four localStorage keys, each versioned: `sudoku:save`, `sudoku:wallet`,
-`sudoku:stats` and `sudoku:history`. One rule holds across all of them. A reader
-that cannot make sense of what is stored leaves it alone rather than overwriting
-it, because the bytes probably belong to a newer build the player still has
-cached. The wallet is the strictest, since what is in it was earned: it reads
-its own version and the one before, refuses anything newer, and never writes
-over what it refused. `sudoku:history` follows the wallet, not the stats: it is
-the ring of finished games, and a game that was played cannot be played again.
+Five localStorage keys, each versioned: `sudoku:save`, `sudoku:wallet`,
+`sudoku:stats`, `sudoku:history` and `sudoku:prefs`. The wallet and the history
+share one rule. A reader that cannot make sense of what is stored leaves the
+bytes where they are, because they probably belong to a newer build the player
+still has cached. The wallet is the stricter of the two, since what is in it was
+earned: it reads its own version and the one before, refuses anything newer, and
+never writes over what it refused. `sudoku:history` follows it, because it is
+the ring of finished games and a game that was played cannot be played again.
+`sudoku:save`, `sudoku:stats` and `sudoku:prefs` start over on a version they
+do not know, and the next write replaces the bytes they refused to read: a lost
+streak is not a lost prize, and a setting that cannot be read is a setting to
+ask for again.
 
 ## Tests
 
@@ -116,10 +133,12 @@ npm run lint            # the git hooks, over every file
 npm run lint:fix        # all three linters, applying what they can fix
 ```
 
-Three linters, wired into the hooks and CI. oxlint runs its `correctness` rules;
+Four checks, wired into the hooks and CI. oxlint runs its `correctness` rules;
 `eslint.config.mjs` reads `.oxlintrc.json` and switches off the rules oxlint
 already covers; Biome lints and formats the JavaScript, which the other two only
-see as text when it is inside `index.html`.
+see as text when it is inside `index.html`; cspell reads the Spanish copy in
+`index.html`, `app.js` and `404.html`. `npm run lint:fix` drives the first three,
+because cspell has no fix mode.
 
 HTML indents four, the one place this tree is not on two. `.editorconfig`,
 `biome.json` and `eslint.config.mjs` all say so and have to keep agreeing. Run

@@ -43,7 +43,7 @@ PLAYWRIGHT_PORT=4174 npm run preview
 ## Testing
 
 ```sh
-npm test           # unit suite, about half a second
+npm test           # unit suite, a few seconds
 npm run test:coverage   # the same suite, with the coverage floor CI enforces
 npm run test:e2e        # Playwright, real Chromium and real WebKit
 ```
@@ -60,6 +60,7 @@ npm run lint:oxlint     # oxlint, the whole tree in milliseconds
 npm run lint:eslint     # ESLint, which is what lints the markup
 npm run lint:biome      # Biome, lint and format
 npm run lint:fix        # all three, applying every fix they can make themselves
+npm run lint:spelling   # cspell, over the player facing copy
 ```
 
 [oxlint](https://oxc.rs) runs its `correctness` rules. [ESLint](https://eslint.org)
@@ -69,7 +70,9 @@ whether a file is a node module, a classic worker script or a service worker.
 [Biome](https://biomejs.dev) lints and formats the JavaScript, including the CSS
 and the script inside `index.html`, which the other two read as text. The three
 overlap on purpose: they are fast enough that the overlap costs less than
-deciding which tool owns which rule.
+deciding which tool owns which rule. [cspell](https://cspell.org) checks the
+spelling of the player facing copy in `index.html`, `app.js` and `404.html`.
+`npm run lint:fix` does not run it, so run it on its own or run `npm run lint`.
 
 Two formatters touch the HTML, and they agree: html-eslint indents it and Biome
 formats it, both at four spaces, and running them in either order twice changes
@@ -86,8 +89,8 @@ the `role="group"` board are deliberate.
 ## Git hooks
 
 Optional but recommended. The hooks lint the workflow files, run all three
-linters and run the unit suite before a commit lands, which is faster than finding out
-from CI.
+linters, check the spelling of the copy and run the unit suite before a commit
+lands, which is faster than finding out from CI.
 
 ```sh
 npm ci --ignore-scripts
@@ -97,8 +100,8 @@ npx prek install         # writes .git/hooks/pre-commit
 No separate install: prek is a devDependency, so `npm ci` already put it in
 `node_modules/.bin`. Then commits run
 [actionlint](https://github.com/rhysd/actionlint) for workflow validity,
-[zizmor](https://docs.zizmor.sh) for workflow security, the three linters and
-the unit suite. To run everything once without committing:
+[zizmor](https://docs.zizmor.sh) for workflow security, the three linters, the
+spell check and the unit suite. To run everything once without committing:
 
 ```sh
 npm run lint
@@ -112,7 +115,10 @@ twenty seconds and is cached in `~/.cache/prek` afterwards.
 `npx prek update` bumps the hook revisions.
 
 None of this is load bearing: `git commit --no-verify` skips it, and the `Lint`
-job in CI runs the same hooks over every file on every pull request.
+job in CI runs these hooks over every file on every pull request. Two are
+skipped there: the unit suite, because the `Test` job runs the same command with
+the same coverage floor, and the branch guard, because a runner that checks out
+`main` on a real branch fails it for a commit that already merged.
 
 One trap. The lint and unit test hooks need `npm` on the `PATH`, and a desktop
 git client or an editor commit button does not load your shell profile, so a
