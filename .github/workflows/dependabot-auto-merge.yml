@@ -1,15 +1,17 @@
 name: Dependabot auto-merge
 
-# Clears open Dependabot pull requests once "development protection" is
+# Merges an open Dependabot pull request once "development protection" is
 # satisfied, which here means Test green, Lint green, CodeQL and zizmor
 # reporting no error level alerts, the branch up to date with its base, and the
 # commit signed. GitHub refuses any merge the ruleset does not allow, so the
 # gate is the gate a person faces.
 #
-# The ruleset covers less than the tree runs, and the OSV scan is the gap that
-# matters: a bump can be mergeable with that scan red, in the state GitHub calls
-# UNSTABLE. gh merges that state on sight, so the case below holds it for a
-# person to read. That is the one judgement this file makes on its own.
+# Every merge is performed by the run itself. GitHub's own auto-merge queue
+# releases a pull request on the ruleset alone, and the ruleset is narrower than
+# the checks this tree runs: the OSV scan gates neither required_status_checks
+# nor the code scanning rule. A queued bump carrying a live advisory would
+# therefore merge with nobody reading it. Holding that case is the one judgement
+# this file makes, and it only holds while this run owns every merge.
 #
 # What this replaces is a person typing "gh pr merge" after watching the checks
 # go green on a one line version bump. The judgement worth a human stays where
@@ -19,22 +21,21 @@ name: Dependabot auto-merge
 # A schedule rather than a pull request trigger, and that is the whole design.
 # The obvious shape for this is pull_request_target, because a workflow
 # Dependabot triggers through pull_request gets a read only token and cannot
-# enable auto-merge on anything. zizmor rejects that shape twice over, and it is
-# right to: dangerous-triggers, because pull_request_target hands the base
-# repository's token to a run started by a pull request, and bot-conditions,
-# because github.actor is spoofable and is therefore not something to gate a
-# merge on. Both are high severity, both block the merge through the code
-# scanning rule, and suppressing them would have been the wrong answer to a
-# correct finding.
+# merge anything. zizmor rejects that shape twice over, and it is right to:
+# dangerous-triggers, because pull_request_target hands the base repository's
+# token to a run started by a pull request, and bot-conditions, because
+# github.actor is spoofable and is therefore not something to gate a merge on.
+# Both are high severity, both block the merge through the code scanning rule,
+# and suppressing them would have been the wrong answer to a correct finding.
 #
 # On a schedule none of that arises. The run belongs to this branch, nothing
 # from a pull request is checked out or executed, and the author filter below is
 # answered by the API rather than by an event payload an attacker can shape.
 #
 # The cost is that a schedule only ever runs on the default branch, so this file
-# does nothing until it reaches main through a release, and a new pull request
-# waits at most six hours to be queued. Neither matters for a dependency bump
-# that already waited a week to exist.
+# does nothing until it reaches main through a release, and a bump waits at most
+# six hours after its checks go green. Neither matters for a dependency that
+# already waited a week to exist.
 on:
   schedule:
     # Four times a day, off the hour. GitHub drops scheduled runs when too many
@@ -50,13 +51,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  queue:
+  merge:
     name: Clear Dependabot merges
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      # A squash writes to the branch, and enabling auto-merge writes to the
-      # pull request. Nothing else here needs a scope, and the workflow level
+      # The squash writes to the branch, and it closes the pull request that
+      # carried it. Nothing else here needs a scope, and the workflow level
       # default above is none at all.
       contents: write
       pull-requests: write
@@ -64,27 +65,12 @@ jobs:
       # Squash, matching how every pull request reaches development. Releases
       # are merge commits and are untouched by this: it only ever looks at pull
       # requests based on development.
-      - name: Merge or queue every open Dependabot pull request
+      - name: Merge every Dependabot pull request the rules allow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-
-          # A release merge lands on main, and development is fast forwarded
-          # onto it afterwards. A squash that lands on development inside that
-          # window leaves the two branches with no common tip, and CLAUDE.md
-          # records that divergence as the cause of repair pull request #36 and
-          # three releases of drift. compare answers ahead or identical only
-          # while main holds nothing development is missing.
-          window=$(gh api "repos/$REPO/compare/main...development" --jq .status || echo unknown)
-          case "$window" in
-            ahead | identical) ;;
-            *)
-              echo "::notice::development is $window main, so a release fast forward is pending. Nothing merged."
-              exit 0
-              ;;
-          esac
 
           # "app/dependabot" is how the API names the bot, and asking the API
           # who opened a pull request is what makes this unspoofable. A title or
@@ -103,68 +89,99 @@ jobs:
           fi
 
           merged=0
-          failed=0
+          held=0
 
-          # Every call passes --body "", because the repository default for a
-          # squash body is PR_BODY, and a Dependabot body runs to tens of
-          # thousands of characters of changelog HTML that has carried the em
-          # dashes this tree bans from a commit message.
+          # Each merge passes an empty body. The repository default for a squash
+          # body is PR_BODY, and a Dependabot body runs to tens of thousands of
+          # characters of changelog HTML that has carried the em dashes this
+          # tree bans from a commit message.
           while read -r pr state; do
+            # GitHub computes a merge state in the background and drops it
+            # whenever the base branch moves, so a list read answers UNKNOWN for
+            # a pull request that has one. Asking for that pull request alone
+            # resolves it inside this run.
+            if [ "$state" = "UNKNOWN" ]; then
+              state=$(gh pr view "$pr" --repo "$REPO" --json mergeStateStatus --jq .mergeStateStatus < /dev/null || echo UNKNOWN)
+            fi
+
             echo "#${pr} is ${state}"
 
             case "$state" in
-              # Green and up to date. gh sends a plain merge for these states,
-              # with or without --auto, so this names what it does.
+              # Green and up to date, which is the only state this file merges.
               CLEAN | HAS_HOOKS)
                 # The ruleset requires a branch up to date with its base, so the
                 # first merge of a run puts every remaining pull request behind
-                # it, and the states read above stop describing them.
+                # it, and the states read above stop describing them. Dependabot
+                # rebases those, and the next run takes them.
                 if [ "$merged" -ne 0 ]; then
                   echo "::notice::#${pr} is now behind this run's merge, the next run takes it"
                   continue
                 fi
-                if gh pr merge --squash --body "" --repo "$REPO" "$pr"; then
+
+                # A release merge lands on main, and development is fast
+                # forwarded onto it afterwards. A squash landing on development
+                # inside that window leaves the two branches with no common tip
+                # and the fast forward impossible, which is the drift CLAUDE.md
+                # warns about. compare answers ahead or identical only while
+                # main holds nothing development is missing. It is read at the
+                # merge, because the window opens in seconds and a value read
+                # at the top of the run is already stale. A compare that cannot
+                # be read ends the run red, because this is the check that has
+                # to be true before anything lands.
+                if ! window=$(gh api "repos/$REPO/compare/main...development" --jq .status < /dev/null); then
+                  echo "::error::Could not compare main with development, so no merge was attempted."
+                  exit 1
+                fi
+                case "$window" in
+                  ahead | identical) ;;
+                  *)
+                    echo "::notice::development is $window main, so a release fast forward is pending. Nothing merged."
+                    exit 0
+                    ;;
+                esac
+
+                # A refusal here is usually the base moving between the list
+                # call and this one, which the next run answers, so it leaves
+                # the pull request open and the run green.
+                if gh pr merge --squash --body "" --repo "$REPO" "$pr" < /dev/null; then
                   merged=1
                 else
-                  echo "::warning::Could not merge #${pr}"
-                  failed=$((failed + 1))
+                  echo "::warning::Could not merge #${pr}, leaving it open"
                 fi
                 ;;
               # Mergeable with a check outside the ruleset red or still running.
-              # The OSV scan is one of those: it gates neither required_status_checks
-              # nor the code scanning rule. gh merges this state on sight, so an
-              # advisory would reach development unread. A person reads it.
+              # A red one is what this file exists to hold, and a scheduled run
+              # reaches a person only by failing, so a red check outside the
+              # ruleset ends the run red and a pending one waits.
               UNSTABLE)
-                echo "::warning::#${pr} has a check outside the ruleset that is red or pending, left open"
+                red=$(gh pr view "$pr" --repo "$REPO" --json statusCheckRollup \
+                  --jq '[.statusCheckRollup[] | (.conclusion // .state) | select(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT")] | length' < /dev/null || echo 0)
+                if [ "$red" -gt 0 ]; then
+                  echo "::error::#${pr} has ${red} failing check(s) outside the ruleset, so it stays open for a person"
+                  held=$((held + 1))
+                else
+                  echo "::notice::#${pr} has a check outside the ruleset still running, the next run takes it"
+                fi
                 ;;
-              # Dependabot rebases its own branches, and a push from this token
+              # Dependabot rebases its own branches. A push from this token
               # would be worse than waiting: GitHub starts no workflow run from
-              # GITHUB_TOKEN, so Test and Lint would never report on the new head
-              # and the pull request could never satisfy the ruleset again.
+              # GITHUB_TOKEN, so Test and Lint would never report on the new
+              # head, and the same push stops Dependabot rebasing at all.
               BEHIND)
                 echo "::notice::#${pr} is behind, Dependabot rebases it"
                 ;;
-              # A conflict, a draft, or a state GitHub has not finished
-              # computing. All three are answered by the next run.
-              DIRTY | DRAFT | UNKNOWN)
-                echo "::notice::#${pr} is ${state}, nothing to do this run"
-                ;;
-              # Checks still running, which is what the queue is for.
+              # BLOCKED is the ruleset refusing this merge now: a required check
+              # pending or failed, an error level alert, an unsigned commit. A
+              # conflict, a draft and an unresolved state land here too. All of
+              # them are answered by a later run, and none of them is handed to
+              # the auto-merge queue, for the reason at the top of this file.
               *)
-                if gh pr merge --auto --squash --body "" --repo "$REPO" "$pr"; then
-                  echo "#${pr} queued"
-                else
-                  echo "::warning::Could not queue #${pr}"
-                  failed=$((failed + 1))
-                fi
+                echo "::notice::#${pr} is ${state}, nothing to do this run"
                 ;;
             esac
           done < prs.txt
 
-          # One failure does not stop the rest, and the run still ends red. A
-          # green scheduled run notifies nobody, and a run that reports success
-          # while merging nothing is the one outcome this file cannot have.
-          if [ "$failed" -ne 0 ]; then
-            echo "${failed} pull request(s) could not be merged or queued."
+          if [ "$held" -ne 0 ]; then
+            echo "${held} pull request(s) held for a person to read."
             exit 1
           fi
