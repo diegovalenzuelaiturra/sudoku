@@ -75,9 +75,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Pinned to v0.6.1 rather than to v0.6.2, which is five days old, on the
-      # same seven-day cooldown dependabot.yml applies to everything else here.
-      #
       # This action needed a pattern in the repository's Actions policy, the
       # same way google/osv-scanner-action did, because "selected" plus the
       # GitHub-owned and verified-creator checkboxes does not cover it.
@@ -89,10 +86,11 @@ jobs:
       # which is precisely what the OSV reusable workflow could not promise.
       #
       # The version is named rather than left at "latest" so this and the
-      # pre-commit hook run the same zizmor. .pre-commit-config.yaml pins rev
-      # v1.28.0, and 1.28.0 is the newest entry in this action's table, so the
-      # two agree today and a Dependabot bump to either one that leaves the
-      # other behind is visible in the diff rather than silent.
+      # pre-commit hook run the same zizmor. It has to match the rev
+      # .pre-commit-config.yaml pins, and tests/workflows.test.mjs fails when it
+      # does not. Nothing else compares the two: the action's table rejects only
+      # a version it has no digest for, and it never prunes, so a bump to the
+      # hook alone goes through here unnoticed.
       - uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
         with:
-          version: "1.28.0"
+          version: "1.29.0"
