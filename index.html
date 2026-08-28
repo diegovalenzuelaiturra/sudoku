@@ -526,8 +526,13 @@
     .status{font-size:11px;gap:7px;letter-spacing:0}
   }
 
+  /* The leading zero is load bearing. clean-css, inside html-minifier-terser,
+     turns the value .01ms into NaNs, which is not a time and which every browser
+     drops, so the minified page ignored this whole rule and played every
+     animation at full length for the readers who asked for none. 0.01ms
+     minifies to 0s. Measured through this repository's own build options. */
   @media (prefers-reduced-motion:reduce){
-    *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
+    *,*::before,*::after{animation-duration:0.01ms !important;transition-duration:0.01ms !important}
     .stamp.show{opacity:1}
   }
         </style>
