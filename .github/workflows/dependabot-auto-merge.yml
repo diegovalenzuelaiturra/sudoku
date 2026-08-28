@@ -1,0 +1,78 @@
+name: Dependabot auto-merge
+
+# Turns on GitHub's auto-merge for a Dependabot pull request. It does not merge
+# anything itself: auto-merge is a queue, and GitHub releases it only once every
+# rule in "development protection" is satisfied, which here means Test green,
+# Lint green, CodeQL and zizmor reporting no error level alerts, the branch up
+# to date with its base, and the commit signed. A red check leaves the pull
+# request sitting open exactly as it does today.
+#
+# What this replaces is a person typing "gh pr merge" after watching the checks
+# go green on a one line version bump, which is the whole of the work for most
+# of them. The judgement that is worth a human stays where it was: the seven day
+# cooldown in dependabot.yml is what decides whether a release is old enough to
+# be trusted, and this runs long after that decision has already been made.
+#
+# Deliberately not conditioned on the update being a patch. Every dependency
+# here is dev-only, the build and the browser suite run over the result on the
+# way in, and a major that breaks something breaks a required check, which is
+# the same gate a minor gets.
+on:
+  pull_request_target:
+    branches: [development]
+
+permissions: {}
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  # pull_request_target is required rather than chosen. A workflow triggered by
+  # Dependabot through "pull_request" is handed a read only token, so it cannot
+  # enable auto-merge on anything, and no permissions block can grant a scope
+  # the event does not carry.
+  #
+  # The danger in that trigger is running the pull request's own code with the
+  # base repository's token. This job checks nothing out, installs nothing and
+  # runs nothing from the pull request. It reads one number out of the event and
+  # calls one API, so nothing under a contributor's control is executed, which
+  # is the condition the audit exists to protect.
+  #
+  # zizmor passes this file with no suppression, checked both ways rather than
+  # assumed: its dangerous-triggers audit reports nothing here. Do not add a
+  # checkout step. That is what would make the trigger mean what its reputation
+  # says, and it would turn the audit red on the way in.
+  enable:
+    name: Enable auto-merge
+    # Both halves matter. The actor is who triggered the run, and the user is
+    # who opened the pull request; requiring the pair means a rerun triggered by
+    # somebody else on a Dependabot pull request, or a Dependabot rerun on
+    # somebody else's, does nothing.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      # Enabling auto-merge writes to the pull request, and the merge it later
+      # performs writes to the branch. Nothing else in this file needs a scope,
+      # and the workflow level default above is none at all.
+      contents: write
+      pull-requests: write
+    steps:
+      # Squash, matching how every pull request reaches development. The commit
+      # message is not passed here: the repository is configured for a PR_TITLE
+      # subject and a BLANK body, so the squash lands with the same shape as the
+      # bumps that were merged by hand, rather than carrying an entire changelog
+      # into the log.
+      - name: Queue the merge
+        env:
+          # Read into the environment rather than interpolated into the run
+          # block. The number is a number, so this is not the injection that
+          # usually motivates the rule, but a URL or a title here later would
+          # be, and the shape is what stops that.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: gh pr merge --auto --squash --repo "$REPO" "$PR"
