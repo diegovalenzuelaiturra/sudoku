@@ -49,6 +49,15 @@ name: OSV-Scanner
 #   until someone deals with it.
 on:
   pull_request:
+  # A release merge commit needs an analysis of its own. The fast forward that
+  # follows a release pushes that commit onto development, the code scanning
+  # rule there names this tool, and a push rule reads the result for the commit
+  # being pushed. A pull request run answers for the pull request's head, which
+  # is a different commit, so without this the fast forward is refused until
+  # someone dispatches a run by hand. codeql.yml and zizmor.yml carry the same
+  # trigger for the same reason.
+  push:
+    branches: [main]
   # Mondays at 06:00 UTC. Weekly rather than daily because a re-scan only
   # changes its answer when OSV publishes something, and the start of the week
   # puts this beside Dependabot's weekly run rather than five days after it.
