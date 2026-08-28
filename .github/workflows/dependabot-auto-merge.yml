@@ -1,17 +1,16 @@
 name: Dependabot auto-merge
 
-# Turns on GitHub's auto-merge for open Dependabot pull requests. It does not
-# merge anything itself: auto-merge is a queue, and GitHub releases it only once
-# every rule in "development protection" is satisfied, which here means Test
-# green, Lint green, CodeQL, zizmor and osv-scanner reporting no error level
-# alerts, the branch up to date with its base, and the commit signed. A red
-# check leaves the pull request sitting open exactly as it does today.
+# Asks GitHub to merge every open Dependabot pull request, and "development
+# protection" decides when that happens: Test green, Lint green, CodeQL, zizmor
+# and osv-scanner raising no alert above the rule's thresholds, the branch up to
+# date with its base, and the commit signed. A red check leaves the pull request
+# sitting open exactly as it does today.
 #
-# The OSV scan belongs in that list, and putting it there is what makes this
-# file safe to run. A queue releases on the ruleset alone, so a rule is the only
-# thing that binds every route into development at once: this job, the queue it
-# arms, and a maintainer clicking the button. osv-scanner.yml records what that
-# costs and why the path filters had to go with it.
+# gh chooses between two calls on the state it reads. A pull request nothing is
+# blocking is merged on the spot; one that is still blocked is queued, and
+# GitHub releases it later. Both answer to the same rules, and the queue answers
+# to nothing else, which is why the OSV scan is in the ruleset rather than in
+# this file. osv-scanner.yml records what that gate costs.
 #
 # What this replaces is a person typing "gh pr merge" after watching the checks
 # go green on a one line version bump. The judgement worth a human stays where
@@ -21,13 +20,12 @@ name: Dependabot auto-merge
 # A schedule rather than a pull request trigger, and that is the whole design.
 # The obvious shape for this is pull_request_target, because a workflow
 # Dependabot triggers through pull_request gets a read only token and cannot
-# enable auto-merge on anything. zizmor rejects that shape twice over, and it is
-# right to: dangerous-triggers, because pull_request_target hands the base
-# repository's token to a run started by a pull request, and bot-conditions,
-# because github.actor is spoofable and is therefore not something to gate a
-# merge on. Both are high severity, both block the merge through the code
-# scanning rule, and suppressing them would have been the wrong answer to a
-# correct finding.
+# merge anything. zizmor rejects that shape twice over, and it is right to:
+# dangerous-triggers, because pull_request_target hands the base repository's
+# token to a run started by a pull request, and bot-conditions, because
+# github.actor is spoofable and is therefore not something to gate a merge on.
+# Both are high severity, both block the merge through the code scanning rule,
+# and suppressing them would have been the wrong answer to a correct finding.
 #
 # On a schedule none of that arises. The run belongs to this branch, nothing
 # from a pull request is checked out or executed, and the author filter below is
@@ -35,8 +33,8 @@ name: Dependabot auto-merge
 #
 # The cost is that a schedule only ever runs on the default branch, so this file
 # does nothing until it reaches main through a release, and a new pull request
-# waits at most six hours to be queued. Neither matters for a dependency bump
-# that already waited a week to exist.
+# waits at most six hours. Neither matters for a dependency bump that already
+# waited a week to exist.
 on:
   schedule:
     # Four times a day, off the hour. GitHub drops scheduled runs when too many
@@ -57,9 +55,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      # Enabling auto-merge writes to the pull request, and the merge it later
-      # performs writes to the branch. Nothing else here needs a scope, and the
-      # workflow level default above is none at all.
+      # Enabling auto-merge writes to the pull request, and the merge writes to
+      # the branch. Nothing else here needs a scope, and the workflow level
+      # default above is none at all.
       contents: write
       pull-requests: write
     steps:
@@ -73,34 +71,71 @@ jobs:
         run: |
           set -euo pipefail
 
+          # A release merge lands on main, and development is fast forwarded
+          # onto it afterwards. A squash that lands on development inside that
+          # window leaves the two branches with no common tip and the fast
+          # forward impossible, which is the drift CLAUDE.md warns about.
+          # compare answers ahead or identical while main holds nothing
+          # development is missing. A compare that cannot be read ends the run,
+          # because this is the check that has to be true before anything lands.
+          #
+          # This binds the merges gh performs here. A pull request GitHub
+          # released from the queue can still land inside the window, which is
+          # the residue of handing the moment of the merge to the queue.
+          window=$(gh api "repos/$REPO/compare/main...development" --jq .status)
+          case "$window" in
+            ahead | identical) ;;
+            *)
+              echo "development is $window main, so a release fast forward is pending."
+              exit 0
+              ;;
+          esac
+
           # "app/dependabot" is how the API names the bot, and asking the API
           # who opened a pull request is what makes this unspoofable. A title or
           # a branch name would not be.
+          #
+          # A pull request that already carries auto-merge is filtered out by
+          # the same call. Arming one twice is refused, and a refusal that is
+          # expected four times a day would train a reader to ignore the ones
+          # that are not.
           gh pr list --repo "$REPO" \
             --author "app/dependabot" \
             --base development \
             --state open \
-            --json number \
-            --jq '.[].number' > numbers.txt
+            --json number,autoMergeRequest \
+            --jq '.[] | select(.autoMergeRequest == null) | .number' > numbers.txt
 
           if [ ! -s numbers.txt ]; then
-            echo "No open Dependabot pull requests."
+            echo "Nothing to queue."
             exit 0
           fi
 
-          # An empty body, because the repository default for a squash body is
-          # PR_BODY, and a Dependabot body runs to tens of thousands of
-          # characters of changelog HTML that has carried the em dashes this
-          # tree bans into a commit message.
+          failed=0
+
+          # An empty squash body. The repository's squash_merge_commit_message
+          # setting is BLANK, which covers a person clicking the button as well,
+          # and the flag keeps this route independent of that setting. Either
+          # one alone would let a Dependabot changelog, tens of thousands of
+          # characters of HTML carrying the em dashes this tree bans, into a
+          # commit message.
           #
-          # Reading from /dev/null, because the loop's own input is this file
-          # and a command that reached for stdin would eat the rest of it.
-          #
-          # One failure does not stop the rest. A pull request that cannot be
-          # queued, because it conflicts or because auto-merge is already on, is
-          # reported and skipped rather than failing a run whose other work
-          # succeeded.
+          # gh reads from /dev/null, because the loop takes its own input from
+          # numbers.txt on the same stdin, and a command that reached for stdin
+          # would consume the rest of the list.
           while read -r pr; do
             echo "Queueing #${pr}"
-            gh pr merge --auto --squash --body "" --repo "$REPO" "$pr" < /dev/null || echo "Could not queue #${pr}, leaving it open"
+            if ! gh pr merge --auto --squash --body "" --repo "$REPO" "$pr" < /dev/null; then
+              echo "::error::Could not queue #${pr}"
+              failed=$((failed + 1))
+            fi
           done < numbers.txt
+
+          # One failure does not stop the rest, and the run still ends red. A
+          # green scheduled run notifies nobody, and the filter above has
+          # already removed the one refusal this expects, so what is left is
+          # worth a person's time.
+          if [ "$failed" -ne 0 ]; then
+            echo "${failed} pull request(s) could not be queued."
+            exit 1
+          fi
