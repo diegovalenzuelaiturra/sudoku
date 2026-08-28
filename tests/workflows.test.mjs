@@ -90,6 +90,22 @@ for (const [tool, file] of Object.entries(gating)) {
   });
 }
 
+/* The same rule reads results for a commit being pushed, and the fast forward
+   after a release pushes main's merge commit onto development. A pull request
+   run answers for the pull request's head, which is a different commit, so only
+   a run on main produces what that push needs. A gating workflow without this
+   trigger stops the fast forward until someone dispatches a run by hand. */
+for (const [tool, file] of Object.entries(gating)) {
+  test(`${tool} runs on a push to main, so a release merge commit has results`, () => {
+    assert.match(
+      read(file),
+      /\n {2}push:\n {4}branches: \[main\]/u,
+      `${file} does not run on a push to main, and the code scanning rule names ${tool}. ` +
+        'The fast forward after a release waits for results that commit never gets.',
+    );
+  });
+}
+
 /* The merge job's header tells a reader which tools decide when a bump lands.
    A tool added to the rule and not to that list leaves the file describing a
    gate it no longer has. */
