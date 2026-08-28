@@ -28,11 +28,11 @@ name: CodeQL
 #   the reason to run both. zizmor is still the specialist and the one whose
 #   findings block through the Lint job.
 #
-# Deliberately NOT path-filtered, unlike osv-scanner.yml. That file answers a
-# question about package-lock.json and can afford to skip a pull request that
-# leaves it alone. This one has to report on every pull request, because the
-# code scanning rule described below blocks a merge that has no results as well
-# as one with alerts, so a skipped run is a wedged merge.
+# Deliberately NOT path-filtered. This has to report on every pull request,
+# because the code scanning rule described below blocks a merge that has no
+# results as well as one with alerts, so a skipped run is a wedged merge. Every
+# tool that rule names carries the same requirement, osv-scanner included, and
+# tests/workflows.test.mjs is what holds the three of them to it.
 #
 # Findings do not turn this job red. codeql-action/analyze fails on an internal
 # error, not on an alert, which is deliberate upstream: the alert belongs in the
@@ -100,8 +100,8 @@ jobs:
       #
       # No build-mode and no autobuild step: neither of these languages is
       # compiled, and this repository has no build in the sense CodeQL means.
-      - uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+      - uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           languages: javascript-typescript,actions
 
-      - uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+      - uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
