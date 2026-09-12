@@ -29,7 +29,7 @@
     "eslint": "^10.9.1",
     "eslint-plugin-oxlint": "^1.80.0",
     "fast-check": "^4.9.0",
-    "globals": "^17.11.0",
+    "globals": "^17.12.0",
     "html-minifier-terser": "^7.2.0",
     "lightningcss": "^1.33.0",
     "oxlint": "^1.80.0",
