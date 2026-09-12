@@ -25,7 +25,7 @@
     "@html-eslint/eslint-plugin": "^0.65.0",
     "@j178/prek": "^0.5.0",
     "@playwright/test": "^1.62.1",
-    "cspell": "^10.1.1",
+    "cspell": "^10.2.2",
     "eslint": "^10.9.1",
     "eslint-plugin-oxlint": "^1.80.0",
     "fast-check": "^4.9.0",
