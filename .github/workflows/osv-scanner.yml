@@ -122,8 +122,16 @@ jobs:
         id: scan
         run: |
           set -uo pipefail
-          ./osv-scanner scan source --recursive --format=sarif --output-file=osv.sarif .
-          code=$?
+          # The "|| code=$?" is what lets a finding reach the lines below. A
+          # run block with no shell named runs under "bash -e", and "set -uo
+          # pipefail" leaves -e on, so a bare scanner call exiting 1 ended the
+          # step right there: no code was written, the upload step was skipped,
+          # and the rule held every pull request on an analysis that never
+          # arrived. That is how five standing advisories surfaced as zero
+          # alerts and a gate that stayed shut from late September 2026 until
+          # this line changed.
+          code=0
+          ./osv-scanner scan source --recursive --format=sarif --output-file=osv.sarif . || code=$?
           echo "code=${code}" >> "$GITHUB_OUTPUT"
           # 0 is a clean tree and 1 is findings. Both wrote the file the upload
           # step needs, so neither ends the job on this line. Any other code is
