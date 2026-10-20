@@ -106,6 +106,28 @@ for (const [tool, file] of Object.entries(gating)) {
   });
 }
 
+/* A run block with no shell named runs under "bash -e", so a scanner call that
+   exits 1 on a finding ends the step before its exit code is read, and the
+   findings are never published. That held every pull request shut for weeks
+   behind an analysis that never arrived, while the comment beside the call said
+   a finding reached the upload. Capturing the code on the same line is what
+   survives -e, so every call is held to it here. */
+test('every osv-scanner call keeps its exit code, so a finding reaches the upload', () => {
+  const calls = read('.github/workflows/osv-scanner.yml')
+    .split('\n')
+    .filter((line) => /^\s*\.\/osv-scanner scan\b/u.test(line));
+
+  assert.ok(calls.length > 0, 'no ./osv-scanner scan call in osv-scanner.yml');
+  for (const call of calls) {
+    assert.match(
+      call,
+      /\|\| code=\$\?$/u,
+      `"${call.trim()}" lets -e end the step on a finding, so no analysis is published ` +
+        'and the code scanning rule waits for one forever.',
+    );
+  }
+});
+
 /* The merge job's header tells a reader which tools decide when a bump lands.
    A tool added to the rule and not to that list leaves the file describing a
    gate it no longer has. */
