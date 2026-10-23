@@ -81,16 +81,19 @@ jobs:
       #
       # Unlike that one, nothing here is left unpinned. It is a composite
       # action: its only "uses:" is codeql-action/upload-sarif at a full SHA,
-      # and it runs zizmor from ghcr.io by digest, read out of a table shipped
-      # inside the action itself. Pinning the action therefore pins the image,
-      # which is precisely what the OSV reusable workflow could not promise.
+      # and since v0.7.0 it installs zizmor with "pip download --require-hashes"
+      # from a lock file shipped inside the action itself, one per zizmor
+      # version under support/locks, with every wheel pinned by sha256. Pinning
+      # the action therefore pins the wheel, the way the ghcr.io image digests
+      # of v0.6 did, which is precisely what the OSV reusable workflow could not
+      # promise.
       #
       # The version is named rather than left at "latest" so this and the
       # pre-commit hook run the same zizmor. It has to match the rev
       # .pre-commit-config.yaml pins, and tests/workflows.test.mjs fails when it
-      # does not. Nothing else compares the two: the action's table rejects only
-      # a version it has no digest for, and it never prunes, so a bump to the
-      # hook alone goes through here unnoticed.
-      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+      # does not. Nothing else compares the two: the action rejects only a
+      # version it ships no lock file for, and it never prunes them, so a bump
+      # to the hook alone goes through here unnoticed.
+      - uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
         with:
-          version: "1.30.1"
+          version: "1.31.1"

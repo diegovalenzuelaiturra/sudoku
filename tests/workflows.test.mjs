@@ -47,8 +47,8 @@ test('the zizmor the workflow runs is the one the hook pins', () => {
   );
 });
 
-/* The action refuses a version its own table has no digest for, so a bump to
-   the hook alone can turn the workflow red at run time rather than here. The
+/* The action refuses a version it ships no lock file for, so a bump to the
+   hook alone can turn the workflow red at run time rather than here. The
    pattern above is what keeps that failure in the unit suite, where it costs
    seconds. This asserts the pattern still matches something, so a rename
    upstream fails loudly instead of quietly matching nothing. */
