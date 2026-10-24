@@ -305,7 +305,7 @@ jobs:
           npm_config_ignore_scripts: 'true'
         run: |
           set -euo pipefail
-          npx --yes lighthouse@13.4.1 "$PAGE_URL" \
+          npx --yes lighthouse@13.5.0 "$PAGE_URL" \
             --preset=desktop \
             --only-categories=performance,accessibility \
             --output=json \
