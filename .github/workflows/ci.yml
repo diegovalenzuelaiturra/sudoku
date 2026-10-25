@@ -55,6 +55,48 @@ jobs:
           node-version: '26'
           cache: npm
 
+      # npm 12, not the npm 11 that node 26 ships. setup-node has no input for
+      # npm, so the tarball comes from the registry and is checked against the
+      # integrity the registry publishes for this version, the same shape as the
+      # osv-scanner checksum: a swapped tarball fails the step instead of running.
+      # npm bundles all of its own dependencies, so nothing else is fetched.
+      #
+      # It is unpacked, not installed. "npm install --global" of the tarball
+      # would be a package install outside the lockfile, which zizmor reports as
+      # adhoc-packages, and would rewrite the npm inside the node setup-node
+      # cached. Two two-line wrappers that hand npm-cli.js and npx-cli.js to
+      # node, put first on PATH for the steps after this one, run nothing at
+      # install time and leave that node alone. The bin/npm shipped in the
+      # tarball cannot stand in for them: it is the shim the node installers
+      # use, and it looks for a node install around itself.
+      #
+      # Every job that runs npm carries these two values, and
+      # tests/workflows.test.mjs fails when they disagree. Dependabot cannot see
+      # a version written as a string: bump both values by hand, together.
+      - name: Install npm
+        env:
+          NPM_VERSION: 12.2.1
+          NPM_INTEGRITY: sha512-bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/npm-${NPM_VERSION}"
+          mkdir -p "$dir/npm" "$dir/bin"
+          curl --fail --silent --show-error --location \
+            --output "$dir/npm.tgz" \
+            "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
+          actual="sha512-$(openssl dgst -sha512 -binary "$dir/npm.tgz" | base64 -w0)"
+          if [ "$actual" != "$NPM_INTEGRITY" ]; then
+            echo "::error::npm ${NPM_VERSION} does not match its pinned integrity" >&2
+            exit 1
+          fi
+          tar -xzf "$dir/npm.tgz" -C "$dir/npm" --strip-components 1
+          for cli in npm npx; do
+            printf '#!/bin/sh\nexec node "%s/npm/bin/%s-cli.js" "$@"\n' "$dir" "$cli" > "$dir/bin/$cli"
+            chmod 755 "$dir/bin/$cli"
+          done
+          [ "$("$dir/bin/npm" --version)" = "$NPM_VERSION" ]
+          echo "$dir/bin" >> "$GITHUB_PATH"
+
       # --ignore-scripts: dependency lifecycle scripts would otherwise execute
       # arbitrary code on the runner at install time. Verified the suite passes
       # without them.
@@ -167,6 +209,31 @@ jobs:
         with:
           node-version: '26'
           cache: npm
+
+      # The npm pin, explained where it first appears in ci.yml.
+      - name: Install npm
+        env:
+          NPM_VERSION: 12.2.1
+          NPM_INTEGRITY: sha512-bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/npm-${NPM_VERSION}"
+          mkdir -p "$dir/npm" "$dir/bin"
+          curl --fail --silent --show-error --location \
+            --output "$dir/npm.tgz" \
+            "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
+          actual="sha512-$(openssl dgst -sha512 -binary "$dir/npm.tgz" | base64 -w0)"
+          if [ "$actual" != "$NPM_INTEGRITY" ]; then
+            echo "::error::npm ${NPM_VERSION} does not match its pinned integrity" >&2
+            exit 1
+          fi
+          tar -xzf "$dir/npm.tgz" -C "$dir/npm" --strip-components 1
+          for cli in npm npx; do
+            printf '#!/bin/sh\nexec node "%s/npm/bin/%s-cli.js" "$@"\n' "$dir" "$cli" > "$dir/bin/$cli"
+            chmod 755 "$dir/bin/$cli"
+          done
+          [ "$("$dir/bin/npm" --version)" = "$NPM_VERSION" ]
+          echo "$dir/bin" >> "$GITHUB_PATH"
 
       # prek arrives as an ordinary devDependency rather than through its own
       # GitHub Action or a hand-pinned pipx install. Three reasons, in order of

@@ -147,4 +147,12 @@ HTML indents four, the one place this tree is not on two. `.editorconfig`,
 The browser floor is Safari 15.4, so `Object.hasOwn` and optional chaining are
 fine.
 
+CI runs npm 12.2.1, not the npm 11 that node 26 ships: every job that sets up
+node installs it from a tarball checked against a pinned integrity, and
+`tests/workflows.test.mjs` fails when the copies disagree. Write lockfile
+changes with the same npm (`npx npm@12.2.1 install ...` when your node ships
+another), so the lockfile is produced the way CI reads it. npm 12 also blocks
+dependency install scripts by default, which is what `--ignore-scripts` already
+asks for everywhere here.
+
 Two worktrees can run at once by setting `PLAYWRIGHT_PORT`.
