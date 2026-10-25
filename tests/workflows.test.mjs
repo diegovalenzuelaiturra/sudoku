@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
@@ -140,4 +140,39 @@ test('the merge workflow names every tool that gates it', () => {
       `dependabot-auto-merge.yml does not mention ${tool}, which gates the merge it queues.`,
     );
   }
+});
+
+/* CI runs a pinned npm rather than the one node ships, installed by a step
+   after every setup-node. A job that sets node up without that step runs a
+   different npm from the others, and a lockfile written by one then gets read
+   by the other. Both values are plain strings Dependabot cannot see, so this
+   is also what keeps a hand bump from moving one copy and not the rest. */
+test('every job that sets up node installs the same pinned npm', () => {
+  const dir = join(root, '.github', 'workflows');
+  const pins = [];
+  let setups = 0;
+
+  for (const name of readdirSync(dir)) {
+    const yaml = readFileSync(join(dir, name), 'utf8');
+    setups += [...yaml.matchAll(/^\s*- uses: actions\/setup-node@/gmu)].length;
+    for (const [, version, integrity] of yaml.matchAll(
+      /- name: Install npm\s*\n\s*env:\s*\n\s*NPM_VERSION: (\S+)\s*\n\s*NPM_INTEGRITY: (\S+)/gu,
+    )) {
+      pins.push({ name, version, integrity });
+    }
+  }
+
+  assert.ok(setups > 0, 'no actions/setup-node step found in .github/workflows');
+  assert.equal(
+    pins.length,
+    setups,
+    `${setups} setup-node steps but ${pins.length} "Install npm" steps: a job that sets up node ` +
+      'without the pin runs the npm node ships instead.',
+  );
+  assert.equal(
+    new Set(pins.map((p) => `${p.version} ${p.integrity}`)).size,
+    1,
+    `the npm pins disagree: ${pins.map((p) => `${p.name} ${p.version}`).join(', ')}. ` +
+      'Move NPM_VERSION and NPM_INTEGRITY together in every workflow.',
+  );
 });

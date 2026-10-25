@@ -48,6 +48,31 @@ jobs:
           node-version: '26'
           cache: npm
 
+      # The npm pin, explained where it first appears in ci.yml.
+      - name: Install npm
+        env:
+          NPM_VERSION: 12.2.1
+          NPM_INTEGRITY: sha512-bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/npm-${NPM_VERSION}"
+          mkdir -p "$dir/npm" "$dir/bin"
+          curl --fail --silent --show-error --location \
+            --output "$dir/npm.tgz" \
+            "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
+          actual="sha512-$(openssl dgst -sha512 -binary "$dir/npm.tgz" | base64 -w0)"
+          if [ "$actual" != "$NPM_INTEGRITY" ]; then
+            echo "::error::npm ${NPM_VERSION} does not match its pinned integrity" >&2
+            exit 1
+          fi
+          tar -xzf "$dir/npm.tgz" -C "$dir/npm" --strip-components 1
+          for cli in npm npx; do
+            printf '#!/bin/sh\nexec node "%s/npm/bin/%s-cli.js" "$@"\n' "$dir" "$cli" > "$dir/bin/$cli"
+            chmod 755 "$dir/bin/$cli"
+          done
+          [ "$("$dir/bin/npm" --version)" = "$NPM_VERSION" ]
+          echo "$dir/bin" >> "$GITHUB_PATH"
+
       # --ignore-scripts: dependency lifecycle scripts would otherwise execute
       # arbitrary code on the runner at install time. Verified the suite passes
       # without them.
@@ -282,6 +307,31 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26'
+
+      # The npm pin, explained where it first appears in ci.yml.
+      - name: Install npm
+        env:
+          NPM_VERSION: 12.2.1
+          NPM_INTEGRITY: sha512-bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/npm-${NPM_VERSION}"
+          mkdir -p "$dir/npm" "$dir/bin"
+          curl --fail --silent --show-error --location \
+            --output "$dir/npm.tgz" \
+            "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
+          actual="sha512-$(openssl dgst -sha512 -binary "$dir/npm.tgz" | base64 -w0)"
+          if [ "$actual" != "$NPM_INTEGRITY" ]; then
+            echo "::error::npm ${NPM_VERSION} does not match its pinned integrity" >&2
+            exit 1
+          fi
+          tar -xzf "$dir/npm.tgz" -C "$dir/npm" --strip-components 1
+          for cli in npm npx; do
+            printf '#!/bin/sh\nexec node "%s/npm/bin/%s-cli.js" "$@"\n' "$dir" "$cli" > "$dir/bin/$cli"
+            chmod 755 "$dir/bin/$cli"
+          done
+          [ "$("$dir/bin/npm" --version)" = "$NPM_VERSION" ]
+          echo "$dir/bin" >> "$GITHUB_PATH"
 
       # Lighthouse is run through npx rather than an action. The repository's
       # Actions policy is "selected", admitting GitHub-owned actions, verified
