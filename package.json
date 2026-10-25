@@ -20,10 +20,10 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@cspell/dict-es-es": "^3.0.9",
-    "@eslint/css": "^1.4.0",
+    "@eslint/css": "^2.0.0",
     "@eslint/js": "^10.0.1",
     "@html-eslint/eslint-plugin": "^0.67.0",
-    "@j178/prek": "^0.5.5",
+    "@j178/prek": "^0.5.7",
     "@playwright/test": "^1.64.1",
     "cspell": "^10.4.0",
     "eslint": "^10.13.0",

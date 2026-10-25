@@ -27,11 +27,15 @@ const CHECKS = [
     key: 'LCP',
     audit: 'largest-contentful-paint',
     env: 'LH_BUDGET_LCP_MS',
-    /* 2500 ms, the Core Web Vitals "good" boundary. Measured 127 ms locally
-       unthrottled, and about 250 ms under the desktop preset's simulated
-       throttling that CI uses, so this leaves a factor of ten. A tighter
-       ceiling, say 500 ms, sits inside the spread that a cold Chrome start on
-       a contended runner produces by itself. 2500 ms still catches anything
+    /* 2500 ms, the Core Web Vitals "good" boundary. Re-measured on 2026-10-23
+       when Lighthouse moved from 13.4.1 to 13.5.0, under the desktop preset's
+       simulated throttling that CI uses: 311 to 412 ms on CI across the eight
+       deploys before the move, and a median of 293 ms on 13.4.1 against
+       294 ms on 13.5.0 over five alternating local runs each, so the version
+       itself moves nothing. That leaves a factor of six. A tighter ceiling,
+       say 500 ms, sits inside the spread one cold Chrome start produces by
+       itself: one local run per version came in at 456 and 517 ms with nothing
+       changed but the run. 2500 ms still catches anything
        worth catching: the page is one self contained 56 KB document, so a web
        font, a blocking script or a hero image overshoots it easily. */
     budget: 2500,
@@ -42,7 +46,8 @@ const CHECKS = [
     audit: 'cumulative-layout-shift',
     env: 'LH_BUDGET_CLS',
     /* 0.10, the Core Web Vitals "good" boundary. CLS measures layout
-       stability, so it barely moves with hardware speed: measured 0.00, and
+       stability, so it barely moves with hardware speed: measured 0.000 on
+       every CI deploy and every local run on both Lighthouse versions, and
        the page loads no late arriving image or font that could reflow it. The
        margin covers sub pixel differences between Chrome builds; a real
        unreserved space regression clears 0.10 in one shift. */
@@ -57,9 +62,10 @@ const CHECKS = [
        desktop. TBT is the metric most exposed to CPU contention: on a shared
        runner one long task during Chrome startup, or a single GC pause, can
        book 100 ms of blocking that has nothing to do with the page. 300 ms
-       absorbs that. Measured 0 ms, so a breach means the page genuinely
-       started doing work at boot, which is the thing worth failing a build
-       over; jitter around zero is not. */
+       absorbs that. Measured 0 ms in every local run on both Lighthouse
+       versions, and 0 to 41 ms on CI across the last eight deploys, so a
+       breach means the page genuinely started doing work at boot, which is the
+       thing worth failing a build over; jitter near zero is not. */
     budget: 300,
     format: (value) => `${Math.round(value)} ms`,
   },
