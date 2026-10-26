@@ -1,25 +1,3 @@
-/* The grade a board is offered under is checked here against a solver that
-   shares no code with the one that assigned it.
-
-   tests/generator.test.mjs already asserts that made.grade equals
-   gradePuzzle(made.puzzle), and that assertion cannot fail for the reason it
-   looks like it can: both sides call the same solveGraded, so it compares the
-   ladder against itself. Measured, by mutating generator.js and running the
-   whole suite: switch hidden singles off entirely and 96 tests still pass, with
-   generator.js still reporting 96.78 percent line coverage. Switch naked
-   singles off and the suite still passes. The boards change, every assertion
-   holds, and roughly two hundred lines of the ladder are guarded by nothing.
-
-   So the solver below is written deliberately unlike the one it checks. Plain
-   arrays and Sets rather than bitmasks, units built by hand, no elimination
-   beyond the two techniques it claims. It answers one question, "do naked and
-   hidden singles alone finish this board", and the two tiers at the bottom of
-   the ladder make a claim about that question that can be wrong.
-
-   It stops there on purpose. Grade 4 means "beyond this solver", so no
-   independent oracle can confirm it without reimplementing the whole ladder,
-   which would put us back where we started. */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -31,9 +9,6 @@ require(join(root, 'generator.js'));
 const { makePuzzle } = globalThis.SudokuGenerator;
 delete globalThis.SudokuGenerator;
 
-/* Rows, then columns, then boxes. Built by index arithmetic written out in
-   full, because a unit table copied from generator.js would inherit whatever
-   is wrong with it. */
 const UNITS = [];
 for (let r = 0; r < 9; r++) UNITS.push(Array.from({ length: 9 }, (_, c) => r * 9 + c));
 for (let c = 0; c < 9; c++) UNITS.push(Array.from({ length: 9 }, (_, r) => r * 9 + c));
@@ -61,18 +36,10 @@ const candidates = (cells, i) => {
   return open;
 };
 
-/* True when naked singles and hidden singles alone fill every cell. False when
-   the board stalls, which is the interesting answer, and false on a
-   contradiction, which cannot happen for a board this generator produced. */
 function singlesAloneSolve(puzzle) {
   const cells = Array.from(puzzle, (v) => v || 0);
 
-  for (;;) {
-    /* Asked first, and this is not a shortcut. A full board places nothing on
-       either pass, so testing "did anything move" before "is it finished"
-       reports every solved board as a stall. */
-    if (cells.every((v) => v !== 0)) return true;
-
+  while (cells.includes(0)) {
     let placed = false;
 
     for (let i = 0; i < 81; i++) {
@@ -99,11 +66,9 @@ function singlesAloneSolve(puzzle) {
     }
     if (!placed) return false;
   }
+  return true;
 }
 
-/* The same fixed seeds tests/generator.test.mjs uses, for the same reason: the
-   boards are then identical on every machine and a change in this file's
-   verdict is a change in the generator, not in the luck of a run. */
 const SEEDS = [...Array(24).keys()].map((n) => 1000 + n * 7);
 const PRESETS = [
   { label: 'Piola', clues: 40, grade: 1 },
@@ -141,10 +106,6 @@ test('a board offered as directas is one an independent solver finishes with sin
 });
 
 test('a board offered above directas is one singles alone cannot finish', () => {
-  /* The half that catches a ladder quietly losing a rung. If the generator
-     stops recognising hidden singles, the boards those singles used to solve
-     get graded 2 or higher instead, and every self-referential assertion still
-     agrees, because both sides lost the same rung. This solver did not. */
   const offences = [];
   for (const { preset, seed, made } of boards) {
     if (made.grade < 2) continue;

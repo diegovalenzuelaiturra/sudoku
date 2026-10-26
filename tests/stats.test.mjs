@@ -1,23 +1,3 @@
-/* Pins the statistics engine by loading stats.js itself, the way
-   tests/generator.test.mjs loads generator.js, so the report a player reads is
-   computed by the code these assertions drive. Requiring the file rather than
-   evaluating it from a string is what gives it a real filename, so it counts
-   toward the coverage floor npm run test:coverage enforces.
-
-   Every number below was measured by running this build, and it is written down
-   as the number rather than as a range wide enough to never mean anything. That
-   is the same discipline the generator test gets from fixed seeds: a threshold
-   that moves shows up here as a failure instead of as a quietly different
-   sentence in the dialog. The thresholds are the whole feature. A verdict that
-   flips sign on one game costs the player their trust in every other number the
-   record shows, including the best times they currently believe.
-
-   stats.js is a classic script that exports one name onto `self` where there is
-   one and `globalThis` otherwise. Node has no `self`, so both files below leave
-   a single name on the global object, which is read once and then deleted. The
-   test runner gives every file its own process, so deleting SudokuGenerator
-   here cannot race tests/generator.test.mjs doing the same. */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -36,18 +16,12 @@ delete globalThis.SudokuGenerator;
 
 const DAY = 864e5;
 const KEYS = ['easy', 'medium', 'hard', 'expert'];
-/* One stored row. `i` doubles as the day it was played, so a series is
-   chronological by construction and a gap can be opened by moving one `t`. */
 const row = (i, s, g, extra = {}) => ({ t: i * DAY, s, m: 0, h: 0, g, d: 'easy', ...extra });
 const series = (n, f) => Array.from({ length: n }, (_, i) => f(i));
-/* A straight ramp in seconds, which is what a player who is getting faster or
-   slower at a steady rate looks like. */
 const ramp = (n, from, to, g = 1, extra = {}) =>
   series(n, (i) => row(i, Math.round(from + ((to - from) * i) / (n - 1)), g, extra));
 const secondsOf = (rows) => rows.map((r) => r.s);
 const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
-/* Four decimals, which is the precision these numbers are quoted at in the
-   comments inside stats.js and in the copy that reads them. */
 const near = (x, y) => Math.abs(x - y) < 5e-5;
 
 test('MAX_GRADE matches the ladder the generator grades against', () => {
@@ -55,16 +29,11 @@ test('MAX_GRADE matches the ladder the generator grades against', () => {
 });
 
 test('every threshold is the number it was chosen to be', () => {
-  /* The tests below prove what each of these does. This one proves what each of
-     them is, because the number itself is the decision: eight games before a
-     direction is claimed, fourteen days before a slower run is a layoff, sixteen
-     flawless wins before the offer to move up. A ring that quietly shrank or a
-     cap that quietly moved would leave every one of those tests passing over a
-     different game. */
   assert.deepEqual(
     {
       HISTORY_MAX: S.HISTORY_MAX,
       MAX_GRADE: S.MAX_GRADE,
+      GRADE_UNMEASURED: S.GRADE_UNMEASURED,
       MAX_SECONDS: S.MAX_SECONDS,
       MIN_MEDIAN_N: S.MIN_MEDIAN_N,
       MIN_TREND_N: S.MIN_TREND_N,
@@ -82,6 +51,7 @@ test('every threshold is the number it was chosen to be', () => {
     {
       HISTORY_MAX: 120,
       MAX_GRADE: 4,
+      GRADE_UNMEASURED: 0,
       MAX_SECONDS: 86400,
       MIN_MEDIAN_N: 5,
       MIN_TREND_N: 8,
@@ -104,8 +74,6 @@ test('every threshold is the number it was chosen to be', () => {
 test('quantile interpolates, clamps p, and answers null on an empty series', () => {
   assert.equal(S.quantile([], 0.5), null, 'an empty series has no median');
   assert.equal(S.quantile([7], 0.9), 7, 'one point is every quantile of itself');
-  /* Type 7: p lands between two order statistics and the answer is read off the
-     line between them, so two samples give a real midpoint and not one of them. */
   assert.equal(S.quantile([10, 20], 0.5), 15);
   assert.equal(S.quantile([10, 20], 0.25), 12.5);
   assert.equal(S.quantile([10, 20], 0.75), 17.5);
@@ -136,9 +104,6 @@ test('summarize says nothing under five games and whole seconds over it', () => 
     p90: 684,
   });
   assert.deepEqual(S.summarize([0, 0, 0, 0, 0]), { n: 5, median: 0, p25: 0, p75: 0, p90: 0 });
-  /* Six games whose four quantiles all interpolate to a fraction: 127.5, 113.75,
-     141.25 and 149.5. The caller formats mm:ss with a remainder, so a fraction
-     surviving to the dialog renders as 2:07.5. */
   const fat = S.summarize([100, 111, 122, 133, 144, 155]);
   assert.deepEqual(fat, { n: 6, median: 128, p25: 114, p75: 141, p90: 150 });
   for (const p of ['median', 'p25', 'p75', 'p90']) {
@@ -147,9 +112,6 @@ test('summarize says nothing under five games and whole seconds over it', () => 
 });
 
 test('the median holds where a mean would run away', () => {
-  /* Eleven games, then the same eleven with the slowest one replaced by a single
-     hour long sitting. Solve times are right skewed by construction: a floor set
-     by how fast a person can type, and a tail with no limit on it. */
   const tame = [180, 200, 220, 240, 260, 280, 300, 320, 340, 360, 380];
   const skewed = tame.slice(0, 10).concat([3600]);
   const band = { n: 11, median: 280, p25: 230, p75: 330, p90: 360 };
@@ -176,9 +138,6 @@ test('wilson widens where the normal approximation claims certainty', () => {
     high: null,
   });
 
-  /* The whole reason this is not p plus or minus two standard deviations: at six
-     of six that approximation gives a width of zero and claims certainty from six
-     games. The lower bound below is what six games are actually worth. */
   const perfect = S.wilson(6, 6);
   assert.equal(perfect.rate, 1);
   assert.ok(near(perfect.low, 0.6097), `six of six answered ${perfect.low}`);
@@ -196,9 +155,6 @@ test('wilson widens where the normal approximation claims certainty', () => {
   assert.equal(half.rate, 0.5);
   assert.ok(near(half.low, 0.15) && near(half.high, 0.85), `two of four answered ${half.low}`);
 
-  /* A stored count above n is what a player editing localStorage produces. The
-     clamp is what keeps p under 1, so p * (1 - p) never goes negative and the
-     square root of it never answers NaN. */
   const hostile = S.wilson(9, 5);
   assert.equal(hostile.rate, 1);
   for (const k of ['low', 'high']) assert.ok(Number.isFinite(hostile[k]), `${k} is not a number`);
@@ -211,8 +167,6 @@ test('winsorize caps at three medians, keeps order, and survives a series of zer
   assert.deepEqual(S.winsorize([10, 10, 10, 10, 500]), [10, 10, 10, 10, 30]);
   assert.deepEqual(S.winsorize([10, 20, 30]), [10, 20, 30], 'nothing under the cap moves');
   assert.deepEqual(S.winsorize([], 3), []);
-  /* Flooring the median at one second is what stops a series whose median is 0
-     from collapsing every value onto 0. */
   assert.deepEqual(S.winsorize([0, 0, 0, 0]), [0, 0, 0, 0]);
   const long = series(9, (i) => 100 + i);
   assert.equal(S.winsorize(long).length, long.length);
@@ -229,9 +183,6 @@ test('winsorize caps at three medians, keeps order, and survives a series of zer
 });
 
 test('the game the player walked away from feeds no trend and stays on the record', () => {
-  /* Ten games at one grade, the last of them a tab left open over lunch. The cap
-     is applied on the way into the trend and never on the way into the row: the
-     row is the record of what happened and the trend is a model of it. */
   const rows = series(10, (i) => row(i, i === 9 ? 5000 : 400, 1));
   const here = S.gradeReport(rows);
   assert.equal(here.verdict, 'same', 'one interruption is not a decline');
@@ -272,8 +223,6 @@ test('a verdict needs nine games, and eight can only ever answer the same', () =
     assert.equal(call.ratio, 1, 'nothing under the threshold is allowed to print a percentage');
   }
   assert.deepEqual(S.trend([1, 2, 3, 4, 5, 6, 7]), { n: 7, verdict: 'few', change: 0, ratio: 1 });
-  /* At eight the earlier window holds seven and answers "few", which agrees
-     with nothing, so the hysteresis holds the sentence at "same". */
   assert.equal(S.verdict(faster(8)).verdict, 'same');
   assert.equal(S.trend(faster(8)).verdict, 'better', 'the single evaluation does see it');
   assert.equal(S.verdict(faster(9)).verdict, 'better');
@@ -291,7 +240,6 @@ test('the trend calls a real move and stays quiet through noise', () => {
 
   const scatter = [400, 380, 420, 410, 390, 430, 405, 395, 415, 385, 425, 400];
   assert.equal(S.verdict(scatter).verdict, 'same', 'ordinary scatter is not a direction');
-  /* Theil-Sen plus the winsor cap absorb the game the player walked away from. */
   assert.equal(S.verdict(scatter.slice(0, 11).concat([5000])).verdict, 'same');
   assert.equal(S.verdict(secondsOf(ramp(12, 400, 420))).verdict, 'same', 'five percent');
 
@@ -304,10 +252,6 @@ test('the trend calls a real move and stays quiet through noise', () => {
 });
 
 test('the thresholds sit exactly where the constants put them', () => {
-  /* Twelve game ramps from 400 seconds, one on each side of both edges, with the
-     modelled change quoted beside each. TREND_BAND is 0.08 and DECLINE_BAR
-     multiplies it by 1.5 for the slow direction, so the two edges sit four
-     seconds of drift apart on one side and six on the other. */
   assert.equal(S.verdict(secondsOf(ramp(12, 400, 370))).verdict, 'same', 'change is 0.0783');
   assert.equal(S.verdict(secondsOf(ramp(12, 400, 366))).verdict, 'better', 'change is 0.0891');
   assert.equal(S.verdict(secondsOf(ramp(12, 400, 450))).verdict, 'same', 'change is 0.1166');
@@ -321,9 +265,6 @@ test('the thresholds sit exactly where the constants put them', () => {
 });
 
 test('slower has to clear a higher bar than faster', () => {
-  /* The same size of drift, in the two directions. A move the fast side would
-     have called an improvement is still "same" on the slow side, because on a
-     leisure game a decline is spoken only when it is loud. */
   const slow = S.trend(secondsOf(ramp(12, 400, 436)));
   const fast = S.trend(secondsOf(ramp(12, 400, 368)));
   assert.ok(near(slow.change, 0.0858), `the slow drift was ${slow.change}`);
@@ -335,16 +276,6 @@ test('slower has to clear a higher bar than faster', () => {
 });
 
 test('a player whose games scatter wide has to move further before it is said', () => {
-  /* Three twelve game series, each alternating a quick board with a slow one and
-     scaling the pair down by a constant factor every game, so the log spread
-     holds still while the drift moves. All three clear TREND_BAND several times
-     over, so the fixed band decides none of them. What decides them is the other
-     term in Math.max(TREND_BAND, NOISE_K * spread): at a spread near 0.8 the
-     noise floor lands near 0.4, and that is the number these have to beat.
-
-     The first two sit on either side of it, which pins NOISE_K to between 0.41
-     and 0.57. Half the spread is the claim that a change inside one game's
-     ordinary scatter is a description of the scatter. */
   const noisy = [300, 698, 282, 657, 266, 618, 250, 582, 235, 547, 221, 515];
   const over = [300, 691, 276, 637, 255, 587, 235, 541, 216, 499, 199, 460];
   const clear = [300, 684, 271, 617, 244, 557, 221, 503, 199, 454, 180, 410];
@@ -358,8 +289,6 @@ test('a player whose games scatter wide has to move further before it is said', 
   assert.equal(stepped.verdict, 'better', 'one notch further and the floor is cleared');
   assert.ok(near(stepped.change, -0.4476), `change was ${stepped.change}`);
 
-  /* A quarter of that move is called on a player whose games sit close together,
-     because the bar is set by their own spread and not by the size of the move. */
   assert.equal(S.trend(secondsOf(ramp(12, 400, 366))).verdict, 'better', 'change is 0.0891');
 
   const spoken = S.verdict(clear);
@@ -367,19 +296,12 @@ test('a player whose games scatter wide has to move further before it is said', 
   assert.ok(near(spoken.ratio, 0.5701), `ratio was ${spoken.ratio}`);
   assert.equal(S.verdict(over).verdict, 'same', 'while the middle one is agreed on once');
 
-  /* pct is read off the ratio and from nothing else, so a move this size rides on
-     a "same" verdict. The copy prints pct under "better" and "worse" only, and a
-     third caller would print "el ritmo se mantiene" beside 28 percent. */
   const rows = noisy.map((s, i) => row(i, s, 2));
   assert.equal(S.gradeReport(rows).verdict, 'same');
   assert.equal(S.gradeReport(rows).pct, 28, 'a percentage the dialog is not allowed to reach for');
 });
 
 test('one game cannot flip the sentence on its own', () => {
-  /* Both series are read twice: once as they stand, and once with the last game
-     held back. A single evaluation over everything calls a direction, the
-     evaluation one game earlier does not, and the two have to agree before the
-     dialog says anything, so the spoken verdict is "same" either way. */
   for (const [to, called] of [
     [368, 'better'],
     [452, 'worse'],
@@ -389,7 +311,6 @@ test('one game cannot flip the sentence on its own', () => {
     assert.equal(S.trend(all.slice(0, -1)).verdict, 'same', 'the game before it does not agree');
     assert.equal(S.verdict(all).verdict, 'same', `${called} was spoken on one game`);
   }
-  /* Two games further along the same ramp both agree, and only then is it said. */
   const agreed = secondsOf(ramp(12, 400, 366));
   assert.equal(S.trend(agreed).verdict, 'better');
   assert.equal(S.trend(agreed.slice(0, -1)).verdict, 'better');
@@ -397,9 +318,6 @@ test('one game cannot flip the sentence on its own', () => {
 });
 
 test('the window forgets an improvement that finished months ago', () => {
-  /* Forty games: the first twenty go from 900 seconds to 330, and the twenty
-     since have sat flat around 300. The player stopped improving twenty games
-     ago and the sentence has to stop saying they are. */
   const times = series(40, (i) => (i < S.TREND_WINDOW ? 900 - 30 * i : 300 + (i % 3)));
   assert.equal(S.trend(times).verdict, 'better', 'the whole history still holds the improvement');
   const call = S.verdict(times);
@@ -448,11 +366,8 @@ test('readRow validates every field, because a player can type into storage', ()
   assert.equal(S.readRow({ ...good, h: -1 }, KEYS), null);
   assert.equal(S.readRow({ ...good, h: 'x' }, KEYS), null);
   assert.equal(S.readRow({ ...good, s: 0, m: 0, h: 0 }, KEYS).s, 0, 'zero is a legal time');
-  /* A clock set to last century is still a game somebody played. */
   assert.equal(S.readRow({ ...good, t: -5 }, KEYS).t, -5);
 
-  /* An unplaceable grade is held out of the grade stratified statistics without
-     costing the row, which still counts as a game. */
   assert.equal(S.readRow({ ...good, g: 9 }, KEYS).g, 0);
   assert.equal(S.readRow({ ...good, g: 0 }, KEYS).g, 0);
   assert.equal(S.readRow({ ...good, g: -1 }, KEYS).g, 0);
@@ -492,9 +407,6 @@ test('flawless is the same test that pays the bonus', () => {
   assert.equal(S.isFlawless({ m: 3, h: 2 }), false);
 });
 
-/* The run the player is on, counted back from the newest game. Not their best
-   run ever: that would never fall, and a number that only rises says nothing
-   about the games being played now. */
 test('the clean run counts back from the last game and stops at the first blemish', () => {
   const clean = (m = 0, h = 0) => ({ m, h });
   assert.equal(S.cleanRun([]), 0, 'an empty history is a run of none');
@@ -529,8 +441,6 @@ test('the empty report throws nothing, because it paints before the save loads',
   assert.equal(empty.pct, 0);
   assert.equal(empty.layoffDays, 0);
 
-  /* One game is enough to have a flawless rate and nowhere near enough to have a
-     median, and the gap that decides a layoff needs two rows to exist at all. */
   const one = S.gradeReport([row(0, 300, 1)]);
   assert.equal(one.n, 1);
   assert.equal(one.median, null);
@@ -549,13 +459,6 @@ test('the empty report throws nothing, because it paints before the save loads',
 });
 
 test('the median gate opens on the fifth game and the clean rate does not wait for it', () => {
-  /* A null median is what the dialog hides the band behind, so the gate is read
-     one game either side of it. Four games put p25 and p75 on the two middle
-     observations, where the fifth game moves both.
-
-     The flawless rate is on the open side of that gate. It is a proportion, and
-     its Wilson interval widens on its own to say what four games are worth, so
-     it carries its own uncertainty and needs no floor under it. */
   const upto = (n) =>
     S.gradeReport(series(n, (i) => row(i, 300 + i * 10, 2, { m: i === 0 ? 1 : 0 })));
 
@@ -588,8 +491,6 @@ test('a slower run after two weeks away is a layoff and not a regression', () =>
   assert.equal(call.verdict, 'layoff');
   assert.equal(call.layoffDays, 15);
 
-  /* Fourteen days to the millisecond is a layoff and one millisecond under it is
-     not, which is the whole of the rule. */
   const exact = dec.slice();
   exact[11] = { ...exact[11], t: exact[10].t + S.LAYOFF_MS };
   assert.equal(S.gradeReport(exact).verdict, 'layoff');
@@ -599,13 +500,11 @@ test('a slower run after two weeks away is a layoff and not a regression', () =>
   assert.equal(S.gradeReport(short).verdict, 'worse');
   assert.equal(S.gradeReport(short).layoffDays, 0);
 
-  /* Good news is never overridden by an excuse. */
   const better = ramp(12, 600, 310, 2);
   better[11] = { ...better[11], t: better[10].t + 15 * DAY };
   assert.equal(S.gradeReport(better).verdict, 'better');
   assert.equal(S.gradeReport(better).pct, 48);
 
-  /* A clock moved backwards produces a negative gap, which is never a layoff. */
   const backwards = dec.slice();
   backwards[11] = { ...backwards[11], t: backwards[10].t - 20 * DAY };
   assert.equal(S.gradeReport(backwards).verdict, 'worse');
@@ -621,18 +520,12 @@ test('the report stratifies on the measured grade and names the last one played'
   assert.equal(view.grades[2].n, 1);
   assert.equal(view.grades[3].n, 0);
   assert.equal(view.grades[4].n, 0);
-  /* Nothing here has the five games a median needs, so the answer falls back to
-     the level the player just finished. */
   assert.equal(view.top, 1, 'the level the player just finished');
   assert.equal(S.report([row(0, 300, 0)]).top, 0, 'nothing measured names no level');
   assert.equal(S.report([row(0, 300, 4)]).top, 4);
 });
 
 test('one board that missed its tier does not carry the block onto that tier', () => {
-  /* The generator lands off target on about one Peludo board in seven, and the
-     report is stratified on the grade a board was measured at. Naming the last
-     row's grade straight meant twenty games of evidence were replaced by one
-     game at a level the player never chose, with every number under it null. */
   const peludo = series(20, (i) => row(i, 400, 3));
   const missed = peludo.concat([row(20, 380, 2)]);
   assert.equal(S.report(missed).top, 3, 'one off target board emptied the block');
@@ -640,8 +533,6 @@ test('one board that missed its tier does not carry the block onto that tier', (
   assert.equal(S.report(missed).grades[2].n, 1, 'the stray board still counts where it landed');
   assert.ok(S.report(missed).grades[3].median !== null, 'the level named has numbers under it');
 
-  /* And the moment that level has games of its own it is named again, because by
-     then it is where the player has been playing. */
   const moved = missed.concat(series(4, (i) => row(21 + i, 380, 2)));
   assert.equal(S.report(moved).grades[2].n, S.MIN_MEDIAN_N);
   assert.equal(S.report(moved).top, 2);
@@ -655,24 +546,15 @@ test('the offer fires only when flat, unmoving and saturated', () => {
   assert.deepEqual(S.report(flat(3)).offer, { from: 3, to: 4 });
   assert.equal(S.report(flat(S.MAX_GRADE)).offer, null, 'there is no tier above the last one');
 
-  /* Saturation is read off the Wilson lower bound, so it takes sixteen flawless
-     games in a row. Fifteen answer 0.7961 and the sixteenth answers 0.8064,
-     which is the bar. A rate of 1.0 on its own would fire this on a lucky three. */
   assert.equal(S.report(flat(1, 15)).offer, null);
   assert.ok(S.report(flat(1, 15)).grades[1].flawless.low < S.STALE_FLAWLESS_LOW);
   assert.ok(S.report(flat(1, 16)).grades[1].flawless.low >= S.STALE_FLAWLESS_LOW);
-  /* At eleven games both gates are shut: the count is under STALE_MIN_N and the
-     lower bound is under the bar. Nothing is stale that recently. */
   assert.equal(S.report(flat(1, S.STALE_MIN_N - 1)).offer, null);
 
-  /* Three hinted games drop the lower bound under the bar. */
   const hinted = flat(1);
   for (let i = 0; i < 3; i++) hinted[i] = { ...hinted[i], h: 1 };
   assert.equal(S.report(hinted).offer, null);
 
-  /* The mix has moved, so the ladder is already being climbed. Both rings below
-     hold sixteen flawless games at grade 1 and answer differently, because the
-     one that counts is whether the last ten measured games are all one grade. */
   const seventeen = series(17, (i) => row(i, 400 + (i % 3), 1));
   const behind = seventeen.slice();
   behind[6] = row(6, 401, 2);
@@ -684,16 +566,11 @@ test('the offer fires only when flat, unmoving and saturated', () => {
   assert.equal(S.report(inside).top, 1);
   assert.equal(S.report(inside).offer, null, 'one game at another grade is a mix that moved');
 
-  /* A player who is still getting faster is not stale. */
   assert.equal(S.report(ramp(16, 600, 310, 1)).offer, null);
   assert.equal(S.report(ramp(16, 600, 310, 1)).grades[1].verdict, 'better');
 });
 
 test('nothing in the report is NaN or Infinity, whatever the rows say', () => {
-  /* The hostile ring is read the way the game reads it, through readRows, which
-     is the only door rows come through. What survives that is what the report
-     has to survive, and a NaN reaching the dialog renders as the string "NaN"
-     and is then written back to storage. */
   const hostile = [
     null,
     undefined,

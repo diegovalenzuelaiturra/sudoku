@@ -1,30 +1,9 @@
-/* The game autosaves to localStorage and resumes on the next load.
-
-   What has to hold: a reload lands the player back on the same puzzle with the
-   same digits, pencil marks, counters and clock, and never on a stale or
-   finished one. Everything storage touches is also allowed to fail: Safari in
-   private mode throws from setItem, so a dead localStorage must cost the save
-   and nothing else.
-
-   Three facts hold only in a real browser, and each one is asserted below. The
-   reload is real: the page writes to the browser's own storage and
-   page.reload() re-runs the same document the player gets. Restoring exposes
-   the board again: these tests ask Chrome over CDP for the tree it hands
-   assistive tech, where an inert subtree is dropped wholesale, and compare the
-   names it exposes before and after the reload. A service worker controls the
-   page, so a reload can serve the app shell out of its cache, and the restore
-   has to survive that. */
-
 import { expect, test } from '@playwright/test';
 
 const SAVE_KEY = 'sudoku:save';
 
-/* The name render() gives every cell: "Fila 3, columna 7, 4, dada". */
 const CELL_NAME = /^Fila \d, columna \d/u;
 
-/* Loads the page with the console under watch. The returned array is filled by
-   uncaught exceptions and console errors for the rest of the test, reloads
-   included. */
 async function boot(page) {
   const problems = [];
   page.on('console', (message) => {
@@ -50,8 +29,6 @@ async function readSave(page) {
   return JSON.parse(raw);
 }
 
-/* Reads the board as the player sees it: the digit in each cell plus whatever
-   pencil marks it carries. Enough to prove a restore is faithful. */
 const readBoard = (page) =>
   page.evaluate(() =>
     [...document.querySelectorAll('#board .cell')].map((cell) => ({
@@ -61,9 +38,6 @@ const readBoard = (page) =>
     })),
   );
 
-/* The board cells Chrome would hand to assistive tech, by name. Ignored nodes
-   are dropped, and an inert subtree is ignored, so this is empty whenever a
-   dialog is up and the app behind it is inert. */
 async function accessibleCells(cdp) {
   const { nodes } = await cdp.send('Accessibility.getFullAXTree');
   return nodes
@@ -76,24 +50,15 @@ async function accessibleCells(cdp) {
     .map((node) => node.name.value);
 }
 
-/* Polled rather than read once: the accessibility tree is rebuilt off the back
-   of the DOM change, and CI hardware is slower than a laptop. */
 function expectExposedCells(cdp, count) {
   return expect
     .poll(async () => (await accessibleCells(cdp)).length, {
       message: `expected ${count} board cells in the accessibility tree Chrome exposes`,
-      /* Longer than the default expect timeout: the tree is rebuilt off the
-         back of a render that can be competing with puzzle generation, and 10
-         seconds is where this poll flaked under load. */
       timeout: 15_000,
     })
     .toBe(count);
 }
 
-/* The whole board as a screen reader would hear it, returned once Chrome's
-   tree agrees with the markup render() wrote. Comparing this across a reload
-   is the strong form of "the restored board is the saved board": it proves
-   both that every value came back and that nothing left the board inert. */
 async function exposedBoard(page, cdp) {
   const labels = await page.evaluate(() =>
     [...document.querySelectorAll('#board .cell')].map((cell) => cell.getAttribute('aria-label')),
@@ -106,15 +71,10 @@ async function exposedBoard(page, cdp) {
   return labels;
 }
 
-/* Leaves a pencil mark, a placed digit and a non-zero clock. The moves go
-   through the same clicks and keypresses a player would use, which exercises
-   the real path from a browser event to a written save. */
 async function playAndSave(page) {
   const plan = await page.evaluate(() => {
     const a = values.findIndex((_v, i) => !fixed[i]);
     const b = values.findIndex((_v, i) => !fixed[i] && i !== a);
-    /* a digit that is not the one about to be placed at b, so filling b does
-       not sweep the pencil mark off a as a now-impossible candidate */
     return { a, b, note: (solution[b] % 9) + 1, digit: solution[b] };
   });
   const cell = (i) => page.locator('#board .cell').nth(i);
@@ -122,16 +82,11 @@ async function playAndSave(page) {
   await page.locator('#notesBtn').click();
   await cell(plan.a).click();
   await page.keyboard.press(String(plan.note));
-  /* Back to writing answers through the other radio. Clicking Notas again keeps
-     Notas chosen, which is the point of a group and the reason the digit below
-     would otherwise land as a pencil mark. */
   await page.locator('#penBtn').click();
 
   await cell(plan.b).click();
   await page.keyboard.press(String(plan.digit));
 
-  /* Both moves have to be on the board before the save is flushed, or the
-     assertions below would be reading an empty grid and calling it a match. */
   await expect(
     cell(plan.a)
       .locator('.notes span')
@@ -139,9 +94,6 @@ async function playAndSave(page) {
   ).toHaveText(String(plan.note));
   await expect(cell(plan.b).locator('.v')).toHaveText(String(plan.digit));
 
-  /* The clock cannot be waited out. Setting it and flushing the save in one
-     synchronous step keeps the saved value exact: no tick can land between
-     the two statements. */
   await page.evaluate(() => {
     seconds = 42;
     saveGame();
@@ -174,8 +126,6 @@ test('a game in progress survives a reload', async ({ page, context }) => {
   ).toBe(true);
   expect(saved.seconds).toBe(42);
 
-  /* A genuine reload of the genuine save: the page reads back through the same
-     localStorage it wrote to. */
   await page.reload();
   expect(problems, 'restoring threw').toEqual([]);
 
@@ -184,38 +134,21 @@ test('a game in progress survives a reload', async ({ page, context }) => {
     'the difficulty picker interrupted a resumable game',
   ).toBeHidden();
   expect(await readBoard(page), 'the restored board differs').toEqual(before);
-  /* All 81 cells are back in the tree Chrome exposes, under the same names: an
-     inert subtree is dropped wholesale, so this fails if the restore left the
-     board unreachable as well as if a value came back wrong. */
   expect(
     await exposedBoard(page, cdp),
     'the restored board is not the board that was saved',
   ).toEqual(heardBefore);
   await expect(page.locator('#diffLabel')).toHaveText('Normal');
-  /* The restored clock resumes running, so this allows the seconds that pass
-     while it is read on a slow runner, but not a reset to 0:00 and not a lost
-     minute. */
-  /* Padded, unlike every other time on the page: the running clock is the only
-     one that changes every second, and the leading zero is what stops the header
-     sliding sideways as it crosses 9:59. */
   await expect(page.locator('#time')).toHaveText(/^00:[45]\d$/u);
   expect(await page.evaluate(() => playing), 'restored game is not playable').toBe(true);
 });
 
-/* Moving the selection is a saved action too, and it is the only one that can
-   autorepeat, so it is saved on two paths with different timing: a click writes
-   at once, a held arrow key coalesces. Both are asserted here rather than
-   through a reload, because a reload cannot tell either of them apart from
-   nothing at all. */
 test('selecting a cell is saved at once by a click, once per burst by the arrows', async ({
   page,
 }) => {
   const problems = await boot(page);
   await startGame(page, 'medium');
 
-  /* Counting writes, not watching the stored value: the count is the whole
-     difference between a coalesced burst and one save per keystroke, and the
-     value is identical either way. */
   await page.evaluate((key) => {
     window.__writes = [];
     const real = Storage.prototype.setItem;
@@ -226,18 +159,10 @@ test('selecting a cell is saved at once by a click, once per burst by the arrows
   }, SAVE_KEY);
   const writes = () => page.evaluate(() => window.__writes.length);
 
-  /* Read while the page is still open, which is the part that matters. A
-     "click a cell, reload, expect that cell" test passes with the click
-     handler's saveGame() deleted: leaving the page fires visibilitychange,
-     which pauses, and pausing saves. Measured, that write comes out of
-     setPaused() during unload, so the reload proves nothing about the click. */
   await page.locator('#board .cell').nth(40).click();
   expect(await writes(), 'clicking a cell did not save the selection').toBe(1);
   expect((await readSave(page)).sel).toBe(40);
 
-  /* Dispatched in one task, the way a held key autorepeats. Pressing through
-     the runner is slower than the 250ms coalescing window on a loaded machine,
-     so that would measure the machine rather than the code. */
   await page.evaluate(() => {
     for (let n = 0; n < 20; n++) {
       document.dispatchEvent(
@@ -248,9 +173,6 @@ test('selecting a cell is saved at once by a click, once per burst by the arrows
   expect(await writes(), 'a burst of arrow keys wrote once per keystroke').toBe(1);
   await expect.poll(writes, { message: 'the coalesced selection was never written' }).toBe(2);
 
-  /* Compared against the live selection rather than a hardcoded index: the
-     arrows clamp at the edge of the board, so where 20 of them land is the
-     board's business, not this test's. */
   const live = await page.evaluate(() => sel);
   expect(live, 'the arrow keys never reached the board').not.toBe(40);
   expect((await readSave(page)).sel).toBe(live);
@@ -272,9 +194,6 @@ test('a new game replaces the previous save immediately, before any move', async
   expect(raw, 'the previous puzzle is still the save').not.toBe(stale);
   const fresh = JSON.parse(raw);
   expect(fresh.diffKey).toBe('hard');
-  /* A difficulty no longer deals a fixed number of clues: it asks for a grade
-     and the generator moves the count to reach one. So the count is taken from
-     the payload and used as the expectation below, rather than written here. */
   const givens = fresh.puzzle.filter((v) => v !== 0).length;
   expect(givens).toBeGreaterThanOrEqual(17);
   expect(givens).toBeLessThan(81);
@@ -282,8 +201,6 @@ test('a new game replaces the previous save immediately, before any move', async
 
   await page.reload();
   await expect(page.locator('#diffLabel')).toHaveText('Peludo');
-  /* The clue count on screen, not only in the payload: a stale restore would
-     put the givens of the abandoned Normal puzzle back on the board. */
   await expect(page.locator('#board .cell.given')).toHaveCount(givens);
   expect(problems).toEqual([]);
 });
@@ -297,9 +214,6 @@ test('solving the puzzle clears the save, so the next load starts fresh', async 
   await startGame(page, 'medium');
   expect(await readRawSave(page), 'nothing was saved to clear').not.toBeNull();
 
-  /* Driven through the game's own entry point rather than 81 clicks: this
-     test is about what solving does to the save, and the click path is
-     covered by playAndSave() above. */
   await page.evaluate(() => {
     for (let i = 0; i < 81; i++) {
       if (values[i] !== solution[i]) {
@@ -317,30 +231,17 @@ test('solving the puzzle clears the save, so the next load starts fresh', async 
     page.getByRole('dialog', { name: 'SUDOKU' }),
     'the start dialog did not come back after a finished game',
   ).toBeVisible();
-  /* Everything above is what solving does to the save, and it runs on both
-     engines, which is where it belongs: WebKit is what an installed copy runs
-     and its localStorage is the one that gets partitioned and evicted. Only
-     the last assertion is Chromium bound. */
   test.skip(
     test.info().project.name !== 'chromium',
     'reads the accessibility tree, which only Chromium exposes over CDP',
   );
   const cdp = await context.newCDPSession(page);
-  /* And it is a real modal: the board behind it is inert, so the tree Chrome
-     exposes holds none of its cells. */
   await expectExposedCells(cdp, 0);
 });
 
-/* Anything that is not a save this version wrote must be discarded silently and
-   fall back to the start dialog, never restore half a board. */
 for (const [name, payload] of [
   ['not JSON at all', 'not json {'],
   ['a JSON scalar', '"nope"'],
-  /* Otherwise a perfectly restorable save. Stamped {v: 99, diffKey: 'medium'}
-     and nothing else, as it was, this payload was rejected a line later by the
-     grid shape check, so deleting the version check left the suite green: the
-     test named a guarantee it was not testing. Filled in, the version stamp is
-     the only thing standing between this and a restored board. */
   [
     'an unknown schema version',
     JSON.stringify({
@@ -377,12 +278,6 @@ for (const [name, payload] of [
       diffKey: 'imposible',
     }),
   ],
-  /* "imposible" above is the honest typo. This one is the difficulty that is not
-     a difficulty: every name on Object.prototype answers truthy to a bare
-     DIFF[key] lookup, so a plain `if(!DIFF[s.diffKey])` accepted this save and
-     restored a playable board with no row behind it. Winning then multiplied
-     undefined, banked NaN, and wrote a wallet of nulls that read back as zero,
-     taking every prize the player had ever earned with it. */
   [
     'a difficulty borrowed from Object.prototype',
     JSON.stringify({
@@ -415,14 +310,10 @@ for (const [name, payload] of [
   }) => {
     const problems = await boot(page);
 
-    /* Planted in the browser's own storage and then reloaded, so the page
-       reads it back through the same localStorage a visitor would. */
     await page.evaluate(([key, value]) => localStorage.setItem(key, value), [SAVE_KEY, payload]);
     await page.reload();
 
     expect(problems, 'a bad save threw during boot').toEqual([]);
-    /* By role and name: the picker has to reach assistive tech as a dialog,
-       not merely carry a class that makes it visible. */
     await expect(
       page.getByRole('dialog', { name: 'SUDOKU' }),
       'the start dialog did not open',
@@ -430,16 +321,11 @@ for (const [name, payload] of [
     await expect(page.getByRole('button', { name: /Normal/u })).toBeVisible();
     await expect(page.locator('#remaining')).toHaveText('81 por llenar');
 
-    /* Everything above is the rejection itself and runs on both engines, which
-       is where it belongs: WebKit is what an installed copy runs, and its
-       localStorage is the one that gets partitioned and evicted. Only the last
-       assertion is Chromium bound. */
     test.skip(
       test.info().project.name !== 'chromium',
       'reads the accessibility tree, which only Chromium exposes over CDP',
     );
     const cdp = await context.newCDPSession(page);
-    /* Nothing of the rejected board leaked out from behind the dialog. */
     await expectExposedCells(cdp, 0);
   });
 }
@@ -447,9 +333,6 @@ for (const [name, payload] of [
 test('a localStorage that throws costs the save, not the game', async ({ page }) => {
   const problems = await boot(page);
 
-  /* The real Storage methods, made to throw the way Safari in private mode
-     throws: a DOMException off the real API, not a hand-rolled object handed
-     to the page in place of storage. */
   await page.addInitScript(() => {
     const dead = () => {
       throw new DOMException('storage is disabled (private mode)', 'SecurityError');
@@ -471,8 +354,6 @@ test('a localStorage that throws costs the save, not the game', async ({ page })
   await page.locator('#board .cell').nth(plan.index).click();
   await page.keyboard.press(String(plan.digit));
 
-  /* The digit is on the board and the cell announces it, with every call into
-     storage still throwing underneath. */
   await expect(page.locator('#board .cell').nth(plan.index).locator('.v')).toHaveText(
     String(plan.digit),
   );
@@ -487,9 +368,6 @@ test('pausing captures the clock', async ({ page }) => {
   const problems = await boot(page);
   await startGame(page, 'medium');
 
-  /* The runner cannot wait out two minutes, so the clock is set by hand.
-     Stopping the tick first is what makes the assertion exact: the browser
-     keeps firing the interval between these two steps. */
   await page.evaluate(() => {
     clearInterval(tick);
     seconds = 123;
@@ -500,9 +378,6 @@ test('pausing captures the clock', async ({ page }) => {
   expect((await readSave(page)).seconds).toBe(123);
   expect(problems).toEqual([]);
 
-  /* What the captured clock is for: the player gets those two minutes back on
-     the next load. Tolerant of the seconds that pass while it is read, since
-     the restored clock starts running again. */
   await page.reload();
   await expect(page.locator('#time')).toHaveText(/^02:[01]\d$/u);
 });
@@ -513,8 +388,6 @@ test('a save survives a reload the service worker serves from cache', async ({ p
   await playAndSave(page);
   const before = await readBoard(page);
 
-  /* Once the service worker controls the page, the next load is served from its
-     cache, so the restore has to survive being handed a cached app shell. */
   await expect
     .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null), {
       message: 'the service worker never took control of the page',
@@ -534,17 +407,6 @@ test('a save survives a reload the service worker serves from cache', async ({ p
   expect(problems).toEqual([]);
 });
 
-/* A save written before boards carried a seed has neither a seed nor a grade,
-   and resuming it is meant to leave the end of game summary quiet about both:
-   the grade would be the tier the difficulty asked for rather than one anything
-   measured, and the code would be 0, which rebuilds a different board.
-
-   saveGame() used to write both keys unconditionally, so the first move after
-   such a resume wrote the placeholders straight back out as though they were
-   facts. The next session read seed 0, and Number.isInteger(0) && 0 >= 0 is
-   true, so the board came back "measured" and the win screen offered
-   Código: 0. Reported from a real save, which is what every player who had one
-   before this shipped was carrying. */
 test('a save from before seeding never becomes a measured board', async ({ page, context }) => {
   await boot(page);
   await startGame(page);
@@ -552,17 +414,14 @@ test('a save from before seeding never becomes a measured board', async ({ page,
   delete save.seed;
   delete save.grade;
 
-  /* Planted before any app code runs, because the coalesced autosave would
-     otherwise overwrite it between the write and the reload. */
   await context.addInitScript(
     ([key, raw]) => localStorage.setItem(key, raw),
     [SAVE_KEY, JSON.stringify(save)],
   );
   await page.goto('./');
   await expect(page.locator('#board .cell')).toHaveCount(81);
-  expect(await page.evaluate(() => puzzleMeasured), 'a pre-seed save is not measured').toBe(false);
+  expect(await page.evaluate(() => measuredBoard), 'a pre-seed save is not measured').toBeNull();
 
-  /* One move, which is what rewrites the save. */
   await page.evaluate(() => {
     const i = values.findIndex((v, k) => !v && !fixed[k]);
     sel = i;

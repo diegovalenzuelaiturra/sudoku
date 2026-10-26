@@ -1,0 +1,49 @@
+name: Install npm
+description: Puts the pinned npm and npx on PATH, checked against the integrity the registry publishes.
+
+# setup-node has no input for npm, so the tarball comes from the registry
+# and is checked against the integrity the registry publishes for this
+# version, the same shape as the osv-scanner checksum: a swapped tarball
+# fails the step instead of running. npm bundles all of its own
+# dependencies, so nothing else is fetched.
+#
+# "npm install --global" of the tarball would be a package install outside
+# the lockfile, which zizmor reports as adhoc-packages, and would rewrite
+# the npm inside the node setup-node cached. The bin/npm shipped in the
+# tarball cannot stand in for them: it is the shim the node installers
+# use, and it looks for a node install around itself.
+#
+# Dependabot cannot see a version written as a string: bump both values by
+# hand, together.
+#
+# zizmor reports any GITHUB_PATH write in a composite action, because an
+# action cannot see the trigger of the workflow calling it. Inline in ci.yml
+# and deploy-pages.yml this write reported nothing, since neither runs on
+# pull_request_target or workflow_run.
+runs:
+  using: composite
+  steps:
+    - name: Install npm
+      shell: bash
+      env:
+        NPM_VERSION: 12.2.1
+        NPM_INTEGRITY: sha512-bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        dir="$RUNNER_TEMP/npm-${NPM_VERSION}"
+        mkdir -p "$dir/npm" "$dir/bin"
+        curl --fail --silent --show-error --location \
+          --output "$dir/npm.tgz" \
+          "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
+        actual="sha512-$(openssl dgst -sha512 -binary "$dir/npm.tgz" | base64 -w0)"
+        if [ "$actual" != "$NPM_INTEGRITY" ]; then
+          echo "::error::npm ${NPM_VERSION} does not match its pinned integrity" >&2
+          exit 1
+        fi
+        tar -xzf "$dir/npm.tgz" -C "$dir/npm" --strip-components 1
+        for cli in npm npx; do
+          printf '#!/bin/sh\nexec node "%s/npm/bin/%s-cli.js" "$@"\n' "$dir" "$cli" > "$dir/bin/$cli"
+          chmod 755 "$dir/bin/$cli"
+        done
+        [ "$("$dir/bin/npm" --version)" = "$NPM_VERSION" ]
+        echo "$dir/bin" >> "$GITHUB_PATH"

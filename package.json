@@ -11,7 +11,7 @@
     "lint:eslint": "eslint .",
     "lint:fix": "oxlint --fix && eslint . --fix && biome check --write",
     "lint:oxlint": "oxlint",
-    "lint:spelling": "cspell --config cspell.config.mjs --no-progress index.html app.js 404.html",
+    "lint:spelling": "cspell --config cspell.config.mjs --no-progress",
     "preview": "node scripts/build.mjs && node e2e/static-server.mjs",
     "test": "node --test --test-timeout=30000",
     "test:coverage": "node --test --test-timeout=30000 --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=88 --test-coverage-functions=90",

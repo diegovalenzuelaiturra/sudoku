@@ -5,17 +5,12 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Sudoku 数独</title>
         <meta name="description" content="Sudoku en español: cuatro niveles, notas, pistas y cronómetro, sin cuentas ni anuncios.">
-        <!-- Baseline calls theme-color limited, because desktop Firefox ignores it.
-            That is a reason to expect nothing from it there, not a reason to drop it:
-            it colours the title bar of the installed app, and tests/assets.test.mjs
-            pins this value to the manifest's theme_color, since the two paint the same
-            surface and drifted apart once already. -->
+        <!-- Baseline calls theme-color limited, because desktop Firefox ignores it. -->
         <!-- eslint-disable-next-line html/use-baseline -->
         <meta name="theme-color" content="#EDEFE7">
         <!-- Baseline says the same about rel=manifest, and this is the one link that
             makes the app installable, so the app either declares it or stops being a
-            PWA. tests/assets.test.mjs asserts the link is here, and
-            tests/site.test.mjs asserts every published reference stays relative. -->
+            PWA. -->
         <!-- eslint-disable-next-line html/use-baseline -->
         <link rel="manifest" href="manifest.webmanifest">
         <!-- iOS Safari ignores the manifest entirely when it builds a home screen icon:
@@ -44,17 +39,12 @@
             "summary_large_image" expects roughly 2:1 and would pillarbox or crop the icon. -->
         <meta name="twitter:image" content="https://diegovalenzuelaiturra.github.io/sudoku/icons/icon-512.png">
 
-        <!-- Inline so the site stays a single published file. A 3x3 grid rather than the
-            数 seal: pure paths render the same everywhere and stay legible at 16px,
-            where a CJK glyph turns to mush and depends on a CJK font being installed. -->
         <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23C43A20'/%3E%3Cg stroke='%23F7F1E6' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 13h20M6 19h20M13 6v20M19 6v20'/%3E%3C/g%3E%3C/svg%3E">
         <style>
   :root{
-    /* The narrowest the board is ever allowed to be, and with it the widest the
-       controls under it are ever drawn. Named once so the two cannot drift: at
-       the smallest phone the board sits on this floor, and a keypad wider than
-       the number it stands under overhangs it on both sides. */
     --board-floor:288px;
+    --board-chrome-wide:145px;
+    --board-chrome-narrow:392px;
     --paper:#EDEFE7;
     --paper-raised:#F7F8F3;
     --ink:#22241E;
@@ -72,14 +62,13 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{
-    /* No double tap to zoom, anywhere on the page. Safari on iOS treats a
-       second tap inside ~300ms as a zoom gesture, so entering two digits
-       quickly, or tapping the same pad key twice, zoomed the board instead of
-       playing. The permitted behaviours are the intersection of an element's
-       value and its ancestors', so declaring it here covers the pad, the tools
-       and the chrome, not just the board it used to sit on. "manipulation"
-       disables only the double tap: pinch to zoom still works, which a
-       viewport lockout would have taken away. */
+    /* Safari on iOS treats a second tap inside ~300ms as a zoom gesture, so
+       entering two digits quickly, or tapping the same pad key twice, zoomed the
+       board instead of playing. The permitted behaviours are the intersection of
+       an element's value and its ancestors', so declaring it here covers the pad,
+       the tools and the chrome, not just the board it used to sit on.
+       "manipulation" disables only the double tap: pinch to zoom still works,
+       which a viewport lockout would have taken away. */
     touch-action:manipulation;
     font-family:var(--sans);
     background:var(--paper);
@@ -88,14 +77,12 @@
     display:flex;justify-content:center;
     padding:20px 14px 40px;
   }
-  /* faint washi grain */
   body::before{
     content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .04 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
   }
   .app{width:100%;max-width:860px;position:relative;z-index:1}
 
-  /* ---------- header ---------- */
   header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}
   .seal{
     width:42px;height:42px;flex:none;background:var(--vermilion);color:#F7F1E6;
@@ -105,22 +92,13 @@
   }
   .actions{display:flex;align-items:center;gap:10px}
   .time{font-family:var(--serif);font-size:20px;font-variant-numeric:tabular-nums;min-width:58px}
-  /* 44px is the smallest target Apple's guidelines and WCAG 2.5.5 both accept,
-     and these were 36. Measured on a 390 wide iPhone, where a finger pad covers
-     about 45px: under that, the miss lands on whatever is beside it. */
   .iconbtn{
     width:44px;height:44px;border:1px solid var(--line);border-radius:8px;background:var(--paper-raised);
     color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;
   }
   .iconbtn:hover{border-color:var(--ink-soft)}
-  /* Pista spends the flawless bonus, so it is drawn as the quiet one of the
-     four. The corner it sits in is the rest of the argument. */
   .iconbtn.costly{border-style:dashed;color:var(--ink-soft)}
   .iconbtn.costly:hover{border-style:solid;color:var(--ink)}
-  /* visibility, not display: the box stays, so the clock and the three
-     permanent buttons hold their positions whether this has work or not.
-     Hidden this way it is also out of the tab order and out of the
-     accessibility tree, which is what the hidden attribute was there for. */
   .iconbtn.settle{position:relative;margin-right:12px;color:var(--indigo);border-color:var(--indigo-wash-3);background:var(--indigo-wash)}
   .iconbtn.settle.idle{visibility:hidden}
   .iconbtn.settle .badge{
@@ -128,7 +106,6 @@
     font-family:var(--serif);font-size:11px;font-weight:600;line-height:1;
   }
 
-  /* ---------- status bar ---------- */
   .status{
     display:flex;align-items:center;gap:14px;flex-wrap:wrap;
     font-size:12.5px;color:var(--ink-soft);letter-spacing:.04em;
@@ -141,38 +118,21 @@
   .status .warn b{color:var(--vermilion)}
   /* The browser's own rule for this is display:none at zero specificity, so any
      class in this sheet that sets a display outranks it and the element stays on
-     screen with the attribute set. It has cost three bugs now: a tool button
-     offering nothing, a settings row on a platform with nothing to set, and
-     Seguir jugando inviting a player back into a game they had already won,
-     which is what it does when the only thing behind the dialog is a finished
-     board. One rule, once, instead of a guard per class. */
+     screen with the attribute set. */
   [hidden]{display:none!important}
   .visually-hidden{
     position:absolute;width:1px;height:1px;margin:-1px;padding:0;
     overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;
   }
 
-  /* ---------- layout ---------- */
   main{display:grid;grid-template-columns:minmax(0,1fr) 232px;gap:30px;align-items:start}
 
-  /* ---------- board ---------- */
   .board-wrap{position:relative}
   .board{
-    /* The two column layout has the same problem the single column one has
-       under 720px, for the same reason and with different numbers: measured at
-       1440x700 the page overflows by 35px. The chrome around the board here is
-       137px, so the board yields the rest, floored so its cells never fall
-       below 32px. On a tall window min() picks 100% and nothing changes. */
-    max-width:min(100%,max(288px,calc(100dvh - 145px)));
+    max-width:min(100%,max(var(--board-floor),calc(100dvh - var(--board-chrome-wide))));
     display:grid;grid-template-columns:repeat(9,1fr);aspect-ratio:1;
     background:var(--paper-raised);
     border:2px solid var(--ink);border-radius:4px;overflow:hidden;
-    /* Declared on body as well, which is what covers the pad and the chrome.
-       Kept here too because the walk up the ancestors that intersects these
-       values stops at the nearest containing scrolling element, and
-       overflow:hidden above makes this element exactly that: without it the 81
-       cells, the surface the double tap was reported on, would be relying on a
-       reading of the spec rather than on a declaration. */
     touch-action:manipulation;
   }
   .cell{
@@ -202,18 +162,13 @@
   .board.veiled .cell{color:transparent}
   .board.veiled .notes{visibility:hidden}
 
-  /* pause veil */
   .veil{
     position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;
     background:rgba(237,239,231,.72);backdrop-filter:blur(2px);border-radius:4px;z-index:3;
   }
   .veil.show{display:flex}
-  /* The title is the middle of the board, which is where a thumb lands to
-     resume: without this the one word on the veil is the one place that tap
-     does nothing, because the press would target the paragraph. */
   .veil p{font-family:var(--serif);font-size:18px;letter-spacing:.2em;pointer-events:none}
 
-  /* win stamp */
   .stamp{
     position:absolute;top:50%;left:50%;z-index:4;pointer-events:none;
     transform:translate(-50%,-50%) rotate(-8deg) scale(1);
@@ -230,12 +185,6 @@
     100%{opacity:1;transform:translate(-50%,-50%) rotate(-8deg) scale(1)}
   }
 
-  /* ---------- controls ---------- */
-  /* Three across, the shape of a phone keypad. Nine across put the keys at 36px
-     wide on a 390 wide iPhone against a 44px minimum, and left 40px of gap
-     between them that swallowed a tap whole: measured by hit testing every
-     pixel of the strip, 9.2 percent of it answered to nothing. Three across
-     makes each key about 90px, so the gaps stop competing with the fingers. */
   .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
   .key{
     border:1px solid var(--line);border-radius:9px;background:var(--paper-raised);cursor:pointer;
@@ -243,31 +192,12 @@
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--indigo);
     transition:transform .06s ease,border-color .12s,background .12s;
   }
-  /* The mode, said again where the digits are entered. The toggle is a row
-     below and out of the eye line of somebody looking at the board, which is
-     how a note gets written as an answer. */
-  /* "noting" and not "notes": .notes is already the 3 by 3 grid of pencil marks
-     inside a cell, and it is position:absolute. Naming this one the same took
-     the keypad out of flow and laid its keys out as that grid, which put an
-     800px tall pad over the top of the board. */
-  /* Colour and nothing else. Shrinking the digits here as well made the keypad
-     redraw itself at two sizes, 22px against 17px on a phone and 24 against 17
-     on a wide screen, so the thing the eye is aiming at changed shape at the
-     moment the mode changed. The tint says the same thing and moves nothing. */
   .pad.noting .key{background:var(--indigo-wash);border-color:var(--indigo-wash-3)}
   .key .d{font-family:var(--serif);font-size:24px;line-height:1.1}
   .key .c{font-size:10px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
   .key:hover{border-color:var(--indigo)}
   .key:active{transform:scale(.95)}
   .key.done{opacity:.28;pointer-events:none}
-  /* Undo, the mode, and erase. On a phone they share one row, with the mode in
-     the middle taking whatever width is left: the two least used buttons at the
-     ends and the one touched constantly under the thumb.
-
-     On a wide screen the controls are a 232px column beside the board, where
-     the three of them together do not fit and the mode was crushed to the width
-     of its own padding, with erase sitting on top of it. There it takes a row of
-     its own, above the other two. */
   .tools{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin-bottom:12px}
   .tool{
     border:1px solid var(--line);border-radius:9px;background:var(--paper-raised);cursor:pointer;
@@ -278,8 +208,6 @@
   .tool:hover{border-color:var(--ink-soft)}
   .tool:active{transform:scale(.96)}
   .tool .k{font-size:10px;color:var(--ink-soft);border:1px solid var(--line);border-radius:4px;padding:1px 4px}
-  /* Both halves on screen, one of them filled. The track is what makes it read
-     as a choice already made rather than as two buttons waiting to be pressed. */
   /* min-width:0 because a flex item will not shrink below the content of its
      own children, and the two labels inside are wider than the share this is
      meant to take: without it the row overflows the column. */
@@ -296,8 +224,6 @@
   }
   .mode button[aria-checked="true"]{background:var(--indigo);color:#F7F8F3;font-weight:600}
   .ico{width:1em;height:1em;fill:currentColor;vertical-align:-0.125em}
-  /* Seguir, Otra al tiro and Listo: the one button shape that closes a dialog or
-     resumes a board, and the only wide one on the page. */
   .newgame{
     width:100%;border:1px solid var(--ink);border-radius:9px;background:transparent;cursor:pointer;
     padding:11px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);font-weight:600;
@@ -305,17 +231,10 @@
   .newgame:hover{background:var(--ink);color:var(--paper-raised)}
   button:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
 
-  /* ---------- modal ---------- */
   .overlay{
     position:fixed;inset:0;background:rgba(34,36,30,.42);z-index:10;
     display:none;align-items:center;justify-content:center;padding:20px;
-    /* A dialog taller than the window used to be centred and then cut off at
-       both ends, with no way to reach either. The record is the one that grows:
-       at 532px it does not fit a 420px window, and it took the title and the
-       button with it. Scrolling the backdrop rather than the dialog keeps the
-       dialog itself one piece.
-
-       auto margins on the modal, not align-items:center, because a flex item
+    /* auto margins on the modal, not align-items:center, because a flex item
        centred by the container cannot be scrolled back up to: the overflow goes
        to both sides and the top is unreachable. Auto margins collapse to zero
        on the side that has no room, which is the behaviour wanted. */
@@ -342,29 +261,13 @@
   .modal .stat{border:1px solid var(--line);border-radius:8px;padding:10px 4px}
   .modal .stat b{font-family:var(--serif);font-size:18px;display:block}
   .modal .stat i{font-style:normal;font-size:10.5px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase}
-  /* Which of the three numbers the record is. "Nuevo récord" under a row of
-     three tiles does not say what was broken, and the time is the only one of
-     them a record is ever kept for. The tile is marked instead of the sentence
-     naming it, so the claim sits on the number it is about. */
   .modal .stat.record{border-color:var(--indigo);background:var(--indigo-wash)}
   .modal .stat.record b{color:var(--indigo)}
   .modal .stat.record i{color:var(--indigo)}
-  /* Unscoped from .modal, because the pause veil is a dialog too and offers the
-     record through one of these. */
   .quiet{margin-top:12px;background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;text-decoration:underline}
-  /* The veil is a flex column and spaces its own children. The padding is what
-     makes this one a target a thumb can hit: the same 12px text is 14px tall,
-     and it is the only one of these that is pressed on a phone held in one hand
-     rather than read off a dialog. Invisible, since there is nothing to paint. */
   .veil .quiet{margin-top:0;padding:15px 12px}
-  /* Only the ones that carry an icon. The Canjear buttons share .quiet and have
-     bare text, so moving the underline onto a label outright would take theirs
-     away. Underlining the button would draw a line under the glyph as well,
-     which reads as an underlined icon rather than a link. */
   .quiet:has(.ico){display:inline-flex;align-items:center;gap:5px;text-decoration:none}
   .quiet .label{text-decoration:underline}
-  /* A disabled difficulty button is busy: keep it legible, since greying it
-     out reads as unavailable for good. */
   .diff[disabled],.quiet[disabled]{opacity:.5;cursor:default}
   .diff[disabled]:hover{border-color:var(--line);color:var(--ink)}
   .genstatus{margin-top:12px;font-size:11.5px;color:var(--ink-soft);letter-spacing:.06em}
@@ -373,18 +276,10 @@
      which takes it out, so text written before unhiding is text no screen
      reader ever hears. Empty it is zero height and costs nothing. */
   .genstatus:empty{margin-top:0}
-  /* The bottom margin is not spacing, it is clearance. This line sits directly
-     above the dialog's button, which is focused the moment the dialog opens, and
-     button:focus-visible draws a 2px outline at a 2px offset: 4px outside the
-     button's own box, over whatever is flush against it. With margin-top alone
-     the two boxes met exactly, measured at 0px, and the ring was painted through
-     the descenders of "Técnica" and "Código". 8px leaves the ring its 4px and
-     4px of air. */
   .modal .code{margin:14px 0 8px;font-size:11px;color:var(--ink-soft);letter-spacing:.04em}
   #streakCounts b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
   .modal .code b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
 
-  /* ---------- the record ---------- */
   .record{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}
   .record th,.modal .micro{font-weight:600;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);padding-bottom:6px}
   .record td{padding:5px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
@@ -396,7 +291,6 @@
   }
   .purseRow b{font-family:var(--serif);font-variant-numeric:tabular-nums}
   .modal .redeem{margin-top:0}
-  /* Mid confirmation, so the second press is visibly a different act. */
   .modal .redeem.arm{color:var(--vermilion);text-decoration-thickness:2px}
   .ledger{list-style:none;font-size:11px;color:var(--ink-soft);text-align:left;max-height:132px;overflow-y:auto}
   .ledger li{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-top:1px solid var(--line)}
@@ -410,21 +304,11 @@
   .prefs input{width:22px;height:22px;flex:none;accent-color:var(--indigo);cursor:pointer}
   .ledger time{font-variant-numeric:tabular-nums;white-space:nowrap}
 
-  /* ---------- how it is going ---------- */
-  /* Set tighter than .modal .code's own 14px rhythm, which is spacing for a
-     single line at the bottom of a dialog. The record already measured 532px
-     against a 420px window and the scrolling backdrop is what saves it. */
   .progress{margin-bottom:16px}
   .modal .progress p{margin:0 0 5px}
   .modal .progress p:last-child{margin:0}
-  /* Indigo is this sheet's colour for the interactive and the chosen, which is
-     what an invitation to the next tier is. Vermilion stays with mistakes and
-     warnings. */
   .progress .offer{color:var(--indigo)}
 
-  /* ---------- prizes ---------- */
-  /* Named for the mechanic rather than the glyph: papas fritas and chocolates
-     share the chip, the pop and the rain, and differ only in what they emit. */
   .prize b{display:inline-block}
   .prize.pop b{animation:frypop .45s ease}
   @keyframes frypop{0%{transform:scale(1)}40%{transform:scale(1.7)}100%{transform:scale(1)}}
@@ -438,85 +322,33 @@
     82%{opacity:1}
     100%{transform:translateY(var(--fall)) rotate(var(--spin));opacity:0}
   }
-  /* The prize is two numbers. It used to be a sentence around them, which was
-     longer than the thing it described, so it is icons now. The amounts shown
-     are what was won, the flawless doubling included: a separate multiplier
-     badge only invited reading it against whichever number sat next to it. */
   .frybanner{
     margin:14px 0 16px;padding:11px 10px;border:1px dashed var(--vermilion);border-radius:9px;
     color:var(--vermilion);display:flex;gap:18px;justify-content:center;align-items:center;
   }
   .frybanner b{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:.02em}
 
-  /* ---------- responsive ---------- */
   @media (max-width:719px){
     body{padding:14px 10px 30px}
     main{grid-template-columns:1fr;gap:16px}
-    /* The board is the only thing in this column that can give up space, so it
-       is what yields when the viewport is short. A browser tab spends about
-       140px on the URL bar and the toolbar that the installed app keeps, and
-       that is the whole difference between the page fitting and the header
-       scrolling up underneath the URL bar: measured on a 393 wide iPhone, the
-       column is 698px against 800px of standalone viewport and 660px of tab.
-
-       dvh, not vh: on iOS vh is the large viewport, the one that pretends the
-       toolbars are not there, which is exactly what needs compensating for.
-       392px is the rest of the column, header, status, pad, tools, button and
-       the body padding: the keypad is three rows, which is what bought the keys
-       their width. Everything above and below the board adds to 390 at this
-       width, and the two spare pixels are for the rounding.
-
-       The floor matters as much as the cap. Without it a 560px viewport asks
-       for a 230px board, whose cells are 25px, and a cell too small to hit is
-       worse than a page that scrolls. At 288px they are 32px and the page
-       scrolls again, which is where this started.
-
-       On a 390 by 844 iPhone the board is still limited by the column width, so
-       it does not move at all; in a browser tab, where about 140px goes to the
-       URL bar, it gives up what the keypad took and the page still does not
-       scroll, which is the trade this was chosen for. */
-    .board{max-width:min(520px,100%,max(var(--board-floor),calc(100dvh - 392px)));margin:0 auto}
-    /* Narrower than the board and centred under it. At the full width of the
-       column the leftmost digits sit at the far end of a right thumb's arc, and
-       the rightmost at the far end of a left one; pulled in, every key is within
-       reach of either hand and of two. The board keeps the whole width, because
-       what it needs is size and what these need is to be reachable.
-
-       Capped at the board's own floor rather than at a number of its own, so it
-       can never come out wider than the grid it sits under: on the smallest
-       phone the board is on that floor, and anything wider overhangs it on both
-       sides. That leaves the keys about 90 wide, twice the 44px minimum, so
-       nothing here is traded for the reach. */
+    /* dvh, not vh: on iOS vh is the large viewport, the one that pretends the
+       toolbars are not there, which is exactly what needs compensating for. */
+    .board{max-width:min(520px,100%,max(var(--board-floor),calc(100dvh - var(--board-chrome-narrow))));margin:0 auto}
     .controls{max-width:min(var(--board-floor),100%);margin:0 auto;width:100%}
     .tool .k{display:none}
-    /* One row here: without the shortcut chips the two buttons are narrow
-       enough that the mode fits between them, which is where a thumb wants it. */
     .tool{padding:10px 4px;flex:0 1 auto}
     .mode{flex:1 1 auto;order:0}
     .key{padding:7px 0 5px;border-radius:8px}
     .key .d{font-size:22px}
     .key .c{font-size:9px}
     .status{gap:10px;padding:6px 2px;margin-bottom:14px;font-size:12px}
-    /* The header carries four 44px buttons now instead of one 36px button, and
-       the targets are the part that is not allowed to shrink: the guidelines put
-       the floor at 44 and the whole reason the keypad was rebuilt was that 36 is
-       not enough to hit. */
     .actions{gap:5px}
     .time{font-size:18px;min-width:44px}
     header{margin-bottom:10px}
-    /* The spacer grows to fill the first line, which pushed the count that
-       follows it onto a second one and cost the status bar 29px of a column
-       that is now paying for a three row keypad. The items simply flow. */
     .status .spacer{display:none}
-    /* Last in the column, so its bottom margin is only space above the edge,
-       and the body padding is already there. */
     .pad{margin-bottom:0}
     .tools{margin-bottom:10px}
   }
-  /* The status has to stay on one line at this width. Wrapped it is 59px instead
-     of 34, which is more than the column has left: the board is already on its
-     288px floor here, so the 25px would come off the end of the page as
-     scrolling instead. */
   @media (max-width:409px){
     .status{font-size:11px;gap:7px;letter-spacing:0}
   }
@@ -571,33 +403,8 @@
         </svg>
         <div class="app">
             <header>
-                <!-- The clock, and nothing else on this side. The name and the seal are
-                    on the icon, the start dialog and the win stamp, which is where a
-                    player meets them; a board in play does not need to be told what game
-                    it is, and the room they took belongs to the four targets opposite. -->
                 <div class="time" id="time">00:00</div>
-                <!-- Ordered by how easy each one should be to hit, least first. A thumb
-                    holding a phone swings from the bottom corner on its own side, so the
-                    hard end of a top row is the far side of the screen and the easy end
-                    is the near one: rightmost is the most reachable, not the least.
-
-                    So Pista is the first of the three permanent buttons. It spends
-                    the flawless bonus and is the one button here that should take a
-                    deliberate reach, and Nueva partida stands between it and the rest,
-                    which is a mis-tap into a dialog with a cancel rather than into a
-                    spent bonus. -->
                 <div class="actions">
-                    <!-- Kept in the layout at all times and only made invisible, so the
-                        three permanent buttons never shuffle sideways when the late game
-                        gives it work. First in the group because the header is laid out
-                        with the clock at one end and these at the other: a reserved slot
-                        here is absorbed by the empty middle and cannot be seen at all,
-                        where at the far end it left the row detached from the edge.
-
-                        Set apart from Pista by a wider gutter than the rest share. This
-                        is the button pressed several times over an endgame and that one
-                        is the button that spends the flawless bonus, so the two of them
-                        are the pair least worth putting within a slip of each other. -->
                     <button
                         type="button"
                         class="iconbtn settle idle"
@@ -702,10 +509,6 @@
                             </svg>
                             Seguir
                         </button>
-                        <!-- The clock is stopped here, so this is the one place in the game
-                            where reading the record costs no time. It used to be reachable
-                            only through the difficulty picker, which is the dialog for
-                            leaving a board rather than for looking at one. -->
                         <button
                             type="button"
                             class="quiet"
@@ -731,9 +534,6 @@
                     </div>
                 </div>
 
-                <!-- The mode above the keypad, the way it reads on the reference this
-                    follows: the choice is made on the way down to the digits rather than
-                    below them. -->
                 <div class="controls">
                     <div class="tools">
                         <button
@@ -750,16 +550,6 @@
                             </svg>
                             Deshacer <span class="k">Z</span>
                         </button>
-                        <!-- Which of the two the digits go in, as a choice with both halves
-                            on screen and one of them filled. A single toggle button only
-                            ever showed one state, so knowing the mode meant remembering
-                            which way the button had been left, and a wrong guess writes a
-                            real digit where a note was meant. A radiogroup rather than two
-                            pressed buttons: the modes are exclusive, and it is what makes
-                            the arrow keys walk between them.
-
-                            In the middle of the row on purpose. Pista used to be here,
-                            next to it, and Pista spends the flawless bonus. -->
                         <div
                             class="mode"
                             role="radiogroup"
@@ -795,24 +585,12 @@
                             Borrar <span class="k">⌫</span>
                         </button>
                     </div>
-                    <!-- The description of the mode, for the reader who is told nothing by
-                        a filled segment or a tinted keypad. Out of the layout at all
-                        times: shown on screen when the mode came on it pushed the keypad
-                        down 33px, so the keys moved under the thumb at the moment the
-                        player was reaching for them, and the column has no height to hold
-                        the line open with instead. What it said in words the segment and
-                        the tint now say in place. -->
                     <p class="visually-hidden" id="notesHint">Anota candidatos: el número queda chico. Tócalo de nuevo para borrarlo.</p>
                     <div class="pad" id="pad"></div>
                 </div>
             </main>
         </div>
 
-        <!-- Outside .app, and that is the whole point. Every overlay sets appEl.inert,
-            which drops everything inside .app from the accessibility tree, so a live
-            region kept in there is silent for exactly the actions that happen with a
-            dialog open: redeeming announces through #srStatus and the record dialog is
-            the only place the redeem buttons exist. -->
         <span
             id="srStatus"
             class="visually-hidden"
@@ -860,12 +638,6 @@
                         data-d="expert"
                     ></button>
                 </div>
-                <!-- Generation happens in a worker and takes long enough to notice on the
-                    hardest tiers, so it is announced rather than left as a dead dialog.
-                    role=status is polite: a screen reader hears it after whatever it was
-                    already saying, which is the difficulty button that was just pressed.
-                    Empty rather than hidden, and empty rather than pre-filled: see the
-                    .genstatus:empty rule for why both matter. -->
                 <p
                     class="genstatus"
                     id="genStatus"
@@ -919,22 +691,11 @@
                     <div class="stat"><b id="wHint">0</b><i>Pistas</i></div>
                 </div>
                 <div class="frybanner" id="fryBanner">🍟</div>
-                <!-- Celebration, and it pays nothing. The flawless bonus is the paying
-                    axis and the code already clamps against farming it; a second one
-                    would need its own clamps and would be farmable by clearing the
-                    history. -->
                 <p
                     class="code"
                     id="wBestLine"
                     hidden
                 ><span aria-hidden="true">🏆</span> <b>¡Nuevo récord de tiempo!</b></p>
-                <!-- Where the run stands, on every clean win, and whether it is a
-                    record. The medal is the streak wherever it appears and the trophy
-                    is the time, so the two are told apart by their glyph the same way
-                    they are told apart by their shower. Both holes are filled by
-                    app.js: a run that is only written into the record dialog is a run
-                    the player is never told about, since that dialog is somewhere
-                    they have to go rather than somewhere the win puts them. -->
                 <p
                     class="code"
                     id="wStreakLine"
@@ -943,9 +704,6 @@
                         id="wStreakGlyph"
                         aria-hidden="true"
                     >🔥</span> <b id="wStreakText">Va 1 seca.</b></p>
-                <!-- What the board really was and the seed that rebuilds it. The technique
-                    is the honest difficulty, and the code is here so a board worth talking
-                    about can be found again. -->
                 <p class="code" id="wCodeLine">Técnica: <b id="wGrade">directas</b>. Código: <b id="wCode">0</b></p>
                 <button
                     type="button"
@@ -964,9 +722,6 @@
             </div>
         </div>
 
-        <!-- The record: games played and won, best times, the flawless streak, and the
-            wallet with somewhere for the prizes to go. The totals used to only ever
-            rise, with no way to say a prize had actually been handed over. -->
         <div class="overlay" id="recordOverlay">
             <div
                 class="modal"
@@ -975,13 +730,6 @@
                 aria-labelledby="recordTitle"
             >
                 <h2 id="recordTitle">TU REGISTRO</h2>
-                <!-- Each count says what it counts. Two emoji over two bare numbers
-                    read as a tally of prizes collected rather than as a run and the
-                    record it is measured against, and a run below the record then
-                    looked like the game had taken something away. The sentence in the
-                    span beside them is still the only thing read aloud: emoji carry
-                    nothing to a screen reader, and the visible half is aria-hidden so
-                    the line is not read twice. -->
                 <p class="lede" id="streakLine">
                     <span
                         id="streakCounts"
@@ -1002,19 +750,6 @@
                     </thead>
                     <tbody id="recordRows"></tbody>
                 </table>
-                <!-- How the last level played is going. A best time only moves one way,
-                    so the record above it cannot show a decline: the median, the band
-                    around it and the run of clean games can. Nothing here is pooled
-                    across difficulty.
-
-                    The heading is the only place the level is named. Every line under
-                    it is addressed to the player, so three sentences no longer open
-                    with the same two words.
-
-                    The whole block starts hidden and stays hidden until a level has
-                    games enough to answer. A line counting up to the games it needs is
-                    the dialog talking about itself, and the record right above it
-                    already holds everything that is true before then. -->
                 <div
                     class="progress"
                     id="progressBox"
@@ -1022,9 +757,6 @@
                 >
                     <h3 class="micro">Cómo vas en <span id="progressLevel">Normal</span></h3>
                     <p class="lede" id="progressLede"></p>
-                    <!-- Three claims, three lines. Run together they were one paragraph
-                        that wrapped mid sentence, and a reader had to take the whole of it
-                        apart to find the one number they came for. -->
                     <p class="code" id="progressSpread">Típico <b id="progressMedian">0:00</b>.</p>
                     <p class="code" id="progressBand">La mayoría entre <b id="progressP25">0:00</b> y <b id="progressP75">0:00</b>.</p>
                     <p class="code" id="progressCap">Casi siempre bajo <b id="progressP90">0:00</b>.</p>
@@ -1056,12 +788,7 @@
                     </div>
                 </div>
                 <ul class="ledger" id="ledgerList"></ul>
-                <!-- Out of sight for now. The record is a page about what a player has
-                    done, and a settings line in the middle of it is neither that nor
-                    worth the room. The preference behind it is still read and still
-                    honoured, so showing this row again is the only thing that would take.
-
-                    It has a second reason to stay down: every iPhone has no vibration at
+                <!-- It has a second reason to stay down: every iPhone has no vibration at
                     all, since WebKit never shipped the API and Chrome there is WebKit
                     too, and a switch for absent hardware is worse than no switch. -->
                 <div
