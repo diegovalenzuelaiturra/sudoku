@@ -70,7 +70,7 @@ jobs:
     # with one name on every pull request and leaves it to the reader to work
     # out which of them is the analysis and which is the result.
     name: CodeQL analysis
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       # Publishes findings under Security, Code scanning. Free on public

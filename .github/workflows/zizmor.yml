@@ -60,7 +60,7 @@ jobs:
     # publishes a check run named after the tool, and two rows with one name is
     # worse than a longer name.
     name: Zizmor audit
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       # Publishes findings under Security, Code scanning. Free on public

@@ -36,7 +36,7 @@ jobs:
     # Pinned rather than ubuntu-latest, which is a label that migrates to a new
     # image over weeks: the node, browser and system packages under this suite
     # would then change without a commit here to point at.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # A hung job otherwise runs to GitHub's 360-minute default. 20 rather than
     # the previous 15, because there are two engines to download on a cold
     # cache now, and the suite runs against both.
@@ -196,7 +196,7 @@ jobs:
     # Pinned for the same reason as the Test job: ubuntu-latest moves to a new
     # image on GitHub's schedule, and the hooks below build actionlint with the
     # preinstalled Go, so the image is part of what they run.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
