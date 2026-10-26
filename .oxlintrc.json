@@ -6,6 +6,10 @@
   },
   "rules": {
     "unicorn/no-new-array": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/require-post-message-target-origin": "off",
+    "unicorn/no-array-reverse": "off",
+    "eslint/no-unmodified-loop-condition": "off",
     "eslint/no-shadow": "error",
     "eslint/require-unicode-regexp": "error",
     "eslint/no-underscore-dangle": ["error", { "allow": ["__writes", "__updates", "__persists", "__survived"] }],

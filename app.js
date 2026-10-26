@@ -1,20 +1,6 @@
-/* ============ GENERATOR CLIENT ============
-   The generator moved to generator.js and runs in a worker. What is left here
-   is the part that asks for a board and waits for it, which is the whole reason
-   the difficulty buttons no longer freeze the page.
-
-   Two paths, because a worker is not a given. Some engines refuse to construct
-   one for a file:// document, and a hardened configuration or an extension can
-   block it outright. If construction, or the request itself, fails then the
-   same file is injected as a plain script and the same makePuzzle() runs here
-   on the main thread: slower and blocking, but a game rather than an error. */
 const GENERATOR_URL = './generator.js';
-/* A board costs about 115ms in the worst case measured, so this only ever fires
-   on a worker that is gone. It has to exist: a worker can be reclaimed by the
-   browser without dispatching `error`, and a request that never settles leaves
-   the difficulty buttons and "Seguir jugando" disabled with no way out of the
-   dialog and no way back to the game underneath it. */
 const GENERATOR_TIMEOUT = 10000;
+class GeneratorRanAndFailed extends Error {}
 let genWorker = null,
   genJobs = new Map(),
   genNextId = 1,
@@ -30,16 +16,8 @@ function generatorWorker() {
       if (!job) return;
       genJobs.delete(reply.id);
       if (reply.ok) job.resolve(reply);
-      /* Marked, because the fallback below must not run for this one: the
-         worker ran and could not answer, so the same call on the main thread
-         fails the same way, after freezing the page for the whole search. */ else
-        job.reject(
-          Object.assign(new Error(reply.error || 'the generator failed'), { ranAndFailed: true }),
-        );
+      else job.reject(new GeneratorRanAndFailed(reply.error || 'the generator failed'));
     });
-    /* A worker that dies takes every request waiting on it down too, so they
-       are rejected here rather than left pending forever: the caller then falls
-       back to the main thread and the player still gets a board. */
     worker.addEventListener('error', () => {
       genWorker = false;
       for (const job of genJobs.values()) job.reject(new Error('the generator worker stopped'));
@@ -52,11 +30,6 @@ function generatorWorker() {
   return genWorker;
 }
 
-/* Pulls generator.js into the page itself, once, for the fallback path only.
-   It exports a single name onto window, which is also what keeps it from
-   colliding with anything declared here: two classic scripts declaring the same
-   global const is a SyntaxError, and this file has a `boxOf` and a `PEERS` of
-   its own. */
 function loadGeneratorScript() {
   if (genScript !== null) return genScript;
   genScript = new Promise((resolve, reject) => {
@@ -64,12 +37,6 @@ function loadGeneratorScript() {
     el.src = GENERATOR_URL;
     el.addEventListener('load', resolve);
     el.addEventListener('error', () => {
-      /* The memo is dropped along with the element, so a failure is forgotten
-         rather than cached. A rejected promise kept here made the only thing
-         the player is told to do, "Prueba de nuevo.", impossible to follow: one
-         request that lost the network took the fallback out for the life of the
-         page, and every later press answered instantly from the same rejection
-         without touching the network again. */
       el.remove();
       genScript = null;
       reject(new Error(`could not load ${GENERATOR_URL}`));
@@ -89,9 +56,6 @@ function requestPuzzle(request) {
   const id = genNextId++;
   return new Promise((resolve, reject) => {
     genJobs.set(id, { resolve, reject });
-    /* The deadline, and it also clears the job: a postMessage that throws
-       rejects this promise without ever removing what the line above put in
-       genJobs, and nothing else would. */
     setTimeout(() => {
       if (!genJobs.has(id)) return;
       genJobs.delete(id);
@@ -100,46 +64,18 @@ function requestPuzzle(request) {
     }, GENERATOR_TIMEOUT);
     worker.postMessage({ clues: request.clues, grade: request.grade, seed: request.seed, id });
   }).catch((error) => {
-    /* Only a worker that could not be reached is worth retrying here. One that
-       ran and threw is a deterministic failure: re-running it on the main
-       thread costs the player the freeze this file moved the generator off the
-       main thread to remove, and then fails anyway. */
-    if (error?.ranAndFailed) throw error;
+    if (error instanceof GeneratorRanAndFailed) throw error;
     return generateOnThisThread(request);
   });
 }
-/* ========== END GENERATOR CLIENT ========== */
 
-/* ================== UI =================== */
-/* Two prizes, two rules. Papas fritas are paid for every win, doubled by the
-   flawless bonus. Chocolates are paid only for a flawless win, so they are the
-   scarce one and the count says something the fries total cannot. */
-/* `grade` is the difficulty now, and `clues` is only where the search starts.
-   A board is graded by the hardest technique needed to finish it, so 24 clues
-   that fall to naked singles no longer get to call themselves Brígido. See
-   generator.js for the ladder.
-
-   The clue numbers are tuned starting densities, not a difficulty knob, which
-   is why Peludo starts denser than Normal: measured over 60 boards a tier, that
-   pairing lands exactly on the requested grade 100 percent of the time for
-   Piola, Normal and Brígido, and 85 percent for Peludo, whose tier is a narrow
-   band between what locked candidates alone can finish and what needs more than
-   pairs. A miss is reported as the grade it really is, never as the one that
-   was asked for. */
 const DIFF = {
   easy: { clues: 40, grade: 1, label: 'Piola', fries: 5, choco: 1 },
   medium: { clues: 28, grade: 2, label: 'Normal', fries: 10, choco: 2 },
   hard: { clues: 32, grade: 3, label: 'Peludo', fries: 15, choco: 3 },
   expert: { clues: 24, grade: 4, label: 'Brígido', fries: 25, choco: 5 },
 };
-/* Mirrors GRADE_NAMES in generator.js. Two copies rather than one import,
-   because this file is inline and that one has to run in a worker; the pair is
-   pinned together by tests/generator.test.mjs. */
 const GRADE_WORDS = { 1: 'directas', 2: 'bloques', 3: 'pares', 4: 'avanzado' };
-/* Which difficulty row a measured grade belongs to. The statistics stratify on
-   the grade a board was measured at, and the only name a player has for a tier
-   is the label on the button that starts it. Derived from DIFF rather than
-   written out again. */
 const GRADE_KEYS = {};
 for (const key of Object.keys(DIFF)) GRADE_KEYS[DIFF[key].grade] = key;
 const $ = (id) => document.getElementById(id);
@@ -160,93 +96,42 @@ let notesMode = false,
   paused = false,
   solved = false,
   playing = false;
-/* A board is minutes of reading the screen without touching it, which the
-   display timeout counts as idle: the phone dims mid puzzle. The platform lock
-   costs battery, so it is held only while the clock actually runs. Safari
-   shipped this in 16.4 and the floor here is 15.4, so a missing
+/* Safari shipped this in 16.4 and the floor here is 15.4, so a missing
    navigator.wakeLock is the ordinary case rather than a failure. */
 let wakeLock = null,
   wakeLockWanted = false,
   wakeLockPending = false;
-/* Which cells have had their answer shown. Counters stopped rewinding with the
-   undo stack, which is right for a mistake but charged twice for one revealed
-   digit: hint() leaves sel on the cell it filled and undo() does not restore
-   sel, so H, Z, H found that cell empty and editable again and spent a second
-   hint on an answer already seen. Charging is per cell, not per press.
-
-   Deliberately not persisted. Written into the save it would be read back from
-   storage the player can edit, and a planted revealed:[0..80] with hints:0 buys
-   a whole board of free hints while the flawless gate still reads zero, which is
-   the forged prize this game keeps having to close. The cost of keeping it in
-   memory is that a reload forgets, so a cell revealed and undone before the
-   reload can be charged once more. That is what every build before this one did
-   for every hint, and it is not a prize anyone can farm. */
-let revealed = new Set();
-/* What the next render() should say out loud, for actions that change no
-   counter and so would otherwise be silent. render() is the single writer of
-   #srStatus during play and the only thing that keeps srLast in step; writing
-   the element directly from an action clobbers whatever render() just put there
-   and leaves srLast claiming it was said. */
-let srAction = '';
+let revealedThisSession = new Set();
+let srAction = '',
+  srLast = { mistakes: 0, hints: 0, remaining: null };
 let undoStack = [],
   diffKey = 'medium',
   friesTotal = 0,
   chocoTotal = 0,
   winTimers = [],
   pausedByDialog = false;
-/* What the board in play actually is, as opposed to what was asked for: the
-   grade it was measured at and the seed it was built from. Both are shown to
-   the player at the end, and the seed is what makes a board reproducible. */
-let puzzleGrade = 1,
-  puzzleSeed = 0;
-/* Whether those two came from the generator or were guessed at. A save written
-   before grading existed carries neither, and the fallbacks below are a tier
-   nothing measured and a seed that rebuilds a different board, so the end of
-   game summary has to stay quiet about both rather than state them with the
-   same confidence as a board that was actually measured. */
-let puzzleMeasured = false;
+function cancelWinTimers() {
+  winTimers.forEach(clearTimeout);
+  winTimers = [];
+}
+let measuredBoard = null;
 const reduceMotion = matchMedia('(prefers-reduced-motion:reduce)');
-/* persistence: bump SAVE_VERSION and loadGame()'s shape checks together if this payload shape ever changes */
 const SAVE_KEY = 'sudoku:save',
   SAVE_VERSION = 1;
-/* The prize totals live in their own key, deliberately not in the game save:
-   winning is what pays them and winning is also what deletes the save, so a
-   total kept in there was lost on the next reload. */
 const WALLET_KEY = 'sudoku:wallet',
   WALLET_VERSION = 2;
-/* How many ledger entries are kept. The ledger is a record for a player who
-   wants to see where the prizes went, not an audit log, and localStorage is
-   both small and evictable: the oldest entry falls off the end. */
 const LEDGER_MAX = 40;
-/* Games played and won, best times and the flawless streak. Its own key again,
-   for the same reason the wallet has one: a win clears the game save. */
 const STATS_KEY = 'sudoku:stats',
   STATS_VERSION = 1;
 let ledger = [],
   stats = null;
-/* Finished games, one row each, as a bounded ring. Raw rows rather than derived
-   averages: a best time only ever moves one way, so it cannot show a decline,
-   and a stored row lets a later build compute a number nobody has asked for yet
-   without a migration. Its own key rather than a STATS_VERSION bump, because
-   readStats() answers null on any version it does not know and the next
-   saveStats() would write a blank over every player's counters.
-
-   Follows the wallet rule, not the stats rule: bytes this build cannot read are
-   left where they are. A lost streak is not a lost prize, but a game that was
-   played cannot be played again. */
 const HISTORY_KEY = 'sudoku:history',
   HISTORY_VERSION = 1;
 let games = [];
-/* What the player has switched off. Its own key for the same reason the others
-   have one, and it follows the record's rule rather than the wallet's: a
-   setting that cannot be read is a setting to ask for again, not a thing that
-   was earned. Defaults to on, because a player who has never been asked has not
-   said no. */
 const PREFS_KEY = 'sudoku:prefs',
   PREFS_VERSION = 1;
 let prefs = { buzz: true };
 
-/* ---- build DOM once ---- */
 const cells = [];
 for (let i = 0; i < 81; i++) {
   const b = document.createElement('button');
@@ -258,11 +143,6 @@ for (let i = 0; i < 81; i++) {
   n.className = 'notes';
   for (let d = 1; d <= 9; d++) n.append(document.createElement('span'));
   b.append(v, n);
-  /* The selection is part of the save, so a bare click has to persist it too:
-     without this a reload restores the selection from the last digit entry,
-     one move behind. A click is a discrete, human paced action like that digit
-     entry and a pointer cannot autorepeat, so it saves straight away with no
-     coalescing; the held-arrow path is the one that needs that. */
   b.addEventListener('click', () => {
     if (!playing || paused) return;
     sel = i;
@@ -282,40 +162,16 @@ for (let d = 1; d <= 9; d++) {
   keys.push(k);
 }
 
-/* ---- helpers ---- */
 const pad2 = (n) => String(n).padStart(2, '0');
 const fmt = (s) =>
   s < 3600
     ? `${(s / 60) | 0}:${pad2(s % 60)}`
     : `${(s / 3600) | 0}:${pad2(((s / 60) | 0) % 60)}:${pad2(s % 60)}`;
-/* The running clock, padded where every other time on the page is not. It is the
-   one that changes every second, so the minutes carrying a leading zero is what
-   stops the whole header sliding sideways as it crosses 9:59, and a stopped time
-   in a table has nothing to hold still for. */
 const clockText = (s) => (s < 3600 ? `${pad2((s / 60) | 0)}:${pad2(s % 60)}` : fmt(s));
-/* The counters used to ride along in here and be put back by undo(), which meant
-   Deshacer erased the very mistake it was undoing: the marcador rewound,
-   saveGame() persisted the rewound number, and because the flawless bonus is
-   gated on mistakes===0&&hints===0, guessing a digit and undoing it when wrong
-   paid double papas plus the chocolates a clean solve exists to reserve. That
-   was the only route to a forged prize needing nothing but the game's own
-   buttons. Hints were the cheaper one: press H, read the answer, press Z, and
-   the hint was off the record while the digit was still on screen. Undo restores
-   a board. It cannot un-see an answer or un-make a mistake, so what the player
-   did is not its to rewrite.
-
-   The cost of that is taken knowingly: a mis-tapped digit, or a stray H,
-   forfeits the bonus for the rest of the board. fixed is still snapshotted, so
-   undoing a hint unlocks the cell instead of leaving it given and holding a
-   value the player can no longer edit. */
 function snapshot() {
   undoStack.push({ values: values.slice(), fixed: fixed.slice(), notes: notes.map((s) => [...s]) });
   if (undoStack.length > 300) undoStack.shift();
 }
-/* Board geometry, needed here as well as in generator.js: this side of the wall
-   uses it to highlight the row, column and box of the selected cell, which is
-   nothing to do with generating a puzzle. Nine characters, duplicated rather
-   than shipped across the worker boundary or split into a third file. */
 const boxOf = (i) => ((((i / 9) | 0) / 3) | 0) * 3 + (((i % 9) / 3) | 0);
 function peers(i) {
   const r = (i / 9) | 0,
@@ -328,47 +184,19 @@ function peers(i) {
   }
   return out;
 }
-/* peer sets are fixed board geometry: build them once instead of on every render */
 const PEERS = Array.from({ length: 81 }, (_, i) => peers(i));
 
-/* ---- overlays ---- */
 const appEl = document.querySelector('.app');
 const controlsEl = document.querySelector('.controls');
-/* The record dialog opens on top of the start dialog, so both functions below
-   ask every overlay rather than the two they used to: closing the one in front
-   must not hand the board back while the one behind it is still up. */
 const OVERLAYS = ['startOverlay', 'winOverlay', 'recordOverlay'];
 function showOverlay(el) {
   el.classList.add('show');
   appEl.inert = true;
-  /* This focus() shows up in a trace as a ~50ms forced reflow because it
-     pulls the document's first layout of the 81-cell board into the script.
-     Three alternatives were measured against it, 20 cold loads each, fresh
-     browser context, no tracing overhead (tracing on its own inflates the
-     reflow: 5ms warm untraced, 46ms warm traced):
-       - focus() before appEl.inert: no change, reverted.
-       - focus() inside requestAnimationFrame: the reflow leaves the trace
-         entirely, 35.5ms of script time becomes 0.2ms, but first paint does
-         not move (60ms median either way) and total main thread blocking
-         barely does (35.9ms to 32.8ms median).
-       - no focus() at all, the ceiling for anything done to this line:
-         first paint still 60ms.
-     That layout is work the first paint needs, so no reordering here can
-     recover it; deferring only relabels it. Keep it synchronous, where focus
-     is guaranteed to land in the dialog even in a tab that is never given an
-     animation frame. */
-  /* An explicit target first, then the first button that can actually take
-     focus. Both halves are needed. The record dialog leads with its two redeem
-     buttons, which are the wrong thing to hand a player on opening and are
-     disabled outright when there is nothing to redeem, and a focus() on a
-     disabled button silently does nothing: focus stayed on the body and the
-     next Tab started again from the top of the page. */
-  /* The overlays are siblings of .app, not children, so inerting .app does
-     nothing to the dialog behind this one. Without this, Tab out of the record
-     dialog walks straight into the difficulty buttons of the start dialog it is
-     covering, and Enter there starts a game underneath it: hideOverlay then
-     keeps .app inert because the record is still up, so the clock runs on a
-     board the player cannot touch. */
+  /* The record dialog leads with its two redeem buttons, which are the wrong
+     thing to hand a player on opening and are disabled outright when there is
+     nothing to redeem, and a focus() on a disabled button silently does
+     nothing: focus stayed on the body and the next Tab started again from the
+     top of the page. */
   for (const id of OVERLAYS) $(id).inert = $(id) !== el;
   const first =
     el.querySelector('[data-autofocus]') ||
@@ -377,22 +205,17 @@ function showOverlay(el) {
 }
 function hideOverlay(el) {
   el.classList.remove('show');
-  /* Cleared on every overlay, because whatever was behind this one is in front
-     now. Done before the caller does anything else: closeRecord() focuses
+  /* Done before the caller does anything else: closeRecord() focuses
      #recordBtn straight after this, and focus() on an inert element silently
      does nothing. */
   for (const id of OVERLAYS) $(id).inert = false;
   if (!OVERLAYS.some((id) => $(id).classList.contains('show'))) appEl.inert = false;
 }
 
-/* Tapping beside a dialog closes it, which is the touch half of what Escape has
-   always done with a keyboard: the rule is that the two agree, so anything a
-   player cannot Escape out of cannot be tapped out of either.
-
-   Both ends of the press have to land on the backdrop. Guarding the click alone
-   closes the dialog on a drag that starts on a button and lifts off beside it,
-   because a click is dispatched to the nearest ancestor of where the press began
-   and where it ended, and for that drag the ancestor is the backdrop. */
+/* Guarding the click alone closes the dialog on a drag that starts on a button
+   and lifts off beside it, because a click is dispatched to the nearest ancestor
+   of where the press began and where it ended, and for that drag the ancestor is
+   the backdrop. */
 function dismissOnBackdrop(el, close) {
   let fromBackdrop = false;
   el.addEventListener('pointerdown', (e) => {
@@ -403,7 +226,6 @@ function dismissOnBackdrop(el, close) {
   });
 }
 
-/* ---- timer ---- */
 function startTimer() {
   clearInterval(tick);
   tick = setInterval(() => {
@@ -418,48 +240,25 @@ function setPaused(p) {
   paused = p;
   veil.classList.toggle('show', p);
   boardEl.classList.toggle('veiled', p);
-  /* pauseBtn is icon-only: swap the sprite reference rather than assigning
-     textContent, which would delete the <svg> the markup depends on. */
   $('pauseBtn')
     .querySelector('use')
     .setAttribute('href', p ? '#i-play_arrow' : '#i-pause');
   $('pauseBtn').setAttribute('aria-label', p ? 'Seguir' : 'Pausar');
-  /* .board.veiled only paints the digits transparent, which hides them from
-     sight and from nobody else: assistive tech still read every solved value
-     and Tab still walked all 81 cells while "paused". Mark the two regions
-     that leak instead - the board holds the values, the controls act on them.
-     appEl cannot be used here the way showOverlay does it, because the veil
-     lives inside .app and would disable its own resume button. */
   boardEl.inert = p;
   controlsEl.inert = p;
-  /* Pista used to be inside .controls and went quiet with it. It is in the
-     header now, which pause does not touch because the resume button lives up
-     there: without this it would reveal a cell on a board nobody can see, and
-     would still take Tab while the game is stopped. Marked on its own rather
-     than by its container, which also holds the resume button.
-
-     Nueva partida is deliberately left alone. Abandoning a paused game used to
-     mean resuming it first, and the picker acts on no board: it opens over the
-     veil, and cancelling out of it leaves the pause where it found it. */
   $('hintBtn').inert = p;
-  /* render() is what decides whether this one is offered at all, and pausing
-     does not render: without this it would keep whatever it was showing over a
-     board nobody can see. */
   $('settleBtn').inert = p;
   if (p) {
     clearInterval(tick);
     saveGame();
     $('resumeBtn').focus();
-  } /* capture `seconds` the moment play stops, not at the last digit */ else {
+  } else {
     startTimer();
     if (wasShown) $('pauseBtn').focus();
   }
   syncWakeLock();
 }
 
-/* Idempotent, and the live flags are the only truth: setPaused is called
-   repeatedly with the same value, and the request below spans a task boundary
-   the player can pause, win or background the tab across. */
 function syncWakeLock() {
   if (!navigator.wakeLock?.request) return;
   wakeLockWanted = playing && !paused && !solved && !document.hidden;
@@ -470,9 +269,6 @@ function syncWakeLock() {
     return;
   }
   if (wakeLock || wakeLockPending) return;
-  /* Flagged before the request goes out: pausing and resuming faster than one
-     round trip would otherwise ask twice and leak the first sentinel, which
-     nothing afterwards holds a reference to and so nothing can release. */
   wakeLockPending = true;
   navigator.wakeLock
     .request('screen')
@@ -484,68 +280,37 @@ function syncWakeLock() {
       }
       wakeLock = sentinel;
       /* The platform revokes this on its own for low battery and power save,
-         and a released sentinel cannot be reused. Dropping the reference is
-         what lets a later call ask for a fresh one, and saveGame() is what
-         makes that call arrive: the other three callers are a pause, a win and
-         a backgrounded tab, so a player who solves a board without pausing
-         would otherwise finish it with the display timeout back. */
+         and a released sentinel cannot be reused. */
       sentinel.addEventListener('release', () => {
         if (wakeLock === sentinel) wakeLock = null;
       });
     })
     /* NotAllowedError is the only name this rejects with, and it covers a
        hidden document, a blocking permissions policy and a battery the platform
-       will not spend: nothing a player can act on. Swallowed rather than logged,
-       because an unhandled rejection is a console error and the browser suite
-       fails the run on one. */
+       will not spend: nothing a player can act on. */
     .catch(() => {
       wakeLockPending = false;
     });
 }
 
-/* ---- game flow ----
-   Generating is asynchronous now, so starting a game is two halves: ask for a
-   board and wait, then lay it out. Only the waiting half can fail, and only the
-   laying out half touches game state, which keeps a failed request from leaving
-   a half started game behind. */
 let generating = false;
 
-/* Disables the difficulty buttons and says what is happening: they are
-   genuinely unavailable while a board is being built. */
 function setGenerating(busy) {
   generating = busy;
-  /* Emptied on the way out and written on the way in, so a failure message from
-     the previous attempt is cleared exactly when a new one starts, and so the
-     live region is never carrying text it entered the tree with. */
   $('genStatus').textContent = busy ? 'Generando tablero...' : '';
   document.querySelectorAll('.diff').forEach((b) => {
     b.disabled = busy;
   });
   $('cancelNew').disabled = busy;
-  /* The record button lives in this dialog too. Left alive, it opens the record
-     over a picker that is about to be replaced: the board then arrives and
-     startGame lays it out underneath, where hideOverlay keeps .app inert
-     because the record is still up, and the clock runs on a board nobody can
-     reach. */
   $('recordBtn').disabled = busy;
 }
 
 async function newGame(key) {
-  /* A second click while the first board is still being built would start two
-     games and lay out whichever came back last. */
   if (generating) return;
-  /* Killed here rather than in startGame, which is where they used to die when
-     this function was synchronous and the click cleared them before returning.
-     Waiting for a board is a window they would otherwise survive: the win
-     dialog's own timer would open it on top of the difficulty picker, taking
-     focus with it, while the next board is still being built. */
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
+  cancelWinTimers();
   setGenerating(true);
   let made;
   try {
-    /* A fresh seed per game, and the whole board is a pure function of it, so
-       quoting the code back rebuilds exactly this puzzle. */
     const seed = (Math.random() * 4294967296) >>> 0;
     made = await requestPuzzle({ clues: DIFF[key].clues, grade: DIFF[key].grade, seed });
   } catch {
@@ -553,40 +318,22 @@ async function newGame(key) {
   }
   setGenerating(false);
   if (made === null) {
-    /* Both paths to a board failed, which leaves nothing to play. Said where
-       the difficulty buttons are, rather than failing silently or throwing
-       inside a click handler where nothing would report it.
-
-       Written after setGenerating(false) and not before: that call empties this
-       element, so a message set first was cleared before anyone could read it.
-       Written into a region that has been in the accessibility tree the whole
-       time, which is what makes it a change a screen reader announces. */
     $('genStatus').textContent = 'No se pudo armar el tablero. Prueba de nuevo.';
     return;
   }
-  /* Outside the try: a failure to lay out a board that did arrive is a bug in
-     this file, not a generator that could not answer, and swallowing it here
-     would report it to the player as the latter. */
   startGame(key, made);
 }
 
 function startGame(key, made) {
   diffKey = key;
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
+  cancelWinTimers();
   document.querySelectorAll('.drop').forEach((f) => {
     f.remove();
   });
   const generated = made.puzzle;
   puzzle = generated;
   solution = made.solution;
-  /* What the board turned out to be, which is not always what was asked for:
-     the Peludo tier is narrow and the search lands beside it about one time in
-     seven. Recording the measured grade rather than DIFF[key].grade is what
-     keeps the end of game summary honest. */
-  puzzleGrade = made.grade;
-  puzzleSeed = made.seed;
-  puzzleMeasured = true;
+  measuredBoard = { grade: made.grade, seed: made.seed };
   recordPlayed(key);
   values = generated.slice();
   fixed = generated.map((v) => v !== 0);
@@ -598,13 +345,9 @@ function startGame(key, made) {
   solved = false;
   playing = true;
   pausedByDialog = false;
-  revealed = new Set();
+  revealedThisSession = new Set();
   sel = values.indexOf(0);
   setNotes(false);
-  /* The win paints the chips on a timer, and every win timer was cleared at the
-     top of this function. Starting the next puzzle during the payout animation
-     would otherwise leave both totals reading what they said before the prize
-     was banked, until something else repainted them or the page reloaded. */
   paintWallet();
   $('diffLabel').textContent = DIFF[key].label;
   $('time').textContent = '00:00';
@@ -613,48 +356,13 @@ function startGame(key, made) {
   $('srAlert').textContent = '';
   hideOverlay($('startOverlay'));
   hideOverlay($('winOverlay'));
-  /* Not setPaused(false): laying the board out is no longer the same task as
-     the click that asked for it, so the tab can be in the background by the
-     time it happens. visibilitychange fired while `playing` was still false and
-     setPaused returned early, so an unconditional false started the clock on a
-     board nobody was looking at, and the minutes went into the best time. */
-  setPaused(
-    document.hidden,
-  ); /* resets veil, pause glyph + aria-label, and starts or holds the timer */
-  /* a fresh puzzle starts from zero: don't let the tracker read it as progress */
+  setPaused(document.hidden);
   srLast = { mistakes: 0, hints: 0, remaining: null };
   render();
-  clearSavedGame(); /* a freshly generated puzzle invalidates whatever was saved before */
-  saveGame(); /* persist right away: a refresh before the first move must still resume this puzzle, not the previous one */
+  clearSavedGame();
+  saveGame();
 }
 
-/* ---- persistence ----
-   saveGame() is called from every discrete player action (digit entry, erase,
-   undo, hint, confirming settled cells, pause, and selecting a cell with the
-   pointer) rather than on a timer: those are human-paced clicks and keypresses,
-   and the payload (a handful of 81-length arrays) is small enough that writing
-   it synchronously on each one is cheap. The single exception is the arrow key
-   path, which autorepeats while a key is held: it coalesces through
-   saveSelectionSoon() below and writes once the burst stops. The
-   `!playing||solved` guard below makes saveGame() safe to call
-   unconditionally, including right after win() flips `solved`. */
-/* The counters are re-read from storage before every write, for the same reason
-   bankPrize() consults the wallet key again rather than trusting what this tab
-   read at boot. Two tabs on one board used to lose whichever one wrote last: the
-   storage listener adopts STATS_KEY and WALLET_KEY but falls through on
-   SAVE_KEY, so this tab could sit on mistakes 0 while the other had counted
-   three, and the next keystroke here overwrote them with 0. Since the flawless
-   bonus is gated on mistakes===0&&hints===0, that paid a forged prize with two
-   tabs open and no storage editing at all, which is cheaper than the edited save
-   the clamp in loadGame() closes.
-
-   Both counters only ever rise within a game, so the higher of the two is the
-   true count. Adopted into the live variables and not merely into the bytes,
-   because the gate reads the variables: saveGame() runs before win() evaluates
-   it, on the same keystroke that completes the board. Guarded to a save of this
-   same puzzle, since a save of another board says nothing about this one. The
-   marcador catches up on the next render rather than this instant, which is one
-   action of lag on a number that was wrong until now. */
 function adoptCounters() {
   let s;
   try {
@@ -669,11 +377,6 @@ function adoptCounters() {
 }
 function saveGame() {
   if (!playing || solved) return;
-  /* Re-arms the screen lock the platform is allowed to take back mid board.
-     Driven by a player action rather than by the sentinel's own release event,
-     which would spin against a platform that revokes as fast as it grants.
-     Costs nothing while the lock is held: syncWakeLock() returns at its first
-     branch. */
   syncWakeLock();
   adoptCounters();
   try {
@@ -692,34 +395,11 @@ function saveGame() {
         seconds,
         diffKey,
         solved,
-        /* Neither needs a SAVE_VERSION bump. loadGame() reads them through the
-         same defensive path as every other scalar and falls back to the
-         difficulty's own grade, so a save written before they existed still
-         restores instead of being thrown away.
-
-         Written only when the board was actually measured, which is the whole
-         point of puzzleMeasured. Writing them unconditionally laundered the
-         placeholders into facts: resuming a save from before seeding gave
-         puzzleSeed 0 and puzzleMeasured false, correctly hiding the code, and
-         then the first move wrote seed 0 and the fallback grade straight back
-         out. The next session read that 0, and Number.isInteger(0) && 0 >= 0 is
-         true, so the board came back "measured" and the win screen offered
-         Código: 0, a code that rebuilds a different puzzle. Reported from a
-         real save. Omitting the keys leaves the save saying what it knows. */
-        ...(puzzleMeasured ? { grade: puzzleGrade, seed: puzzleSeed } : {}),
+        ...measuredBoard,
       }),
     );
-  } catch {
-    /* Safari private mode throws on setItem, quota can be exceeded, etc: losing the autosave is fine, losing the game isn't */
-  }
+  } catch {}
 }
-/* Selection is the one player action that can autorepeat: a held arrow key
-   fires dozens of times a second, and each save serialises 81 note Sets. The
-   arrow path therefore coalesces and writes once the burst stops. Clicks
-   cannot repeat, so the board's click handler still saves immediately. The
-   pending write re-reads the live globals and goes through saveGame(), whose
-   !playing||solved guard makes a late timer a no-op rather than a resurrected
-   save. */
 let selSaveTimer = null;
 function saveSelectionSoon() {
   clearTimeout(selSaveTimer);
@@ -733,31 +413,14 @@ function clearSavedGame() {
     localStorage.removeItem(SAVE_KEY);
   } catch {}
 }
-/* ---- prizes ----
-   The totals live in a key of their own rather than in the game save. That
-   save used to carry friesTotal, but win() is both what pays a prize and what
-   calls clearSavedGame(), so the total survived only as long as the tab did:
-   reloading after a win put it back to zero.
-
-   Dropping the field needs no SAVE_VERSION bump. loadGame() checks the grids,
-   the notes array and diffKey, never friesTotal, and reads every scalar
-   through Number(x)||0, so a save written before this change still restores.
-   Bumping would have been the expensive choice: an unrecognised version is
-   rejected outright, which would have thrown away every game in progress. */
 function saveWallet() {
   try {
     localStorage.setItem(
       WALLET_KEY,
       JSON.stringify({ v: WALLET_VERSION, fries: friesTotal, choco: chocoTotal, ledger }),
     );
-  } catch {
-    /* as with the autosave: a wallet that cannot be written is not worth failing a win over */
-  }
+  } catch {}
 }
-/* The bytes under the key, or null when there are none and when storage itself
-   is gone. Split out of readWallet() because the two answers it folds together,
-   "nothing is stored" and "something is stored that this build cannot read",
-   have to be told apart before anything is written back. */
 function walletRaw() {
   try {
     return localStorage.getItem(WALLET_KEY);
@@ -765,23 +428,10 @@ function walletRaw() {
     return null;
   }
 }
-/* One rule for every total that arrives from outside this tab, whether from the
-   wallet key or from the save it migrates once: a whole number this build can
-   still add to, or nothing.
-
-   The ceiling is not decoration. Beyond MAX_SAFE_INTEGER addition stops being
-   exact, so a stored 1e308 makes friesTotal+fries a no-op and every win from
-   then on visibly pays nothing. Infinity is worse: it renders as "Infinity",
-   JSON.stringify writes it as null, and the next read turns that null into 0,
-   which is the whole wallet gone by the route this code exists to close. */
 function count(x) {
   const n = Math.floor(Number(x));
   return Number.isFinite(n) && n > 0 && n <= Number.MAX_SAFE_INTEGER ? n : 0;
 }
-/* One ledger entry, or null. Same rule as the totals: anything this build cannot
-   make sense of is dropped rather than guessed at, and a dropped entry costs a
-   line of history rather than the wallet it is attached to. `k` is 'win' or
-   'redeem', `f` and `c` are signed deltas, `t` is when it happened. */
 function readEntry(e) {
   if (!e || typeof e !== 'object') return null;
   if (e.k !== 'win' && e.k !== 'redeem') return null;
@@ -792,15 +442,6 @@ function readEntry(e) {
   const d = typeof e.d === 'string' && Object.hasOwn(DIFF, e.d) ? e.d : '';
   return { t, k: e.k, f, c, d };
 }
-/* The stored totals and history, or null if there is nothing readable and
-   current there. Separate from loadWallet() because banking a prize has to
-   consult the key again rather than trust what this tab read at boot.
-
-   Version 1 is read rather than rejected. It is the same two totals with no
-   ledger, so it migrates by adopting them and starting the history empty, and
-   rejecting it instead would have zeroed the wallet of every player who had one
-   the moment this build shipped. A version this build has never heard of is
-   still refused, which is the case that rule exists for. */
 function readWallet(raw = walletRaw()) {
   if (raw === null) return null;
   let w;
@@ -814,55 +455,29 @@ function readWallet(raw = walletRaw()) {
   const entries = Array.isArray(w.ledger) ? w.ledger.map(readEntry).filter((e) => e !== null) : [];
   return { fries: count(w.fries), choco: count(w.choco), ledger: entries.slice(-LEDGER_MAX) };
 }
-/* Appends to the history that is about to be written, oldest off the end. */
 function logEntry(base, entry) {
   return base.concat([entry]).slice(-LEDGER_MAX);
 }
-/* Adds a prize to the wallet, against what is stored rather than against what
-   this tab happens to hold. The player can have the game open twice: the other
-   tab read its totals at boot, and if this one wrote its own over the top, every
-   prize won over there would vanish. Measured before this existed: two flawless
-   wins in two tabs, 20 papas then 50, left 50 stored instead of 70.
-
-   Falling back to the in-memory totals keeps a tab whose storage has died (or
-   was cleared mid-game) counting its own prizes for as long as it lives. */
 function bankPrize(fries, choco) {
   const raw = walletRaw();
   const stored = readWallet(raw);
   const base = stored || { fries: friesTotal, choco: chocoTotal, ledger };
   friesTotal = base.fries + fries;
   chocoTotal = base.choco + choco;
-  /* Appended to the stored history, not to this tab's copy, for exactly the
-     reason the totals are: the other tab's wins are in there. */
   ledger = logEntry(base.ledger, { t: Date.now(), k: 'win', f: fries, c: choco, d: diffKey });
-  /* Written only when the key is empty or this build could read it. Bytes it
-     could not read belong to another build, most likely a newer one the player
-     still has cached, and loadWallet() already refuses to zero those: saving
-     here regardless would undo that on the first win, putting this tab's total
-     plus the prize over a record it never read. The chips still count either
-     way, because a tab that cannot write is still allowed to keep score. */
   if (stored || raw === null) saveWallet();
 }
 function paintWallet() {
   $('fries').textContent = friesTotal;
   $('chocos').textContent = chocoTotal;
 }
-/* One rule for the chocolate plural, because the win announcement and the
-   ledger line describe the same event and used to disagree: a flawless Piola
-   pays one chocolate, announced as "1 chocolate" and written down in the
-   history as "+1 chocolates". */
 const chocoWord = (n) => `${n} chocolate${Math.abs(n) === 1 ? '' : 's'}`;
-/* One prize on a ledger line: the emoji, then the count with its sign kept, so
-   a spend reads as a spend without a word for it. */
 function chipSpan(emoji, n) {
   const span = document.createElement('span');
   span.className = 'chip';
   span.textContent = `${emoji} ${n > 0 ? '+' : ''}${n}`;
   return span;
 }
-/* One ledger line as a sentence. Words rather than the emoji the chips use:
-   this is a history somebody reads, and an emoji is nothing at all to a screen
-   reader without a label beside it. */
 function describeEntry(e) {
   const bits = [];
   if (e.f) bits.push(`${e.f > 0 ? '+' : ''}${e.f} papas`);
@@ -871,20 +486,6 @@ function describeEntry(e) {
   if (e.k === 'redeem') return `${what} canjeadas`;
   return `${what}${e.d ? ` en ${DIFF[e.d].label}` : ''}`;
 }
-/* One sentence for how the last level played is going, addressed to the player
-   and never naming the level: the heading over the block names it once, and
-   repeating it in every line made three sentences that all opened the same way.
-
-   Improvement is stated plainly and carries its number. A slower run carries no
-   number at all, which is not a rounding of the truth but a choice about which
-   of the two is a verdict: there is no leaderboard here, a plateau is what a
-   practice curve does, and the largest figure in the interface should not be
-   the one attached to the only bad news.
-
-   Only ever called with a level that has games enough to answer. A block that
-   counts up to the games it needs is bookkeeping about itself and says nothing
-   about the player, so paintRecord hides the whole thing until there is a
-   number in it. */
 function progressLine(here) {
   if (here.verdict === 'few') return 'Todavía no se nota si el ritmo cambió.';
   if (here.verdict === 'better') return `Vas ${here.pct}% más rápido.`;
@@ -893,21 +494,10 @@ function progressLine(here) {
     return `Volviste después de ${here.layoffDays} días. El ritmo se acomoda solo.`;
   return 'Vas parejo.';
 }
-/* The run of flawless games at this level, or nothing. Zero is not a sentence
-   worth writing: a player who just made one mistake does not need to be told
-   they are on a run of none. */
 function cleanRunLine(run) {
   if (run === 1) return 'La última te salió sin errores ni pistas.';
   return `Llevas ${run} partidas seguidas sin errores ni pistas.`;
 }
-/* Everything the record dialog shows, rebuilt from `stats` and the wallet. Also
-   called when another tab writes either, so the numbers behind a closed dialog
-   are never stale by the time it opens.
-
-   Built with createElement and textContent throughout rather than innerHTML.
-   Unlike the win banner, which interpolates numbers from a fixed table, some of
-   this comes back out of localStorage, which anything running on this origin
-   can write. */
 function paintRecord() {
   const rows = $('recordRows');
   rows.textContent = '';
@@ -918,14 +508,6 @@ function paintRecord() {
     played += row.played;
     won += row.won;
     const tr = document.createElement('tr');
-    /* The best time is left blank rather than filled with a placeholder when
-       nothing has been won: the zero in the column beside it already says why.
-       Driven by the win count, not by the time, so a win clocked at zero is
-       still a time rather than a blank. */
-    /* No marker on the best time. A trophy beside the number said the record
-       was set in this session, which is a fact about the tab rather than about
-       the player, and it read as though the time itself were a trophy. The win
-       dialog is where a record is announced, and it is announced once. */
     for (const text of [
       DIFF[key].label,
       String(row.played),
@@ -938,18 +520,6 @@ function paintRecord() {
     }
     rows.append(tr);
   }
-  /* Wins as well as games, because only a game started on this build is counted
-     as played: a player who resumed a game from before the record existed and
-     won it was shown "Sin partidas todavía." beside a row reading one win and a
-     real best time. */
-  /* Two counts, each with the word that says what it is, and the sentence for a
-     screen reader only. Emoji are decorative to assistive tech, so dropping the
-     words from the markup would have dropped them from the accessibility tree
-     as well: the hidden span is what keeps the line meaning anything without
-     sight of it.
-
-     Before the first game there is no count worth showing, so the sentence is
-     the visible content in that one case and the counts stay hidden. */
   const noGames = played === 0 && won === 0;
   $('streakNow').textContent = stats.streak;
   $('streakNowWord').textContent = stats.streak === 1 ? 'seguida' : 'seguidas';
@@ -960,25 +530,11 @@ function paintRecord() {
     ? 'Sin partidas todavía.'
     : `Racha de secas: ${stats.streak}. La mejor: ${stats.bestStreak}.`;
 
-  /* The trend, at the level the last measured board was actually graded at.
-     One level rather than four: the sentence is only true of one of them, and
-     four rows of medians and bands do not fit 292px of dialog. Times are never
-     pooled across difficulty, because a player improving inside every level
-     while drifting toward harder boards shows a rising pooled average.
-
-     Everything here is derived from storage anything on this origin can write,
-     so all of it goes through textContent into holes the markup owns. */
   const view = SudokuStats.report(games);
   const here = view.top ? view.grades[view.top] : null;
-  /* The whole block goes, heading included, until there is a number to put in
-     it. A player who has finished one board is told nothing by a line counting
-     up to the five it takes to say something, and the record above already
-     holds everything that is true at that point. */
   const enough = here !== null && here.median !== null;
   $('progressBox').hidden = !enough;
   if (enough) {
-    /* The one place the level is named. Every sentence under it is written to
-       the player instead, so the block reads as one thought about one level. */
     $('progressLevel').textContent = DIFF[GRADE_KEYS[view.top]].label;
     $('progressLede').textContent = progressLine(here);
     $('progressMedian').textContent = fmt(here.median);
@@ -988,10 +544,6 @@ function paintRecord() {
     $('progressClean').hidden = here.run === 0;
     if (here.run > 0) $('progressClean').textContent = cleanRunLine(here.run);
   }
-  /* Nested inside the offer's own gate rather than the block's: the invitation
-     needs twelve games at a level and the block needs five, so an offer without
-     a block around it cannot happen. The level it leaves behind is the one in
-     the heading, so only the one being offered is named. */
   $('progressOffer').hidden = view.offer === null;
   if (view.offer) {
     $('progressOffer').textContent =
@@ -1005,23 +557,9 @@ function paintRecord() {
 
   const list = $('ledgerList');
   list.textContent = '';
-  /* Newest first, which is the order somebody checking what just happened
-     wants, and the opposite of the order it is stored in. */
   for (const e of ledger.slice().reverse()) {
     const li = document.createElement('li');
     const what = document.createElement('span');
-    /* Emoji and a signed count, no words. The sign is what separates a prize
-       won from one spent, which is what "canjeadas" used to say.
-
-       The difficulty is not shown. It was dots for a while, one per grade, and
-       the first question anyone asked was what they meant: a mark that has to
-       be explained is not iconography, it is a cipher with no key on screen.
-       describeEntry() still names the tier, so it is not lost, it is only
-       unspoken to the eye.
-
-       That sentence is still what a screen reader gets, because none of this
-       carries to one. The visible half is aria-hidden so the line is not read
-       twice. */
     const glyphs = document.createElement('span');
     glyphs.setAttribute('aria-hidden', 'true');
     if (e.f) glyphs.append(chipSpan('🍟', e.f));
@@ -1035,11 +573,6 @@ function paintRecord() {
     /* A timestamp out of Date's range is still a finite number, so this is
        checked rather than trusted: an invalid date renders as "Invalid Date". */
     if (!Number.isNaN(at.getTime())) {
-      /* Both halves from the same local calendar day. toISOString() is UTC, so
-         a prize won after eight in the evening in Chile carried a dateTime one
-         day ahead of the day printed beside it. The year is in the dateTime and
-         not in the text, which is where a forty entry history spanning a new
-         year would otherwise show two indistinguishable "5/1" lines. */
       when.dateTime = `${at.getFullYear()}-${pad2(at.getMonth() + 1)}-${pad2(at.getDate())}`;
       when.textContent = `${at.getDate()}/${at.getMonth() + 1}`;
     }
@@ -1047,34 +580,14 @@ function paintRecord() {
     list.append(li);
   }
 }
-/* The one place the mode is set, so the four things that have to agree about it
-   cannot drift: the flag the digit entry reads, the two radios, and the keypad
-   itself. The keypad is in there because the control is a row below the eye
-   line of somebody looking at the board, and a mode you have to remember is a
-   mode that writes answers where notes were meant.
-
-   Nothing here changes the height of anything. The description of the mode used
-   to be revealed on screen when it came on, which pushed the keypad down 33px:
-   the keys moved under the thumb at the exact moment the player was about to
-   use them. The column has no room to hold that line open either, so it stays
-   where the reader who needs it can still reach it and out of the layout. */
 function setNotes(on) {
   notesMode = on;
   $('penBtn').setAttribute('aria-checked', String(!on));
   $('notesBtn').setAttribute('aria-checked', String(on));
-  /* Only the checked radio is tabbable, which is what a radiogroup does: one
-     stop for the group, and the arrows move within it. */
   $('penBtn').tabIndex = on ? -1 : 0;
   $('notesBtn').tabIndex = on ? 0 : -1;
   padEl.classList.toggle('noting', on);
 }
-/* The pencil marks a cell is carrying, as the tail of its label, or nothing.
-   Without this a cell announced itself as empty while showing the player their
-   own candidates: the marks are painted into spans the label does not gather,
-   so the one reader with nothing else to go on was told the cell held nothing.
-
-   Ascending, and joined the way the marks are read rather than the way a list
-   is punctuated: "notas 3, 6 y 9". */
 function noteList(set) {
   if (set.size === 0) return '';
   const marks = [];
@@ -1090,33 +603,13 @@ function popChip(id) {
   void chip.offsetWidth;
   chip.classList.add('pop');
 }
-/* Hands a prize over and writes it down. The wallet was a total that only ever
-   went up, with nothing to spend it on: the papas and the chocolates are things
-   somebody actually pays out, and until this existed the game had no way to say
-   that had happened. Redeeming clears the balance of one prize and leaves a
-   ledger line behind, so the history says what was won and what was collected.
-
-   The whole balance rather than a chosen amount, because that is the act being
-   recorded: the prizes were handed over. Read from storage first and written
-   back under the same two rules bankPrize() follows, so a second tab's wins are
-   never redeemed away and a wallet this build cannot read is never overwritten.
-   Returns what was actually redeemed, which is what the caller announces. */
 function redeem(kind) {
   const raw = walletRaw();
   const stored = readWallet(raw);
-  /* Bytes this build cannot read belong to another build, most likely a newer
-     one the player still has cached, and saveWallet() would write over them.
-     bankPrize() carries on in memory when that happens because a credit that is
-     not written down is only a credit lost. Here the writing down is the whole
-     act: emptying the balance in memory and announcing the payout would tell
-     the player their prizes had been handed over, and the next reload would put
-     them all back. Refused instead, and said so. */
   if (stored === null && raw !== null) return null;
   const base = stored || { fries: friesTotal, choco: chocoTotal, ledger };
   const choco = kind === 'choco';
   const amount = choco ? base.choco : base.fries;
-  /* Adopt what was stored either way: this tab may have been looking at a
-     number another tab has already moved on from. */
   friesTotal = base.fries;
   chocoTotal = base.choco;
   ledger = base.ledger;
@@ -1130,26 +623,15 @@ function redeem(kind) {
     c: choco ? -amount : 0,
     d: '',
   });
-  /* Unconditional now: the one case this used to guard against returns null
-     above, so anything reaching here is a wallet that was written. */
   saveWallet();
   return amount;
 }
 
-/* ---- record ----
-   Wins, best times and the flawless streak. Its own key, for the reason the
-   wallet has one: winning is what clears the game save, so anything kept in
-   there is deleted moments after it is earned. */
 function blankStats() {
   const rows = {};
   for (const key of Object.keys(DIFF)) rows[key] = { played: 0, won: 0, best: 0 };
   return { v: STATS_VERSION, d: rows, streak: 0, bestStreak: 0 };
 }
-/* Every number arrives through count(), so a hand edited or truncated file
-   degrades to zeroes rather than to NaN, which would render as "NaN" and be
-   written straight back. An unknown version starts over: unlike the wallet
-   there is nothing here worth refusing to overwrite, since a lost streak is not
-   a lost prize. */
 function readStats() {
   let raw;
   try {
@@ -1170,14 +652,6 @@ function readStats() {
   for (const key of Object.keys(blank.d)) {
     const row = rows[key] && typeof rows[key] === 'object' ? rows[key] : {};
     const won = count(row.won);
-    /* Never fewer games played than won, the same way bestStreak below is never
-       less than the streak. Games played are only counted by startGame, which
-       the previous build did not do at all, so every record carried over from it
-       reads zero played beside real wins, and one that says you won more than
-       you played is arithmetic nobody believes: it costs the best times beside
-       it their credibility too. Raising played to won cannot overstate
-       anything, since a win is a game played by definition, and a row this
-       build wrote is already past it. */
     blank.d[key] = { played: Math.max(count(row.played), won), won, best: count(row.best) };
   }
   blank.streak = count(s.streak);
@@ -1187,20 +661,11 @@ function readStats() {
 function saveStats() {
   try {
     localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  } catch {
-    /* a lost record is not worth failing a game over */
-  }
+  } catch {}
 }
 function loadStats() {
   stats = readStats() || blankStats();
 }
-/* Read back before every write, for the reason bankPrize() does it: saveStats()
-   serialises the whole object, so a tab that mutates the copy it read at boot
-   overwrites every game the other tab has finished since. Measured on the
-   wallet before it did this, two tabs, 20 papas then 50, left 50 stored instead
-   of 70; the record had the storage listener but neither write side of that
-   fix. Anything unreadable leaves this tab counting into what it already had,
-   which is the same fallback readStats() already applies at boot. */
 function freshStats() {
   return readStats() || stats;
 }
@@ -1209,49 +674,20 @@ function recordPlayed(key) {
   stats.d[key].played++;
   saveStats();
 }
-/* The streak counts flawless wins in a row. A plain win streak would say
-   nothing here: there is no way to lose, so every game that ends, ends in a
-   win, and the streak would just be the number of wins over again. */
-/* Which runs are worth interrupting a win for. Once a player is on their
-   longest run ever, every game after it extends the record again, so a shower
-   on each one turns the rarest celebration in the game into the most frequent:
-   ten in a row rained nine times. The third is the first run worth the name,
-   and after that every fifth. The best streak itself still moves on every one
-   of them, and every clean win says where the run stands; this decides only
-   which of them calls it a record and rains for it. */
 const streakMilestone = (run) => run === 3 || (run >= 5 && run % 5 === 0);
-/* What a clean win says about the run it just extended, and it says it every
-   time. The counter lives in the record dialog, which is behind the start
-   screen or the pause veil: a win that moved it silently left the player no
-   sign it had been counted, and a run counted where nobody is looking reads as
-   a run that was lost. Only a milestone claims a record, and only a record
-   rains. */
 const streakSaid = (run, record) =>
   record
     ? `¡Tu mejor racha: ${run} secas seguidas!`
     : run === 1
       ? 'Va 1 seca.'
       : `Van ${run} secas seguidas.`;
-/* Returns the two records this win could have broken, which is the only place
-   either comparison can be made safely: done outside, both have to run before
-   this function moves the counts, and moving the call one line later silently
-   turned every first win into a personal best against nothing. */
 function recordWin(key, time, flawless) {
   stats = freshStats();
   const row = stats.d[key];
-  /* Read before the count moves, and asked of the count rather than of the time
-     itself. A zero here means "never won", and a best time of zero is a real if
-     unlikely value, so testing `row.best===0` treated an instant win as no win
-     and left the column blank forever after. */
   const first = row.won === 0;
   const beat = !first && time < row.best;
   row.won++;
   if (first || time < row.best) row.best = time;
-  /* Read before the streak moves, for the same reason. A best of zero is a
-     player who has never strung two together, and the first flawless win of all
-     takes it from 0 to 1: that is a record against nothing, exactly like a
-     first win's time, and announcing it would spend the celebration on the
-     cheapest event in the game. */
   const held = stats.bestStreak;
   stats.streak = flawless ? stats.streak + 1 : 0;
   if (stats.streak > stats.bestStreak) stats.bestStreak = stats.streak;
@@ -1262,7 +698,6 @@ function recordWin(key, time, flawless) {
   };
 }
 
-/* ---- what the player switched off ---- */
 function readPrefs() {
   let raw;
   try {
@@ -1278,56 +713,32 @@ function readPrefs() {
     return null;
   }
   if (!p || typeof p !== 'object' || p.v !== PREFS_VERSION) return null;
-  /* Only an explicit false turns it off. Anything else stored under the flag,
-     including a version of this build that never wrote one, is a player who has
-     not said no. */
   return { buzz: p.buzz !== false };
 }
 function savePrefs() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({ v: PREFS_VERSION, buzz: prefs.buzz }));
-  } catch {
-    /* a setting that cannot be written is not worth failing a game over */
-  }
+  } catch {}
 }
 function loadPrefs() {
   prefs = readPrefs() || { buzz: true };
 }
-/* A short double knock, and only for a mistake. It is the one event where the
-   answer arrives at the finger before the eye: the error is drawn in the cell
-   and counted in a bar the player is not looking at while their thumb is on the
-   keypad. Everything else the game does is already on screen where they are
-   looking, and a buzz on every digit is fifty of them a board.
-
-   Behind the same reduced motion gate as the prize rain: a player who asked for
-   no movement did not mean only the movement they can see. Missing on iPhone
-   entirely, where WebKit has never shipped the Vibration API, and Chrome there
-   is WebKit too, so the detection is the ordinary case and not a failure. */
+/* Missing on iPhone entirely, where WebKit has never shipped the Vibration
+   API, and Chrome there is WebKit too, so the detection is the ordinary case
+   and not a failure. */
 const MISTAKE_BUZZ = [40, 30, 40];
 function buzz(pattern) {
   if (!prefs.buzz || reduceMotion.matches || typeof navigator.vibrate !== 'function') return;
   try {
     navigator.vibrate(pattern);
-  } catch {
-    /* a refused buzz is not worth losing the move it belonged to */
-  }
+  } catch {}
 }
 
-/* ---- the games themselves ----
-   One row per finished board, so a statistic can be worked out at read time
-   from what actually happened. The field names are one letter because a
-   hundred and twenty rows are stored at once. */
 function saveHistory() {
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify({ v: HISTORY_VERSION, games }));
-  } catch {
-    /* as with the autosave: a history that cannot be written is not worth failing a win over */
-  }
+  } catch {}
 }
-/* The bytes under the key, or null when there are none and when storage itself
-   is gone. Separate from readHistory() so recordGame() can tell an empty key
-   from bytes this build refused, which is the difference between writing and
-   leaving them where they are. */
 function historyRaw() {
   try {
     return localStorage.getItem(HISTORY_KEY);
@@ -1335,11 +746,6 @@ function historyRaw() {
     return null;
   }
 }
-/* The stored rows, or null when there is nothing readable and current under the
-   key. Refuses a version this build has never heard of and leaves those bytes
-   alone, which is the wallet's rule: a game that was played cannot be played
-   again. Every field is clamped inside SudokuStats.readRows, since all of it
-   comes back from storage the player can edit. */
 function readHistory(raw = historyRaw()) {
   if (raw === null) return null;
   let h;
@@ -1351,13 +757,9 @@ function readHistory(raw = historyRaw()) {
   if (!h || typeof h !== 'object' || h.v !== HISTORY_VERSION) return null;
   return SudokuStats.readRows(h.games, Object.keys(DIFF));
 }
-/* Appends to the ring that is about to be written, oldest off the end. */
 function logGame(base, row) {
   return base.concat([row]).slice(-SudokuStats.HISTORY_MAX);
 }
-/* Writes the finished board down against what is stored, for the reason
-   bankPrize() reads the wallet back before adding to it: the other tab's games
-   are in there and a blind write erases them. */
 function recordGame(time, mist, used) {
   const raw = historyRaw();
   const stored = readHistory(raw);
@@ -1367,34 +769,20 @@ function recordGame(time, mist, used) {
     s: time,
     m: mist,
     h: used,
-    /* The grade the board was measured at, or 0 for a board this build never
-       measured: a game resumed from a save written before grading exists as a
-       game played, and filing it under the tier its difficulty asks for would
-       put a guess in the denominator the statistics stratify on. */
-    g: puzzleMeasured ? puzzleGrade : 0,
+    g: measuredBoard ? measuredBoard.grade : SudokuStats.GRADE_UNMEASURED,
     d: diffKey,
   });
-  /* Written only when the key is empty or this build could read it, the rule
-     bankPrize() follows: bytes from a newer build the player still has cached
-     are left where they are, and this tab keeps its own ring in memory. */
   if (stored || raw === null) saveHistory();
 }
-/* Reads the ring at boot. Nothing is migrated and nothing is written: an
-   unreadable key leaves this tab starting empty and leaves the bytes alone. */
 function loadHistory() {
   const stored = readHistory();
   if (stored) games = stored;
 }
 
-/* Reads the wallet at boot. Anything unreadable, corrupt or from a version
-   this build does not know leaves both totals at zero rather than guessing. */
 function loadWallet() {
   const raw = walletRaw();
   if (raw !== null) {
     const stored = readWallet(raw);
-    /* Something is under the key. If this build cannot read it, leave it there:
-       overwriting it with zeros would discard the wallet of a newer build the
-       player still has cached, which is worse than showing nothing. */
     if (stored) {
       friesTotal = stored.fries;
       chocoTotal = stored.choco;
@@ -1402,28 +790,12 @@ function loadWallet() {
     }
     return;
   }
-  /* No wallet yet: either a new player, or one whose papas are still sitting
-     in a game save from before this key existed. Carry those across. */
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    /* Behind the same version gate loadGame() applies: a save this build would
-       refuse to restore is not a record to mint papas from. count() then applies
-       the same rule the stored wallet gets, rather than a second one written
-       here, because both feed the total that is written back and added to
-       forever. */
     friesTotal = count(s && typeof s === 'object' && s.v === SAVE_VERSION ? s.friesTotal : 0);
   } catch {}
-  /* Only when something was actually carried across. Writing a zero wallet here
-     would be a storage event in every other open tab, and their listener adopts
-     what it reads: a second tab opening after the key was evicted would take a
-     tab that still held the totals in memory down to zero with it. */
   if (friesTotal) saveWallet();
 }
-/* Restores a saved game on boot. Returns false, leaving every global
-   untouched, for: nothing saved, corrupt JSON, a getItem/localStorage
-   failure, an unrecognised schema version, a malformed grid, an unknown
-   diffKey, or an already-solved save: the caller (boot block) then falls
-   back to showing the start dialog exactly as it does today. */
 function loadGame() {
   let raw;
   try {
@@ -1449,77 +821,36 @@ function loadGame() {
     s.notes.length !== 81
   )
     return false;
-  /* hasOwn rather than a bare lookup: every name on Object.prototype answers
-     truthy to DIFF[key], so a save claiming diffKey:'constructor' restored a
-     playable board with no row of the table behind it. Winning it then read
-     DIFF[key].fries, which is undefined, multiplied it, and banked NaN, which
-     JSON writes as null and reads back as zero: every prize the player had
-     ever earned, spent on a save nobody wrote on purpose.
- */
   if (!Object.hasOwn(DIFF, s.diffKey) || s.solved) return false;
   puzzle = s.puzzle.slice();
   solution = s.solution.slice();
   values = s.values.slice();
   fixed = s.fixed.slice();
   notes = s.notes.map((a) => new Set(Array.isArray(a) ? a : []));
-  /* Bounded, not just integral: sel indexes notes[] and fixed[], and inputDigit()
-     only guards sel<0. An out-of-range sel restores a playable board, then the
-     first digit throws on notes[sel].clear() after values[sel] has already been
-     written past the end of the grid, and the next autosave persists an 82+ cell
-     board that loadGame() rejects on the following load. The game is gone. */
   sel = Number.isInteger(s.sel) && s.sel >= 0 && s.sel < 81 ? s.sel : -1;
-  /* Read through count(), the rule every total arriving from outside this tab
-     already goes through, because these three come from storage a player can
-     edit. Number(x)||0 accepted a negative, and mistakes is one of the two
-     fields the flawless bonus is gated on: a save carrying mistakes:-3 restored,
-     let three real and visible wrong entries bring the counter up to exactly 0,
-     and paid double papas plus the chocolates on a board with three wrong digits
-     on it.
-
-     seconds is the same shape with a worse ending. A negative restored, rendered
-     as -15:00, and recordWin() wrote it as that difficulty's best time. The next
-     boot sanitised the stored best to 0 through the same count(), after which
-     time<row.best could never be true again and that difficulty could never
-     record a best time. Clamping here is what stops the record being poisoned;
-     repairing one already poisoned is not attempted. */
   mistakes = count(s.mistakes);
   hints = count(s.hints);
   seconds = count(s.seconds);
   diffKey = s.diffKey;
-  /* hasOwn for the same reason the DIFF lookup above uses it: every
-     name on Object.prototype answers truthy to GRADE_WORDS[key], so a save
-     claiming grade:'constructor' passed this test, made puzzleGrade NaN, and
-     put "Técnica: undefined" on the win screen before saveGame() wrote the NaN
-     back out as null. */
   const graded = Object.hasOwn(GRADE_WORDS, s.grade);
   const seeded = Number.isInteger(s.seed) && s.seed >= 0;
-  /* A save from before grading falls back to the tier its difficulty asks for,
-     which is the best available guess, and puzzleMeasured is what stops the win
-     screen presenting the guess as a measurement. */
-  puzzleGrade = graded ? Number(s.grade) : DIFF[s.diffKey].grade;
-  puzzleSeed = seeded ? s.seed : 0;
-  puzzleMeasured = graded && seeded;
+  measuredBoard = graded && seeded ? { grade: Number(s.grade), seed: s.seed } : null;
   solved = false;
   playing = true;
   pausedByDialog = false;
   undoStack = [];
-  revealed = new Set();
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
+  revealedThisSession = new Set();
+  cancelWinTimers();
   setNotes(false);
   $('diffLabel').textContent = DIFF[diffKey].label;
   $('time').textContent = clockText(seconds);
   $('stamp').classList.remove('show');
-  /* seed the announcement tracker with the restored counters, so resuming a
-     game with mistakes on the board does not announce them as fresh ones */
   srLast = { mistakes, hints, remaining: null };
   render();
   setPaused(false);
   return true;
 }
 
-/* Falls whatever glyph it is handed: the animation is the prize mechanic, and
-   papas and chocolates differ only in what rains and how much of it. */
 function rain(n, glyph) {
   const wrap = document.querySelector('.board-wrap');
   const w = wrap.clientWidth,
@@ -1545,11 +876,8 @@ function rain(n, glyph) {
 function win() {
   solved = true;
   playing = false;
-  clearSavedGame(); /* a finished game has nothing to resume into */
+  clearSavedGame();
   clearInterval(tick);
-  /* setPaused returns early once solved is set, so the release cannot ride on
-     it: a lock left held here would keep the screen awake over the win overlay
-     for as long as the tab lives. */
   syncWakeLock();
   sel = -1;
   render();
@@ -1560,48 +888,21 @@ function win() {
   const finalTime = seconds,
     finalMist = mistakes,
     finalHints = hints;
-  /* Banked now, not on the timers below: those are decoration, and a player
-     who closes the tab during the animation has still won the prize. The record
-     is written on the same principle and for the same reason. */
   bankPrize(earned, chocoEarned);
-  /* Asked of recordWin rather than computed beside it, which had two copies of
-     the same test that only agreed while this line stayed above the call. A
-     first win no longer counts: there was no time to beat, and claiming one
-     stole the message from every first flawless win, which is the rarer thing
-     and the one worth saying. */
   const broke = recordWin(diffKey, finalTime, flawless);
   const beatBest = broke.time,
     beatStreak = broke.streak;
   recordGame(finalTime, finalMist, finalHints);
   const streakNow = stats.streak;
-  /* assertive: the win is the one event worth interrupting for, and the modal
-     it belongs to only appears after ~2s of animation. The prize goes in here
-     too: showOverlay() focuses the dialog's button, not the banner, so this is
-     the only announcement that reliably carries it. Written after recordWin,
-     which is the only place either record can be decided.
-
-     Both records are said here because both of them rain, and rain is nothing
-     at all to a screen reader: a shower with no sentence behind it is a
-     celebration only some players are invited to. */
   $('srAlert').textContent =
     `Ganaste. ${fmt(seconds)}, ${mistakes === 1 ? '1 error' : `${mistakes} errores`}, ${hints === 1 ? '1 pista' : `${hints} pistas`}.` +
     ` Te llevas ${earned} papas fritas${chocoEarned ? ` y ${chocoWord(chocoEarned)}` : ''}.` +
     (beatBest ? ' ¡Nuevo récord de tiempo!' : '') +
     (flawless ? ` ${streakSaid(streakNow, beatStreak)}` : '');
-  /* reduced motion: no rain, and don't make the player wait out the animation */
   const slow = reduceMotion.matches ? 0 : 1;
   if (!reduceMotion.matches) {
     winTimers.push(setTimeout(() => rain(Math.min(earned, 30), '🍟'), 450));
-    /* staggered: the chocolates are meant to read as a second, rarer shower
-       rather than get lost among the papas. No cap, unlike the papas above:
-       the most the table pays is five. */
     if (chocoEarned) winTimers.push(setTimeout(() => rain(chocoEarned, '🍫'), 700));
-    /* Last and fewest, for the same reason the chocolates come after the papas:
-       a shower that lands on top of another one is not read as its own event.
-       Six trophies rather than a number earned, because a record is not a
-       quantity: it happened or it did not, and the count is only what makes it
-       legible as rain. Nothing is banked here, so nothing about this may look
-       like the two showers above paying out. */
     if (beatBest) winTimers.push(setTimeout(() => rain(6, '🏆'), 950));
     if (beatStreak) winTimers.push(setTimeout(() => rain(6, '🥇'), 1150));
   }
@@ -1622,43 +923,18 @@ function win() {
         : finalMist === 0
           ? 'Sin errores. Filete.'
           : 'Costó, pero salió igual.';
-      /* Its own line rather than the lede, which the flawless message has a
-         better claim on: a first flawless win is rarer than a fast one. The
-         time tile is marked with it, so which of the three numbers the record
-         belongs to is answered where the number is rather than in the sentence.
-         Toggled either way: the dialog is reused by every win. */
       $('wBestLine').hidden = !beatBest;
       $('wTimeStat').classList.toggle('record', beatBest);
-      /* The run, on its own line, on every clean win. The medal is the streak
-         everywhere it appears and the trophy is the time, so the glyph is what
-         separates the record from the count that led to it. Both records can
-         land on one win, and both showers are shown, so both sentences have to
-         be able to. */
       $('wStreakLine').hidden = !flawless;
       if (flawless) {
         $('wStreakGlyph').textContent = beatStreak ? '🥇' : '🔥';
         $('wStreakText').textContent = streakSaid(streakNow, beatStreak);
       }
-      /* What the board actually was, rather than what was asked for, and the seed
-       that rebuilds it. Both are textContent: the code is a number in base 36
-       and the technique comes from a fixed table, but neither has any business
-       being parsed as markup. */
-      /* Dropped entirely for a board this build never measured, which is any game
-       resumed from a save written before grading existed: the tier would be the
-       one the difficulty asked for, which is the lie the grade exists to stop
-       telling, and the code would be 0, which rebuilds a different board. */
-      $('wCodeLine').hidden = !puzzleMeasured;
-      if (puzzleMeasured) {
-        $('wGrade').textContent = GRADE_WORDS[puzzleGrade];
-        $('wCode').textContent = puzzleSeed.toString(36);
+      $('wCodeLine').hidden = !measuredBoard;
+      if (measuredBoard) {
+        $('wGrade').textContent = GRADE_WORDS[measuredBoard.grade];
+        $('wCode').textContent = measuredBoard.seed.toString(36);
       }
-      /* What you just won, as icons. The sentence this replaced said the same
-       thing three times over, and the running totals it repeated are the chips
-       in the status bar, one dismissal away. The words survive for a screen
-       reader, which cannot see either.
-
-       innerHTML, and every hole in it is a number straight from the DIFF table.
-       Nothing player-authored is interpolated, so there is no markup to inject. */
       $('fryBanner').innerHTML =
         `<b aria-hidden="true">🍟 +${earned}</b>` +
         (chocoEarned ? `<b aria-hidden="true">🍫 +${chocoEarned}</b>` : '') +
@@ -1668,17 +944,9 @@ function win() {
   );
 }
 
-/* ---- actions ---- */
 function inputDigit(d) {
   if (!playing || paused || sel < 0 || fixed[sel]) return;
-  if (notesMode && values[sel] !== 0)
-    return; /* checked before snapshot(): a no-op must not evict undo history */
-  /* Entering the digit that is already there does nothing, and says so before
-     snapshot() for the same reason the line above does. It used to clear the
-     cell, which is what turned an unsure tap into a lost one: a player who
-     cannot tell whether the first tap landed taps again, and the second tap
-     emptied the cell, which reads as the screen having missed both of them.
-     Erasing has a button, and it is now the only thing that erases. */
+  if (notesMode && values[sel] !== 0) return;
   if (!notesMode && values[sel] === d) return;
   snapshot();
   if (notesMode) {
@@ -1716,33 +984,10 @@ function undo() {
   values = s.values;
   fixed = s.fixed;
   notes = s.notes.map((a) => new Set(a));
-  /* render() speaks when a counter moves or the cells left cross a ten. Undoing
-     a wrong digit moves neither, since a wrong digit is already counted as
-     unfilled, and undo moves no focus, so no cell label is re-read either: with
-     nothing here Deshacer is completely silent to a screen reader. Undoing a
-     correct digit or a hint does move the count, which is why this is handed to
-     render() rather than written to the element: written directly it overwrote
-     the count render() had just announced, after srLast had already recorded it
-     as said, so that crossing was lost for good. */
-  /* No full stop on any of these: the announcement below joins its parts with
-     ". " and closes with one, so a part that punctuates itself is read out with
-     two. */
   srAction = 'Deshecho';
   render();
   saveGame();
 }
-/* ---- confirming what the notes already say ----
-   Placing a correct digit already deletes it from every peer's pencil marks, so
-   late in a game the board keeps leaving cells with one mark left. That mark is
-   the answer, the player worked it out, and it is written in the cell: typing it
-   again is bookkeeping, not deduction. This is the same operation in reverse.
-
-   Two conditions, both required. The player's marks are down to one, which is
-   them saying they have finished narrowing that cell. And the board agrees that
-   only that digit still fits, which is what makes the answer provable rather
-   than trusted: a mark that says less than the board says is either a cleverer
-   deduction or a mistake, and nothing here can tell those apart without reading
-   the solution, which would be a hint. So it declines both. */
 function openDigits(i) {
   const taken = new Set();
   for (const p of PEERS[i]) if (values[p]) taken.add(values[p]);
@@ -1750,12 +995,6 @@ function openDigits(i) {
   for (let d = 1; d <= 9; d++) if (!taken.has(d)) open.push(d);
   return open;
 }
-/* Every cell this would fill, as [index, digit]. Empty while a wrong digit is on
-   the board: the candidate arithmetic above counts whatever is placed, so one
-   wrong digit can leave a cell with a single option that is not the answer, and
-   this would then write it in and charge for it. Wrong digits are painted in
-   vermilion from the moment they land, so refusing to work around one tells the
-   player nothing they cannot already see. */
 function settledCells() {
   if (!values.every((v, i) => v === 0 || v === solution[i])) return [];
   const found = [];
@@ -1767,10 +1006,6 @@ function settledCells() {
   }
   return found;
 }
-/* One snapshot for the whole batch, so one Deshacer takes back the press rather
-   than one cell of it. Nothing is counted against the player: every digit was
-   already on screen in their own hand, so there is no error to make and nothing
-   for the hint counter to record. */
 function settleSingles() {
   if (!playing || paused) return;
   const found = settledCells();
@@ -1786,15 +1021,6 @@ function settleSingles() {
   saveGame();
   if (values.every((v, i) => v === solution[i])) win();
 }
-/* Where a hint is worth most: the cell that needed the least to work out. The
-   candidates are counted against what is on the board right now, so a cell with
-   one is a naked single, which is the whole of the easiest tier. This replaced
-   a random pick, which was as likely to hand over the hardest cell on the board
-   as the obvious one, and a hint that skips the reasoning teaches nothing.
-
-   Deterministic on ties, lowest index first, for the reason the seeds exist:
-   the same board in the same state gives the same hint, so a test can assert it
-   and a player can be told what happened. Returns -1 when the board is done. */
 function easiestOpen() {
   let best = -1;
   let fewest = 10;
@@ -1812,16 +1038,6 @@ function easiestOpen() {
 }
 function hint() {
   if (!playing || paused) return;
-  /* Every press reveals something. Asking on a cell that cannot take a hint,
-     a given or one a hint already filled, used to refuse and say so through
-     #srStatus alone, which is visually-hidden: a sighted player pressed Pista
-     and nothing happened at all, which reads as a broken button rather than as
-     a rule. Reported by a player in exactly those words.
-
-     So an ineligible cell redirects instead of refusing. What made the old
-     random branch bad was not that it moved, it was that it moved somewhere
-     unannounced; the selection follows the hint now, so the board shows where
-     it went. */
   let i = sel >= 0 && !fixed[sel] && values[sel] !== solution[sel] ? sel : -1;
   if (i < 0) {
     i = easiestOpen();
@@ -1833,11 +1049,9 @@ function hint() {
   fixed[i] = true;
   notes[i].clear();
   for (const p of PEERS[i]) notes[p].delete(solution[i]);
-  /* Once per cell. The answer was shown once, however many times it is undone
-     and asked for again. */
-  if (!revealed.has(i)) {
+  if (!revealedThisSession.has(i)) {
     hints++;
-    revealed.add(i);
+    revealedThisSession.add(i);
   }
   sel = i;
   render();
@@ -1845,12 +1059,6 @@ function hint() {
   if (values.every((v, k) => v === solution[k])) win();
 }
 
-/* ---- render ---- */
-/* Tracks the last-announced values so the live region only speaks on
-   meaningful change, never on every cell edit (selection moves call
-   render() constantly and must stay silent). remaining is bucketed by
-   ten so it reads at a sane cadence instead of once per fill. */
-let srLast = { mistakes: 0, hints: 0, remaining: null };
 function render() {
   const selVal = sel >= 0 ? values[sel] : 0;
   const pr = sel >= 0 ? PEERS[sel] : null;
@@ -1858,7 +1066,6 @@ function render() {
   const counts = new Array(10).fill(0);
   for (let i = 0; i < 81; i++) {
     const v = values[i];
-    /* count only correct placements, so wrong entries never retire a digit key */
     if (v && v === solution[i]) counts[v]++;
     if (!v || v !== solution[i]) left++;
     const el = cells[i];
@@ -1888,10 +1095,6 @@ function render() {
   $('mistakes').textContent = mistakes;
   $('hints').textContent = hints;
   $('remaining').innerHTML = `<b>${left}</b> por llenar`;
-  /* Visible only while it has work. Its box is held either way, so the clock and
-     the three permanent buttons beside it do not move when it arrives. The count
-     is the whole point of showing it: the player sees how many cells the press
-     will fill before pressing it. */
   const settled = playing && !paused ? settledCells().length : 0;
   $('settleBtn').classList.toggle('idle', settled === 0);
   if (settled > 0) {
@@ -1903,11 +1106,6 @@ function render() {
         : `Confirmar ${settled} casillas que ya tienen una sola nota`,
     );
   }
-  /* Screen-reader announcements: polite, batched, and gated to actual play
-     so neither the boot screen nor a paused/finished board can speak.
-     Mistakes and hints announce on every change (they're rare and meaningful);
-     the remaining count only when it crosses into a new ten, so filling
-     cells one by one does not spam the user. */
   if (playing) {
     const srBits = [];
     if (srAction) {
@@ -1929,8 +1127,7 @@ function render() {
       const node = $('srStatus');
       /* An aria-atomic live region is only read out when its content changes,
          and two undos in a row produce the same sentence, so the second press
-         was silent. Cleared and written back in a later task when the text would
-         repeat, which is a real change either side of it. */
+         was silent. */
       if (node.textContent === said) {
         node.textContent = '';
         setTimeout(() => {
@@ -1942,21 +1139,14 @@ function render() {
   }
 }
 
-/* ---- wiring ---- */
 $('pauseBtn').addEventListener('click', () => setPaused(!paused));
 $('resumeBtn').addEventListener('click', () => setPaused(false));
-/* Each radio sets its own mode rather than flipping the flag, so tapping the
-   one already chosen is the no-op a radio group promises. The old single button
-   toggled, which meant a tap the player was not sure had landed could be undone
-   by checking. */
 $('penBtn').addEventListener('click', () => {
   if (playing && !paused) setNotes(false);
 });
 $('notesBtn').addEventListener('click', () => {
   if (playing && !paused) setNotes(true);
 });
-/* Left and right walk the group, which is what a radiogroup is expected to do
-   and what the two buttons stop doing the moment they are only clickable. */
 for (const id of ['penBtn', 'notesBtn']) {
   $(id).addEventListener('keydown', (e) => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
@@ -1972,16 +1162,7 @@ $('settleBtn').addEventListener('click', settleSingles);
 $('undoBtn').addEventListener('click', undo);
 $('hintBtn').addEventListener('click', hint);
 $('newBtn').addEventListener('click', () => {
-  /* The win dialog is put up by a timer about two seconds after the last digit,
-     and this button is live for all of them: the board is finished, so nothing
-     has made the page inert yet. Opening the picker inside that window used to
-     leave the win dialog to arrive on top of it and take the focus. newGame()
-     already kills these for the same reason, but only once a difficulty has
-     been chosen, which is one click too late. Dropping them here costs the
-     summary of a board the player has walked away from, and the prize it
-     announced was banked the moment it was won. */
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
+  cancelWinTimers();
   $('cancelNew').hidden = !playing;
   pausedByDialog = playing && !paused;
   if (pausedByDialog) setPaused(true);
@@ -1989,11 +1170,8 @@ $('newBtn').addEventListener('click', () => {
 });
 $('cancelNew').addEventListener('click', () => {
   hideOverlay($('startOverlay'));
-  if (pausedByDialog) setPaused(false); /* only resume if this dialog is what paused it */
+  if (pausedByDialog) setPaused(false);
   pausedByDialog = false;
-  /* A game that was already paused before this dialog opened is still paused
-     behind it, and the veil is a dialog: leaving focus on the body would drop
-     a keyboard player outside the only thing on screen they can act on. */
   if (paused) $('resumeBtn').focus();
 });
 $('againBtn').addEventListener('click', () => {
@@ -2002,11 +1180,6 @@ $('againBtn').addEventListener('click', () => {
   showOverlay($('startOverlay'));
 });
 
-/* ---- the record dialog ----
-   Opens over whatever asked for it rather than replacing it, so closing it puts
-   the player back where they were rather than at a dead end. Two things ask: the
-   difficulty picker, and the pause veil, which is the only place the record can
-   be read without the clock running. */
 function openRecord() {
   paintRecord();
   showOverlay($('recordOverlay'));
@@ -2016,8 +1189,6 @@ $('veilRecordBtn').addEventListener('click', openRecord);
 function closeRecord() {
   disarmRedeem();
   hideOverlay($('recordOverlay'));
-  /* Back to what opened it, which is still on screen behind. Without this the
-     focus lands on the body and the next Tab starts from the top of the page. */
   if ($('startOverlay').classList.contains('show')) $('recordBtn').focus();
   else if ($('veil').classList.contains('show')) $('veilRecordBtn').focus();
 }
@@ -2027,22 +1198,12 @@ $('buzzToggle').addEventListener('change', (e) => {
 });
 $('closeRecord').addEventListener('click', closeRecord);
 
-/* The three a tap beside can close, in the order Escape checks them, each going
-   one step back rather than all the way to the board: the record was opened from
-   somewhere and that somewhere is still on screen behind it. The picker closes
-   only when it is offering a way back, which at boot it is not. The win dialog
-   is on no list at all, because what is behind it is a game that is over. */
 dismissOnBackdrop($('recordOverlay'), closeRecord);
 dismissOnBackdrop($('startOverlay'), () => {
   if (!$('cancelNew').hidden) $('cancelNew').click();
 });
 dismissOnBackdrop($('veil'), () => setPaused(false));
 
-/* Redeeming empties a balance and cannot be undone, so it takes two presses.
-   A confirm() would do the same job in one, but it is a browser modal on top of
-   a dialog on top of a dialog, and it cannot be styled or read in context. The
-   armed state disarms itself, so a press left half finished does not sit there
-   waiting to fire at whatever gets clicked next. */
 let armedPrize = null,
   armTimer = null;
 function disarmRedeem() {
@@ -2062,8 +1223,6 @@ document.querySelectorAll('.redeem').forEach((button) => {
       armedPrize = kind;
       button.classList.add('arm');
       button.textContent = '¿Seguro?';
-      /* Announced, because the only signal otherwise is a word changing on a
-         button the player is no longer looking at. */
       $('srStatus').textContent =
         `Toca de nuevo para canjear ${kind === 'choco' ? chocoTotal : friesTotal} ${word}.`;
       armTimer = setTimeout(disarmRedeem, 4000);
@@ -2086,11 +1245,6 @@ document.querySelectorAll('.redeem').forEach((button) => {
           : `No hay ${word} para canjear.`;
   });
 });
-/* The buttons advertise the technique, not the clue count, because the
-   technique is now what the difficulty means and the clue count is not even
-   fixed: the search moves it to reach a grade. The old copy said "34 números"
-   and was a promise the generator was about to break. Both halves come from
-   DIFF so neither can drift from what is generated. */
 document.querySelectorAll('.diff').forEach((b) => {
   const d = DIFF[b.dataset.d];
   b.innerHTML = `${d.label} <span>${GRADE_WORDS[d.grade]}</span>`;
@@ -2100,8 +1254,6 @@ document.querySelectorAll('.diff').forEach((b) => {
 document.addEventListener('keydown', (e) => {
   if (!e.key) return;
   const k = e.key.toLowerCase();
-  /* Checked before the start dialog, because it opens on top of it: Escape has
-     to close the one in front. */
   if ($('recordOverlay').classList.contains('show')) {
     if (k === 'escape') closeRecord();
     return;
@@ -2111,7 +1263,6 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if ($('winOverlay').classList.contains('show')) return;
-  /* let browser shortcuts through: only Ctrl/Cmd+Z is ours */
   if ((e.ctrlKey || e.metaKey || e.altKey) && k !== 'z') return;
   if (k === 'p') {
     setPaused(!paused);
@@ -2152,23 +1303,13 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) setPaused(true);
-  /* No re-acquire branch. Coming back does not resume the game, so asking
-     again here would hold the screen awake over a veiled board with a stopped
-     clock. The lock returns with the Seguir click, through setPaused. This
-     call is the release path for the case setPaused returns early on: hidden
-     after the board is won. */
   syncWakeLock();
 });
-/* Another tab banked a prize while this one was open. Adopt its totals: ours
-   are stale from here on, and the chips would otherwise keep showing a number
-   the wallet no longer holds. Fires only in the other tabs, never the writer's,
-   which is exactly the tab that needs telling. A clear() reports a null key and
-   is ignored: bankPrize() falls back to memory, so this tab keeps counting. */
+/* Fires only in the other tabs, never the writer's, which is exactly the tab
+   that needs telling. A clear() reports a null key and is ignored: bankPrize()
+   falls back to memory, so this tab keeps counting. */
 addEventListener('storage', (e) => {
   if (e.key === STATS_KEY) {
-    /* The record is one player's, so the other tab's games belong in it too.
-       Nothing unreadable is adopted: readStats() answers null and this tab
-       keeps counting into what it already had. */
     const s = readStats();
     if (s) {
       stats = s;
@@ -2177,8 +1318,6 @@ addEventListener('storage', (e) => {
     return;
   }
   if (e.key === HISTORY_KEY) {
-    /* The other tab's finished games are this player's too. Nothing unreadable
-       is adopted: readHistory answers null and this tab keeps its own ring. */
     const h = readHistory();
     if (h) {
       games = h;
@@ -2189,10 +1328,6 @@ addEventListener('storage', (e) => {
   if (e.key !== WALLET_KEY) return;
   const w = readWallet();
   if (!w) return;
-  /* The armed press was a confirmation of a number that has just changed, and
-     redeem() reads storage rather than this tab's copy: left armed, the second
-     press handed over a total the player never agreed to, and paintRecord()
-     below would leave the button reading "¿Seguro?" while disabling it. */
   disarmRedeem();
   friesTotal = w.fries;
   chocoTotal = w.choco;
@@ -2201,34 +1336,20 @@ addEventListener('storage', (e) => {
   paintRecord();
 });
 
-/* ---- boot ---- */
-/* Before loadGame(): the prizes are the player's, not the puzzle's, so they are
-   painted on both paths, the resumed game and the difficulty picker alike. */
 loadWallet();
 loadStats();
 loadHistory();
 loadPrefs();
-/* The switch stays down, and the preference behind it is still honoured: a
-   stored false silences the buzz whether or not there is a row to set it with.
-   Checked from the stored value all the same, so the row shows the truth the
-   moment it is put back on screen. */
 $('buzzToggle').checked = prefs.buzz;
 paintWallet();
 paintRecord();
-/* loadGame() renders and unpauses itself when it restores something; only the
-   no-save (or rejected-save) path falls through to the difficulty picker. */
 if (!loadGame()) {
   render();
   $('cancelNew').hidden = true;
   showOverlay($('startOverlay'));
 }
-/* Relative path so the worker's scope is this directory, not the account root.
-   Deferred to load, feature-guarded, and failures are swallowed: an offline
-   cache that cannot register must never keep the game from starting. */
+/* Relative path so the worker's scope is this directory, not the account root. */
 if ('serviceWorker' in navigator) {
-  /* Was this document already under a worker when it loaded? Read now, before
-     anything can claim it, because it is the difference between a first ever
-     install and a swap to a newer build. */
   const wasControlled = !!navigator.serviceWorker.controller;
   let registration = null,
     nextCheckAt = 0,
@@ -2244,37 +1365,22 @@ if ('serviceWorker' in navigator) {
       .catch(() => {});
   });
 
-  /* The update trigger an installed app otherwise does not have. A worker is
-     only checked for updates on an in-scope navigation, or on a functional
-     event at most once a day. A home screen web app is a single page that
-     never navigates: it is resumed, not loaded. Its fetch handler serves the
-     shell from cache and asks the network nothing. So a player who installs it
-     and only ever switches back to it can sit on that build indefinitely,
-     which is the whole failure this exists to prevent.
-
-     Throttled, because switching between apps must not mean a request per
-     focus, and skipped while hidden so a background tab does not poll. */
+  /* A worker is only checked for updates on an in-scope navigation, or on a
+     functional event at most once a day. A home screen web app is a single page
+     that never navigates: it is resumed, not loaded. */
   const CHECK_EVERY = 36e5,
     RETRY_AFTER = 6e4;
   function checkForUpdate() {
     if (registration === null || document.hidden || checking) return;
-    /* A resume with no connectivity is the ordinary way an installed app wakes
-       up, and it must not spend the hour on a check that cannot reach the
-       network. Refused here, before anything is spent, because reacting to the
+    /* Refused here, before anything is spent, because reacting to the
        failure afterwards cannot work: the two engines do not agree on what a
        failure is. Measured on the built page, offline: WebKit rejects,
-       Chromium resolves without having asked the network. So catching the
-       rejection fixed nothing on Chromium and, on WebKit, handed back the
-       throttle on every resume. onLine is false only when the device knows it
-       has no connectivity, which is the case worth skipping and the one this
-       is named for. */
+       Chromium resolves without having asked the network. onLine is false only
+       when the device knows it has no connectivity, which is the case worth
+       skipping and the one this is named for. */
     if (navigator.onLine === false) return;
     if (Date.now() < nextCheckAt) return;
     checking = true;
-    /* The short gap is taken first and the hour granted only once a request
-       has actually come back. An sw.js that 404s, times out or fails to parse
-       rejects every time, and without this that is a fetch on every single app
-       switch, forever, from every installed copy. */
     nextCheckAt = Date.now() + RETRY_AFTER;
     registration
       .update()
@@ -2287,20 +1393,10 @@ if ('serviceWorker' in navigator) {
       });
   }
   document.addEventListener('visibilitychange', checkForUpdate);
-  /* Only a restore from the back forward cache. An ordinary load already
-     checked, in register() above, and would otherwise check twice on boot. */
   window.addEventListener('pageshow', (e) => {
     if (e.persisted) checkForUpdate();
   });
 
-  /* A newer worker has taken over. sw.js calls skipWaiting() and
-     clients.claim(), so this fires while the old document is still on screen,
-     holding markup and a cache that no longer agree. Reloading is what makes
-     them agree, and it is safe: the game autosaves on every move and restores
-     itself, which e2e/persistence.spec.mjs holds down.
-
-     Not on a first install, where nothing is stale and a reload would be an
-     unexplained flash for a new visitor, and never twice. */
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!wasControlled || reloading) return;
     reloading = true;

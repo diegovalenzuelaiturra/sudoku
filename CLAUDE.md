@@ -55,10 +55,13 @@ SyntaxError, and `app.js` has its own `boxOf` and `PEERS`, so anything else
 leaking out of that file breaks the fallback silently. `no-implicit-globals` in
 `eslint.config.mjs` enforces this.
 
-**Comments are load bearing.** Several exist specifically to stop a fixed bug
-being reintroduced, and they record measurements that were expensive to take.
-The published copy is stripped by the minifier, so keeping them costs nothing.
-Explain why, not what.
+**Comments record only what the code cannot.** A comment stays when it records
+behavior forced by something outside this repository: a browser or web platform
+rule, GitHub Pages or Actions, an external tool, a license, or an issue link
+that explains a constraint. Everything about our own code is said in names,
+types, constants and structure instead, and a rule worth keeping, such as a
+fixed bug that must not come back, is held by a test rather than by prose. When
+code needs a comment to be understood, change the code.
 
 ## Branches and releases
 
