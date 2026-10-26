@@ -24,7 +24,7 @@ jobs:
     name: Verify
     # Pinned rather than ubuntu-latest: that label migrates to a new image over
     # weeks, so the runner would change on GitHub's schedule, not in a commit.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # This job only reads the repository. The Pages and OIDC permissions are
     # asked for by the one job that deploys, and by nothing else.
     permissions:
@@ -176,7 +176,7 @@ jobs:
     needs: verify
     # Pinned rather than ubuntu-latest: that label migrates to a new image over
     # weeks, so the runner would change on GitHub's schedule, not in a commit.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # pages: write publishes the artifact; id-token: write signs the OIDC token
     # deploy-pages exchanges for it. Nothing else in the workflow needs either.
     permissions:
@@ -291,7 +291,7 @@ jobs:
     needs: deploy
     # Pinned rather than ubuntu-latest: that label migrates to a new image over
     # weeks, so the runner would change on GitHub's schedule, not in a commit.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Audits an address that is already public, so it needs no write scope.
     permissions:
       contents: read
