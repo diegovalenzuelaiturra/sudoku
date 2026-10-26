@@ -9,9 +9,11 @@ const CACHE_NAME = 'sudoku-__BUILD__';
    namespaced through this prefix: only caches this app opened are read, and
    only those are deleted. */
 const CACHE_PREFIX = 'sudoku-';
+const NOT_FOUND_PAGE = './404.html';
 const APP_SHELL = [
   './',
   './index.html',
+  './404.html',
   './generator.js',
   './manifest.webmanifest',
   './icons/icon.svg',
@@ -44,14 +46,26 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  event.respondWith(cachedOrNetwork(event.request));
+});
+
+async function cachedOrNetwork(request) {
+  const cache = await caches.open(CACHE_NAME);
   /* Matched inside this app's own cache, opened by name. ignoreSearch because
      the precached entry for the app root is './': a visitor who arrives on a
      link carrying a query string is asking for the same document, and
      without this the offline load misses the cache and fails. */
-  event.respondWith(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.match(event.request, { ignoreSearch: true }))
-      .then((cached) => cached || fetch(event.request)),
-  );
-});
+  const cached = await cache.match(request, { ignoreSearch: true });
+  if (cached) return cached;
+  try {
+    return await fetch(request);
+  } catch (error) {
+    const notFound = request.mode === 'navigate' && (await cache.match(NOT_FOUND_PAGE));
+    if (!notFound) throw error;
+    return new Response(notFound.body, {
+      status: 404,
+      statusText: 'Not Found',
+      headers: notFound.headers,
+    });
+  }
+}

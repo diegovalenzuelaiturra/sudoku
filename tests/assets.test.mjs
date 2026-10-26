@@ -26,9 +26,6 @@ const NOT_PRECACHED = {
   'sw.js':
     'the browser fetches a service worker script itself, on registration and on every ' +
     'update check, and never routes that request through the fetch handler',
-  '404.html':
-    'GitHub Pages sends it as the body of a 404 for a path that does not exist, so no ' +
-    'request names it and a cache entry under its own path would never be matched',
 };
 
 const PRIVATE = ['tests', 'node_modules', 'package.json', 'package-lock.json', '.github'];

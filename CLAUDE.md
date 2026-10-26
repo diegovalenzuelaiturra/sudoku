@@ -24,9 +24,9 @@ build id and every returning visitor would keep the cached copy.
 
 Adding a published file means adding it in three places. `tests/assets.test.mjs`
 walks `PUBLISHED` and fails when `ALLOWLIST` omits an entry, and when `APP_SHELL`
-omits one that is not in `NOT_PRECACHED` beside it, which holds `404.html` and
-`sw.js` with the platform reason each is never served from the cache. Only one
-direction is checked, so an `ALLOWLIST` entry with no `PUBLISHED` line passes:
+omits one that is not in `NOT_PRECACHED` beside it, which holds `sw.js` with the
+platform reason it is never served from the cache. Only one direction is
+checked, so an `ALLOWLIST` entry with no `PUBLISHED` line passes:
 
 - `ALLOWLIST` in `scripts/build.mjs`, which is fail closed: anything not named
   there is never read, so a forgotten entry is a silent 404 in production.
