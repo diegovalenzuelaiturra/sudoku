@@ -22,11 +22,11 @@ coverage report can see it. Add another such file to `INLINED_SCRIPTS` in
 hash, so a script left out of it would change the game without changing the
 build id and every returning visitor would keep the cached copy.
 
-Adding a published file means adding it in three places. One direction is
-checked: `tests/assets.test.mjs` walks `PUBLISHED` and fails when `ALLOWLIST`
-omits an entry, so an `ALLOWLIST` entry with no `PUBLISHED` line passes. Nothing
-compares `APP_SHELL` with either list, so `404.html` and `sw.js` ship today
-without being precached and the suite stays green:
+Adding a published file means adding it in three places. `tests/assets.test.mjs`
+walks `PUBLISHED` and fails when `ALLOWLIST` omits an entry, and when `APP_SHELL`
+omits one that is not in `NOT_PRECACHED` beside it, which holds `404.html` and
+`sw.js` with the platform reason each is never served from the cache. Only one
+direction is checked, so an `ALLOWLIST` entry with no `PUBLISHED` line passes:
 
 - `ALLOWLIST` in `scripts/build.mjs`, which is fail closed: anything not named
   there is never read, so a forgotten entry is a silent 404 in production.
