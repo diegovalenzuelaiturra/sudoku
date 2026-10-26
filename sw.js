@@ -1,9 +1,7 @@
 /* Cache-first service worker for the sudoku app shell.
    Scope is the directory this file lives in: keep it beside index.html,
    never one level up, so it controls the whole app and nothing outside it. */
-/* The placeholder below is replaced at build time with the commit SHA, so
-   every deploy gets its own cache. A fixed name would pin every visitor to
-   the first version they ever loaded, the failure this exists to prevent. */
+// MUST KILL: build-time placeholder literal; a build-generated constant says so without prose.
 const CACHE_NAME = 'sudoku-__BUILD__';
 /* CacheStorage is keyed by origin, not by service worker scope. This site is a
    project page on an account domain shared with every other repository the same
@@ -12,20 +10,9 @@ const CACHE_NAME = 'sudoku-__BUILD__';
    namespaced through this prefix: only caches this app opened are read, and
    only those are deleted. */
 const CACHE_PREFIX = 'sudoku-';
-/* Every icon the manifest names belongs here. The fetch handler below is
-   cache first with no runtime population, so a file that is not precached is
-   never stored at all: an installed app that has been offline since it was
-   added to the home screen would have no icon bytes to show. Five KB of PNG
-   is a cheap price for that, and tests/assets.test.mjs keeps this list and
-   the manifest from drifting apart. */
 const APP_SHELL = [
   './',
   './index.html',
-  /* The generator runs in a worker, and a worker script is fetched separately
-     from the document that spawns it. Left out of here, an installed app that
-     has been offline since it was added would load, show the difficulty picker,
-     and fail on the first tap: the page is cached and the thing that builds the
-     board is not. */
   './generator.js',
   './manifest.webmanifest',
   './icons/icon.svg',
@@ -42,11 +29,6 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  /* Delete this app's older caches. Without this, a bumped CACHE_NAME leaves
-     the old cache's entries on disk forever and each release only grows
-     storage instead of replacing it. Scoped to CACHE_PREFIX: an unfiltered
-     sweep here deletes the offline cache of every other site on the origin,
-     which on a github.io account domain means every other project page. */
   event.waitUntil(
     caches
       .keys()

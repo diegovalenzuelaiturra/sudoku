@@ -1,39 +1,10 @@
-/* Boots the published page in Chrome and asserts it comes up clean.
-
-   The regression it guards: `notes` was declared as an empty array while
-   render() read notes[i].has(d) for all 81 cells, so the boot-time render()
-   threw on the first cell, the statements after it never ran, and the page
-   loaded to a dead grid with no difficulty picker. Every assertion below fails
-   on that bug.
-
-   Four things a browser answers directly:
-
-   1. The accessibility assertions are made against the tree Chrome actually
-      exposes, read over CDP, so .app.inert is checked by its effect: setting
-      it takes the 81 cells behind the start dialog out of what a screen reader
-      can reach, which is the whole point of the attribute.
-   2. The board is checked as a laid out nine by nine grid.
-   3. The focus ring is checked as something painted, under the same
-      :focus-visible rules a player is subject to.
-   4. The service worker is registered, its scope asserted, and the path that
-      produced it proved to be relative by serving the same bytes under a
-      second prefix. That one line of boot code decides whether the app works
-      offline.
-
-   Pausing is covered in e2e/pause.spec.mjs. */
-
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
-/* Kept in sync with the DIFF map in app.js. The clue count each difficulty
-   used to advertise is deliberately not here: difficulty is the technique a
-   board needs now, and the generator moves the clue count to reach one, so
-   there is no fixed number left to assert. tests/generator.test.mjs owns what
-   the grades mean; what is left for a browser is that the word on the button is
-   the word the game deals. */
+// MUST KILL: labels and technique words are copied from the DIFF map in app.js, read them from the page
 const PRESETS = [
   { key: 'easy', label: 'Piola', word: 'directas' },
   { key: 'medium', label: 'Normal', word: 'bloques' },
@@ -41,7 +12,6 @@ const PRESETS = [
   { key: 'expert', label: 'Brígido', word: 'avanzado' },
 ];
 
-/* The name render() gives every cell: "Fila 3, columna 7, 4, dada". */
 const CELL_NAME = /^Fila \d, columna \d/u;
 const GIVEN_NAME = /^Fila \d, columna \d, [1-9], dada$/u;
 
@@ -63,23 +33,15 @@ async function accessibleNodes(cdp) {
 const countCells = (nodes, pattern) =>
   nodes.filter((node) => node.role === 'button' && pattern.test(node.name)).length;
 
-/* Polled rather than read once: the accessibility tree is rebuilt off the back
-   of the DOM change, and CI hardware is slower than a laptop. */
 function expectExposedCells(cdp, pattern, count, what) {
   return expect
     .poll(async () => countCells(await accessibleNodes(cdp), pattern), {
       message: `expected ${count} ${what} in the accessibility tree Chrome exposes`,
-      /* Longer than the default expect timeout: generating an expert puzzle
-         blocks the main thread and the tree is only rebuilt afterwards, which
-         is the one pair in this suite that came close to the 10 second budget
-         under load. */
       timeout: 15_000,
     })
     .toBe(count);
 }
 
-/* Every test ends by asserting the real console stayed clean: an exception
-   thrown by a platform feature surfaces nowhere else. */
 const problems = [];
 
 test.beforeEach(async ({ page }) => {
@@ -89,9 +51,6 @@ test.beforeEach(async ({ page }) => {
   });
   page.on('pageerror', (error) => problems.push(`uncaught: ${error.message}`));
 
-  /* Relative, so the request goes through the /sudoku/ prefix in baseURL.
-     Each test gets its own browser context, so localStorage starts empty and
-     the boot path under test is always the no-saved-game one. */
   await page.goto('./');
 });
 
@@ -102,8 +61,6 @@ test.afterEach(() => {
 test('boots to a live page rather than a dead grid', async ({ page }) => {
   await expect(page.locator('#board .cell')).toHaveCount(81);
   await expect(page.getByRole('group', { name: 'Tablero de sudoku' })).toBeAttached();
-  /* The half of the bug that a count alone would miss: render() threw before
-     the picker was ever filled in, so the page offered no way to start. */
   await expect(page.locator('#startOverlay button.diff')).toHaveCount(4);
   await expect(page.locator('#startOverlay')).toBeVisible();
 });
@@ -119,22 +76,14 @@ test('the start dialog is a named modal and the page behind it is unreachable', 
   const cdp = await context.newCDPSession(page);
   await expect(page.locator('#startOverlay')).toBeVisible();
 
-  /* Asked of Chrome, not of the markup: this is the dialog as announced, with
-     the name resolved through aria-labelledby and the modal flag as the
-     browser understood it. */
   const dialogs = (await accessibleNodes(cdp)).filter((node) => node.role === 'dialog');
   expect(dialogs.map((node) => node.name)).toContain('SUDOKU');
   expect(dialogs.find((node) => node.name === 'SUDOKU').properties.modal).toBe(true);
 
-  /* What .app.inert does, asserted by its effect: the whole board goes out of
-     the tree while the dialog is up. */
   await expectExposedCells(cdp, CELL_NAME, 0, 'board cells');
 
   await expect(page.locator(`#startOverlay button.diff[data-d="${PRESETS[0].key}"]`)).toBeFocused();
 
-  /* The other half of a trapped dialog is the tab order. Walking forward and
-     back from the focused button must never land on the board or the controls
-     behind the dialog. */
   const visited = [];
   for (const key of ['Tab', 'Shift+Tab']) {
     await page.locator(`#startOverlay button.diff[data-d="${PRESETS[0].key}"]`).focus();
@@ -151,19 +100,12 @@ test('the start dialog is a named modal and the page behind it is unreachable', 
     }
   }
   expect(visited.filter((region) => region === 'background')).toEqual([]);
-  /* Guards the walk itself: focus has to be moving for the line above to mean
-     anything. */
   expect(visited.filter((region) => region === 'dialog').length).toBeGreaterThan(0);
 });
 
 test('the board is 81 named cells laid out as a nine by nine grid', async ({ page }) => {
-  /* Matched on the name Chrome computes, not on the aria-label attribute:
-     render() aborting mid-loop leaves cells unnamed, and a cell a screen
-     reader cannot name is the failure worth catching. */
   await expect(page.getByRole('button', { name: /^Fila \d, columna \d, vacía$/u })).toHaveCount(81);
 
-  /* Layout is the check: 81 elements stacked at 0 by 0 are not a rendered
-     board. */
   const grid = await page.evaluate(() => {
     const boxes = [...document.querySelectorAll('#board .cell')].map((cell) =>
       cell.getBoundingClientRect(),
@@ -187,9 +129,6 @@ test('the board is 81 named cells laid out as a nine by nine grid', async ({ pag
 test('every difficulty button announces its label and the technique it deals', async ({ page }) => {
   for (const preset of PRESETS) {
     const button = page.locator(`#startOverlay button.diff[data-d="${preset.key}"]`);
-    /* The whole name, tied to the key that deals the puzzle: the sentence a
-       screen reader reads out, rather than a substring of innerHTML that
-       happens to contain the label somewhere. */
     await expect(button).toHaveAccessibleName(`${preset.label} ${preset.word}`);
     await expect(button).toBeVisible();
   }
@@ -207,20 +146,10 @@ for (const preset of PRESETS) {
     const cdp = await context.newCDPSession(page);
     await page.locator(`#startOverlay button.diff[data-d="${preset.key}"]`).click();
 
-    /* Really gone from the page, not merely missing a class name. Generation
-       runs in a worker now, so this is also the wait: the dialog stays up, with
-       its buttons disabled, until a board comes back. */
     await expect(page.locator('#startOverlay')).toBeHidden();
 
-    /* .app.inert going back to false, asserted by its effect: the board is
-       handed back to assistive tech. */
     await expectExposedCells(cdp, CELL_NAME, 81, 'board cells');
 
-    /* The clue count is no longer a fixed number per difficulty, so what is
-       worth pinning is that everything on the page agrees about it: the cells
-       painted as givens, the cells that announce themselves as "dada", and the
-       count of what is left to fill. A board that disagreed with itself is the
-       failure this used to catch by asserting the number directly. */
     const givens = await page.locator('#board .cell.given').count();
     expect(givens).toBeGreaterThanOrEqual(17);
     expect(givens).toBeLessThan(81);
@@ -242,10 +171,6 @@ test('undo restores the board but never the counters', async ({ page }) => {
   expect(index, 'no cell is selected after starting').toBeGreaterThanOrEqual(0);
   const cell = page.locator('#board .cell').nth(index);
 
-  /* Hint fills the cell and marks it given; undo must roll the board back, or
-     the cell stays locked holding a value the player can no longer edit. Typed
-     on a real keyboard, so this also covers the document-level handler seeing
-     the key at all. */
   await page.keyboard.press('h');
   await expect(page.locator('#hints')).toHaveText('1');
   await expect(cell).toHaveClass(/given/u);
@@ -255,31 +180,17 @@ test('undo restores the board but never the counters', async ({ page }) => {
 
   await page.keyboard.press('z');
   await expect(cell).not.toHaveClass(/given/u);
-  /* The undone cell announces itself as empty and editable again, which is the
-     player-visible meaning of the class check above. */
   await expect(cell).toHaveAccessibleName(/^Fila \d, columna \d, vacía$/u);
   await expect(cell.locator('.v')).toBeEmpty();
-  /* The board rolled back and the record did not. The answer was on the screen,
-     and pressing Z cannot un-see it. */
   await expect(page.locator('#hints')).toHaveText('1');
 
-  /* The same rule for a wrong entry, and this is the half that gates the bonus:
-     rewinding it would make guess-then-undo a free route to a flawless win. */
   await page.keyboard.press(String((Number(hinted) % 9) + 1));
   await expect(page.locator('#mistakes')).toHaveText('1');
   await page.keyboard.press('z');
-  /* The board first, for the same reason the hint half checks it: the counter
-     reads 1 on both sides of the key, so on its own it would pass against an
-     undo that never ran. The line this replaced asserted '0', which at least
-     proved the keypress had arrived. */
   await expect(cell.locator('.v')).toBeEmpty();
   await expect(page.locator('#mistakes')).toHaveText('1');
 });
 
-/* The Pista button has to survive the guard above it. Refusing every cell that
-   cannot take a hint also refuses the one sel sits on after every correct entry,
-   which turns the button inert on a share of the board that grows to all of it,
-   so this is the case that must keep working. */
 test('a hint still works on the cell left selected by a correct entry', async ({ page }) => {
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
   await expect(page.locator('#startOverlay')).toBeHidden();
@@ -300,13 +211,6 @@ test('a hint asked of a given lands on another cell, and says so', async ({ page
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
   await expect(page.locator('#startOverlay')).toBeHidden();
 
-  /* Givens are selectable on purpose: that is what drives the row, column and
-     box highlighting, so this is a press a player makes by accident. Refusing it
-     outright was worse than it sounds: the refusal was announced through
-     #srStatus alone, which is visually-hidden, so a sighted player pressed Pista
-     and saw nothing happen at all. Reported as exactly that. The hint moves to a
-     cell that can take one instead, and the selection follows it, so the board
-     shows where it went rather than leaving the player to find it. */
   const before = await page.locator('#remaining').textContent();
   const given = await page.evaluate(() => {
     const i = fixed.findIndex((f) => f);
@@ -326,8 +230,6 @@ test('a hint picks the cell with the fewest candidates, not one at random', asyn
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
   await expect(page.locator('#startOverlay')).toBeHidden();
 
-  /* A random pick was as likely to hand over the hardest cell on the board as
-     the obvious one, and a hint that skips the reasoning teaches nothing. */
   const verdict = await page.evaluate(() => {
     const candidates = (i) => {
       const taken = new Set();
@@ -356,9 +258,6 @@ test('a hint undone and asked for again is charged once', async ({ page }) => {
   await page.keyboard.press('z');
   await expect(cell).not.toHaveClass(/given/u);
 
-  /* hint() leaves sel on the cell it filled and undo() does not restore sel, so
-     this press finds that same cell empty and editable, which is the shape that
-     charged twice for one answer. */
   await page.keyboard.press('h');
   await expect(cell).toHaveClass(/given/u);
   await expect(page.locator('#hints')).toHaveText('1');
@@ -368,11 +267,6 @@ test('undo says so without silencing the count it moved', async ({ page }) => {
   await page.locator('#startOverlay button.diff[data-d="medium"]').click();
   await expect(page.locator('#startOverlay')).toBeHidden();
 
-  /* Down to 20 unfilled. render() only speaks when the count crosses a ten, so
-     the next correct digit takes it to 19 and is announced, and undoing that
-     crosses back to 20 and is announced again. That is the case where an
-     announcement written straight to the element ate the one render() had just
-     made, after srLast had already recorded it as said. */
   await page.evaluate(() => {
     const unfilled = () => values.filter((v, i) => !v || v !== solution[i]).length;
     for (let i = 0; i < 81 && unfilled() > 20; i++) {
@@ -417,36 +311,20 @@ test('keyboard focus is painted on the board, a pointer click is not', async ({ 
       };
     });
 
-  /* Clicking selects the cell without asking for a focus ring, which is what
-     :focus-visible is for. Nothing outside a browser applies the stylesheet,
-     so neither state here was observable at all. */
   await page.locator('#board .cell').first().click();
   expect(await ring()).toEqual({ visible: false, outline: 'none' });
 
-  /* The half above runs everywhere. The half below cannot: Safari does not move
-     Tab focus to a button unless Full Keyboard Access is switched on in the
-     system, so on WebKit this would be asserting a macOS setting rather than
-     anything about this page. */
   test.skip(
     test.info().project.name !== 'chromium',
     'Tab does not visit buttons in Safari without Full Keyboard Access',
   );
 
-  /* Reached with the keyboard instead: the ring has to be there, or the player
-     cannot tell which of the 81 cells is about to take the digit. */
-  /* The last thing in the header that can hold focus, so the next Tab is the
-     board. The confirm button sits after it but is invisible until the late
-     game gives it work, and an invisible button takes no Tab stop. */
   await page.locator('#pauseBtn').focus();
   await page.keyboard.press('Tab');
   await expect(page.locator('#board .cell').first()).toBeFocused();
   expect(await ring()).toEqual({ visible: true, outline: 'solid 2px rgb(49, 80, 126)' });
 });
 
-/* The registration is deliberately swallowed by the page, so a worker that
-   never registers leaves navigator.serviceWorker.ready pending forever. Bounded
-   here, and resolved to null on the way out, so that failure arrives as an
-   assertion with a message instead of as a test timeout without one. */
 const readyScope = (page) =>
   page.evaluate(
     (limit) =>
@@ -462,26 +340,14 @@ const readyScope = (page) =>
 test('the service worker registers, scoped to the directory the site ships from', async ({
   page,
 }) => {
-  /* Untestable without a browser, which is how the one line that decides
-     whether the app works offline shipped uncovered. The scope has to be the
-     directory index.html sits in: a worker registered a level up would control
-     everything else published from the same account. */
   const scope = await readyScope(page);
   expect(scope, 'no service worker took control of the page').not.toBeNull();
   expect(new URL(scope).pathname).toBe('/sudoku/');
-  /* Everything above is read from the page's own navigator, so it holds every
-     engine to the same promise, and WebKit is the one that matters here: it is
-     what every installed copy on iOS runs. Only the line below is Chromium
-     bound, because Playwright reports worker instances for Chromium alone. */
   if (test.info().project.name === 'chromium') {
     expect(page.context().serviceWorkers().length).toBeGreaterThan(0);
   }
 });
 
-/* A second copy of the published site, mounted under a different prefix, the
-   way a fork or a differently named repository would serve the same bytes.
-   Port 0 leaves the choice of port to the OS, so this cannot collide with the
-   server the config already booted or with another run of the suite. */
 async function serveAt(prefix) {
   const root = fileURLToPath(new URL('..', import.meta.url));
   const child = spawn(process.execPath, [join(root, 'e2e', 'static-server.mjs'), '0', prefix], {
@@ -526,17 +392,6 @@ async function serveAt(prefix) {
 }
 
 test('the worker is registered by a relative path, so any prefix works', async ({ page }) => {
-  /* The scope assertion above cannot tell a relative './sw.js' from an
-     absolute '/sudoku/sw.js': the suite serves the site at the prefix
-     production uses, so both resolve to the same URL and both pass. Measured,
-     not assumed: that rewrite left all 35 tests green.
-
-     Serving the same build under a second prefix is what separates them. A
-     relative specifier resolves next to index.html wherever it is mounted; an
-     absolute one 404s and the registration, which the page swallows on
-     purpose, silently never happens. That is the production failure, since the
-     site is a project page today and could be a user page or a fork
-     tomorrow. */
   const site = await serveAt('otro-sudoku');
   try {
     await page.goto(site.url);

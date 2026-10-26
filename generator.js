@@ -1,40 +1,4 @@
-/* Puzzle generation and grading, off the main thread.
-
-   Peludo is the most expensive tier, because its band is narrow and a search
-   that misses it spends every attempt: measured over 200 seeds, 24 ms at the
-   median, 101 ms at the 95th percentile and 138 ms at the worst, on a desktop.
-   A phone is several times slower, which is long enough to stall the page if
-   this runs on the main thread.
-
-   It is loaded two ways and must work under both:
-     - as a worker, `new Worker('./generator.js')`, which is the normal path;
-     - as a plain <script>, injected by app.js only if constructing that
-       worker throws, which puts window.SudokuGenerator on the page and lets the
-       game generate synchronously rather than not at all.
-   So nothing here may touch `document`, and the worker wiring at the bottom is
-   behind a check for the worker global rather than assumed.
-
-   Classic script, not a module. A module worker would be the tidier spelling,
-   but the fallback above needs the same file to work as a <script> tag, and the
-   published copy is minified by terser at its defaults, which leave the one
-   exported name unmangled. */
-
-/* Everything below is wrapped so that the generator and the page share no
-   global names at all. That is not tidiness: on the fallback path this file is
-   injected into the document as a plain script, and app.js declares its own
-   `boxOf` and `PEERS` for highlighting the selected cell. Two classic scripts
-   declaring the same const at global scope is a SyntaxError, so the fallback
-   loaded a file the engine refused to run and the player got no board at all.
-   One name is exported instead, and it is the only one this file adds. */
 (function (root) {
-  /* ---- seeded randomness ----
-     Every puzzle is a pure function of its seed: the same seed rebuilds the same
-     board on any machine, so a puzzle can be reproduced from a bug report and the
-     tests assert over fixed seeds. Math.random cannot do that.
-
-     mulberry32: 32 bits of state, passes the usual smoke tests for this kind of
-     use, and is nine lines. Nothing here is security sensitive, so a cryptographic
-     generator would buy nothing and cost the reproducibility that is the feature. */
   function rngFrom(seed) {
     let state = seed >>> 0;
     return function random() {
@@ -45,8 +9,6 @@
     };
   }
 
-  /* Takes the generator rather than reaching for Math.random, which is what makes
-     every shuffle below replayable. */
   function shuffle(list, random) {
     for (let i = list.length - 1; i > 0; i--) {
       const j = (random() * (i + 1)) | 0;
@@ -57,8 +19,6 @@
     return list;
   }
 
-  /* ---- board geometry ----
-     Fixed for every puzzle, so it is built once at load rather than per call. */
   const boxOf = (i) => ((((i / 9) | 0) / 3) | 0) * 3 + (((i % 9) / 3) | 0);
 
   const ROWS = [];
@@ -74,7 +34,6 @@
     COLS[i % 9].push(i);
     BOXES[boxOf(i)].push(i);
   }
-  /* The 27 places a digit may appear exactly once. */
   const UNITS = [...ROWS, ...COLS, ...BOXES];
 
   const PEERS = [];
@@ -84,8 +43,6 @@
     PEERS.push([...set]);
   }
 
-  /* Candidates are a bitmask, bit d for digit d, so bit 0 is unused and the mask
-     for "any of 1 to 9" is 0b1111111110. */
   const ALL = 0b1111111110;
   const bitCount = (mask) => {
     let n = 0;
@@ -131,8 +88,6 @@
     return grid;
   }
 
-  /* Counts solutions up to `limit`, which is all any caller here needs: the only
-     question ever asked is whether there is exactly one. */
   function countSolutions(grid, limit) {
     const rows = new Array(9).fill(0);
     const cols = new Array(9).fill(0);
@@ -198,24 +153,11 @@
     return count;
   }
 
-  /* ---- grading ----
-     Difficulty used to be the clue count and nothing else, which is a poor proxy:
-     24 clues that fall to naked singles is an easier board than 30 that need a
-     pointing pair, so "Brígido" was a promise the generator did not keep.
-
-     So a board is graded by the hardest technique a solver needs to finish it,
-     working strictly up the ladder and never guessing. The tiers are deliberately
-     coarse. A finer ladder would need the solver to implement every technique it
-     names, and each one it lacks silently inflates the grade of every board that
-     needs it. Four tiers, with the top one meaning "more than this solver knows",
-     is a claim the code can actually keep. */
   const GRADE_SINGLES = 1;
   const GRADE_LOCKED = 2;
   const GRADE_SUBSETS = 3;
   const GRADE_BEYOND = 4;
 
-  /* The word each tier is offered under. Kept here rather than in index.html so
-     the label and the technique that earns it cannot drift apart. */
   const GRADE_NAMES = {
     1: 'directas',
     2: 'bloques',
@@ -223,11 +165,6 @@
     4: 'avanzado',
   };
 
-  /* Solves as far as the ladder reaches, and reports the hardest rung it had to
-     stand on. Returns solved:false with GRADE_BEYOND when it stalls, which is a
-     statement about this solver, not about the board: the board is still uniquely
-     solvable, because nothing becomes a puzzle here without countSolutions saying
-     so first. */
   function solveGraded(puzzle) {
     const values = puzzle.slice();
     const cand = new Array(81).fill(0);
@@ -249,9 +186,6 @@
       left--;
     }
 
-    /* Naked singles (one candidate left in a cell) and hidden singles (one cell
-       left for a digit in a unit). Both place a digit rather than eliminate a
-       candidate, which is why they share a tier. */
     function singles() {
       let did = false;
       for (let i = 0; i < 81; i++) {
@@ -286,10 +220,6 @@
       return did;
     }
 
-    /* Locked candidates, both directions. Pointing: every place a digit can go
-       inside a box shares one row or column, so it can go nowhere else on that
-       line. Claiming: every place it can go on a line sits inside one box, so it
-       can go nowhere else in that box. These only eliminate, never place. */
     function locked() {
       let did = false;
       for (let d = 1; d <= 9; d++) {
@@ -324,10 +254,6 @@
       return did;
     }
 
-    /* Naked pairs and triples (n cells in a unit whose candidates union to n
-       digits, so those digits belong to those cells and to nothing else in the
-       unit) and hidden pairs (two digits in a unit that fit in only two cells, so
-       those cells hold nothing else). */
     function subsets() {
       let did = false;
       for (const unit of UNITS) {
@@ -376,8 +302,6 @@
 
     while (left > 0) {
       for (let i = 0; i < 81; i++) {
-        /* A cell with no candidates left cannot be filled by any technique, so
-           there is nothing to be gained by carrying on. */
         if (!values[i] && cand[i] === 0) return { solved: false, hardest: GRADE_BEYOND };
       }
       if (singles()) {
@@ -397,12 +321,10 @@
     return { solved: true, hardest: hardest || GRADE_SINGLES };
   }
 
-  /* The grade on its own, which is all the generator and the tests want. */
   function gradePuzzle(puzzle) {
     return solveGraded(puzzle).hardest;
   }
 
-  /* ---- digging ---- */
   function dig(clues, random) {
     const solution = generateFull(random);
     const g = solution.slice();
@@ -419,14 +341,11 @@
       filled -= cells.length;
       return true;
     }
-    /* pass 1: 180-degree-symmetric pairs, walking one index per pair (0..40) so a
-       rejected pair is never re-tested from its partner index */
     for (const i of shuffle([...Array(41).keys()], random)) {
       if (filled <= clues) break;
       if (i === 80 - i) tryRemove([i]);
       else if (filled - 2 >= clues) tryRemove([i, 80 - i]);
     }
-    /* pass 2: single cells, to land on the clue count the dig was asked for */
     if (filled > clues) {
       for (const i of shuffle([...Array(81).keys()], random)) {
         if (filled <= clues) break;
@@ -436,10 +355,6 @@
     return { puzzle: g, solution, clues: filled };
   }
 
-  /* Removing a clue can only take information away, so it never makes a board
-     easier: this walks the remaining clues in seeded order, dropping any whose
-     removal keeps the solution unique, and stops the moment the grade reaches the
-     target. Bounded by the clues on the board, so it always terminates. */
   function tighten(board, target) {
     const order = shuffle(
       [...Array(81).keys()].filter((i) => board.puzzle[i] !== 0),
@@ -454,11 +369,6 @@
         continue;
       }
       const grade = gradePuzzle(board.puzzle);
-      /* Refuse a removal that steps over the target rather than taking it and
-         trying to climb back. One removal can take a board from bloques straight
-         past pares to avanzado, and pares is narrow enough that overshooting was
-         the usual outcome: measured 9 hits in 20 on Peludo before this refusal
-         existed. Rejecting costs one grade per rejected cell and keeps looking. */
       if (grade > target) {
         board.puzzle[i] = saved;
         continue;
@@ -469,16 +379,6 @@
     }
   }
 
-  /* The other direction. Putting a clue back can only add information, so it
-     never makes a board harder, and a board with every clue showing grades at the
-     bottom rung: this terminates on the target or on a full grid. Uniqueness is
-     not rechecked because a cell filled with its own solution value cannot admit
-     a solution the board did not already have.
-
-     It mirrors tighten's refusal: an addition that drops the grade below the
-     target is undone, so the walk down settles on the tier instead of falling
-     through it and filling the board on the way. An early version without that
-     refusal answered a request for Peludo with a 61 clue board graded directas. */
   function loosen(board, target) {
     const order = shuffle(
       [...Array(81).keys()].filter((i) => board.puzzle[i] === 0),
@@ -498,11 +398,6 @@
     }
   }
 
-  /* Keeps the closest board the walk has stood on, rather than wherever it
-     stopped. Both walks refuse to cross the target, so they can end short of it
-     after having passed through something better, and the player gets the board
-     that was actually closest to what they asked for. Ties break towards fewer
-     clues, which is the sparser and more interesting board of the two. */
   function record(board, target) {
     const distance = Math.abs(board.grade - target);
     if (
@@ -515,11 +410,6 @@
     }
   }
 
-  /* One attempt at a board for the requested grade: dig to roughly the requested
-     density, then walk the grade to the target from whichever side it landed on.
-
-     The clue count is the starting point, and it has to be free to move in order
-     to hit a grade, so nothing may advertise a fixed number of clues. */
   function attemptPuzzle(clues, target, seed) {
     const random = rngFrom(seed);
     const dug = dig(clues, random);
@@ -535,11 +425,6 @@
     };
     record(board, target);
 
-    /* A removal rejected for overshooting is judged against the board as it stood
-       then, and every later removal changes that board, so a cell refused on one
-       pass can be the cell that lands on the next. The pass count and a pass that
-       removes nothing both stop the loop, so a board that cannot be tightened
-       costs one wasted pass. */
     for (let pass = 0; pass < 3 && board.grade < target; pass++) {
       const before = board.clues;
       tighten(board, target);
@@ -556,30 +441,16 @@
     };
   }
 
-  /* Tries whole boards until one grades exactly on target, and returns the
-     closest it saw if none does. The returned grade is always the board's real
-     grade, never the one that was asked for: a near miss has to be visible to the
-     caller, because app.js shows the player what they are actually playing.
-
-     Attempts are seeded off the caller's seed, so the whole search is replayable
-     from the one number in the save file. */
   function makePuzzle(request) {
     const clues = request.clues;
     const target = request.grade;
-    /* Sixteen, and only the misses ever spend them: the loop stops on the first
-       board that grades exactly on target, so the common case is one attempt.
-       Measured over 30 boards per tier, going from 8 attempts to 16 took Normal
-       from 29/30 to 30/30 and Peludo from 24/30 to 28/30, for a worst case around
-       115ms. Off the main thread that is invisible, and it is the difference
-       between a tier that means something and one that misses one board in five. */
     const attempts = request.attempts || 16;
+    // MUST KILL: the returned seed is the search seed and not the winning attempt seed; a separate named field makes that obvious
     const baseSeed =
       (request.seed === undefined ? (Math.random() * 4294967296) >>> 0 : request.seed) >>> 0;
 
     let best = null;
     for (let t = 0; t < attempts; t++) {
-      /* The golden ratio step keeps consecutive attempts from sharing a prefix of
-         the generator's state, which sequential seeds would. */
       const seed = (baseSeed + Math.imul(t, 0x9e3779b1)) >>> 0;
       const board = attemptPuzzle(clues, target, seed);
       if (best === null || Math.abs(board.grade - target) < Math.abs(best.grade - target)) {
@@ -594,25 +465,11 @@
       clues: best.clues,
       grade: best.grade,
       gradeName: GRADE_NAMES[best.grade],
-      /* The seed of the whole search, not of the attempt that won it. Those are
-         the same number only when the loop broke on target. A near miss spends
-         all sixteen attempts, so replaying the winning attempt's seed rebuilds
-         that board at t=0, finds it still off target, and carries on through a
-         sequence the first run never walked, returning a different puzzle:
-         measured, 2 of 25 near misses over 1000 boards came back as a different
-         board, and a near miss is exactly the board whose grade is odd enough
-         to be worth quoting. The base seed replays the search itself, which is
-         deterministic, so the code always rebuilds what was played. */
       seed: baseSeed,
-      /* The seed the player sees and could quote back, kept short. */
       code: baseSeed.toString(36),
     };
   }
 
-  /* ---- worker wiring ----
-     Only when this file is running as a worker. Loaded as a <script> fallback it
-     must define the functions above and do nothing else, and in node, where the
-     tests evaluate this source directly, neither global exists. */
   if (typeof WorkerGlobalScope !== 'undefined' && typeof self !== 'undefined') {
     self.addEventListener('message', (event) => {
       const request = event.data || {};
@@ -622,8 +479,6 @@
         result.ok = true;
         self.postMessage(result);
       } catch (error) {
-        /* app.js is waiting on a reply, and an uncaught worker error fails every
-           job in flight and costs the worker for the rest of the session. */
         self.postMessage({
           id: request.id,
           ok: false,

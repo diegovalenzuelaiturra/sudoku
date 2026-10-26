@@ -1,12 +1,3 @@
-/* The page stopped being a single file: it now ships a manifest, a service
-   worker, an icon, an error page and site metadata.
-
-   Two ways that breaks in production and in no local test: an asset exists in
-   the repo but the deploy workflow never copies it into _site, or an asset is
-   referenced from an absolute path. This is a project site served under a
-   subdirectory of an account domain shared with another repo, so a leading
-   slash resolves to that other site, not to this one. */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
@@ -17,12 +8,9 @@ const read = (rel) => readFileSync(join(root, rel), 'utf8');
 const readBytes = (rel) => readFileSync(join(root, rel));
 
 const html = read('index.html');
-/* The game moved out of the page into app.js, which the build inlines back in.
-   Markup questions are asked of the page, script questions of app.js. */
 const app = read('app.js');
 const workflow = read('.github/workflows/deploy-pages.yml');
 
-/* Everything that must reach the published site. */
 const PUBLISHED = [
   'index.html',
   '404.html',
@@ -34,11 +22,6 @@ const PUBLISHED = [
   'icons/icon-512.png',
 ];
 
-/* LICENSE is deliberately not here. It is repository metadata: it must exist in
-   the repo, since a public repo without one reserves all rights, but serving it
-   from the game adds nothing. The build allowlist omits it. */
-
-/* Everything that must not. */
 const PRIVATE = ['tests', 'node_modules', 'package.json', 'package-lock.json', '.github'];
 
 /* The paths sw.js promises to put in the cache on install. Parsed out of the
@@ -53,12 +36,6 @@ function appShell() {
     .map((s) => s.slice(1, -1));
 }
 
-/* A PNG opens with an 8 byte signature, then a length and the tag "IHDR",
-   whose first eight bytes of data are the width and the height as big endian
-   32 bit integers. Reading them is 4 lines and needs no dependency, and it is
-   the only way to tell that a file called icon-512.png holds 512 pixels.
-   tests/typography.test.mjs now trusts the .png extension to mean binary, so
-   the extension being honest is worth an assertion of its own. */
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function pngSize(rel) {
@@ -76,10 +53,6 @@ test('every published asset exists in the repo', () => {
 });
 
 test('the deploy workflow builds through the same script CI runs', async () => {
-  /* This used to grep an inline "cp index.html ... _site/" step. Assembly now
-     lives in scripts/build.mjs, so the deploy and the pull request publish the
-     same tree and CI exercises it. Assert the workflow delegates rather than
-     re-implementing the copy, and that the allowlist covers what exists. */
   assert.ok(
     /run:\s*npm run build/u.test(workflow),
     'the deploy workflow no longer builds through npm run build',
@@ -130,19 +103,12 @@ test('the service worker precaches relative paths that all exist', () => {
       assert.ok(existsSync(join(root, entry)), `service worker precaches missing ${entry}`);
     }
   }
-  /* The cache name carries the __BUILD__ placeholder, which the build replaces
-     with the commit SHA. That is strictly stronger than a hand bumped -vN,
-     which only changes when somebody remembers to change it. */
   assert.ok(
     /CACHE_NAME\s*=\s*'sudoku-__BUILD__'/u.test(sw),
     'the cache name no longer carries the build placeholder, so every deploy would reuse one cache',
   );
 });
 
-/* tests/site.test.mjs checks the precache list in one direction only: nothing
-   named there may be missing. This is the other direction. An icon that ships
-   and is advertised but never cached is invisible until somebody installs the
-   app and goes offline, which is the one scenario a service worker exists for. */
 test('the service worker precaches every icon the manifest names', () => {
   const shell = new Set(appShell());
   const manifest = JSON.parse(read('manifest.webmanifest'));
@@ -166,9 +132,6 @@ test('every raster icon really is a PNG of the size the manifest declares', () =
   assert.equal(rasters.length, 2, 'the two raster icons are what maskable install prompts use');
   for (const icon of rasters) {
     assert.equal(icon.type, 'image/png', `${icon.src} is declared as ${icon.type}`);
-    /* One size per entry here, so the declaration compares whole. A list of
-       sizes would be legal in a manifest and is not what this repository
-       ships. */
     assert.equal(
       pngSize(icon.src),
       icon.sizes,
@@ -177,11 +140,6 @@ test('every raster icon really is a PNG of the size the manifest declares', () =
   }
 });
 
-/* og:image is the one URL in this repository that has to be absolute, which
-   puts it outside every relative-path check the suite has. Its declared
-   dimensions are read by the scrapers that reserve the preview box before the
-   image arrives, so they have to match the bytes.
-   tests/site.test.mjs proves the URL resolves to a published file. */
 test('the social preview image agrees with the file it names', () => {
   const meta = (attr, key) =>
     html.match(new RegExp(`<meta ${attr}="${key}" content="([^"]+)">`, 'u'))?.[1];
@@ -213,9 +171,6 @@ test('index.html links the manifest and registers the worker relatively', () => 
   );
 });
 
-/* The page is published as one file, so a script tag the build does not fold in
-   would ship as a request for a file that is never published, and the game
-   would simply not load. */
 test('index.html asks for app.js and stats.js, and the build inlines both', async () => {
   assert.match(html, /<script src="app\.js"><\/script>/u, 'index.html no longer loads app.js');
   assert.match(html, /<script src="stats\.js"><\/script>/u, 'index.html no longer loads stats.js');
@@ -246,7 +201,6 @@ test('no shipped file points at an absolute path or hardcodes the subdirectory',
     read(rel)
       .split('\n')
       .forEach((line, i) => {
-        /* data: URIs are self-contained and carry no path at all. */
         const stripped = line.replace(/(href|src)="data:[^"]*"/gu, '');
         for (const re of [/(?:href|src)="\//u, /"\/sudoku/u, /'\/sudoku/u]) {
           if (re.test(stripped)) offences.push(`${rel}:${i + 1} ${line.trim().slice(0, 90)}`);
@@ -265,8 +219,6 @@ test('the head declares a content security policy and a theme colour', () => {
   for (const directive of ["object-src 'none'", "base-uri 'none'", "form-action 'none'"]) {
     assert.ok(csp[1].includes(directive), `CSP is missing ${directive}`);
   }
-  /* The page is one inline script and one inline style, and both are covered
-     by the policy: without these two the app would not run at all. */
   assert.ok(/script-src [^;]*'unsafe-inline'/u.test(csp[1]));
   assert.ok(/style-src [^;]*'unsafe-inline'/u.test(csp[1]));
 
@@ -278,11 +230,6 @@ test('the head declares a content security policy and a theme colour', () => {
   assert.ok(/worker-src [^;]*'self'/u.test(csp[1]), "worker-src must allow 'self' for sw.js");
   assert.ok(/default-src 'self'/u.test(csp[1]), "default-src 'none' would block the manifest");
 
-  /* The manifest's theme_color and this meta tag colour the same surface: the
-     title bar when the app is installed, the browser UI when it is a tab. They
-     drifted apart once (manifest vermilion, page cream), which showed up as a
-     red title bar over a cream page, so they are pinned to each other here
-     rather than to a literal. Change both or neither. */
   const themeColor = head.match(/<meta name="theme-color" content="([^"]+)"/u);
   assert.ok(themeColor, 'no theme-color');
   assert.equal(
@@ -298,8 +245,6 @@ test('the head declares a content security policy and a theme colour', () => {
   );
 });
 
-/* Every interactive element in the app draws its own focus ring. The error page
-   is a separate document with its own stylesheet, so it silently misses out. */
 test('the error page gives its only link a focus ring', () => {
   const notFound = read('404.html');
 

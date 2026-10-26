@@ -1,31 +1,6 @@
 version: 2
 
-# A note that applies to every entry below, because it is the whole reason the
-# cooldowns are safe to set: cooldown affects VERSION updates only. GitHub does
-# not apply it to Dependabot SECURITY updates, so a published advisory still
-# produces a pull request immediately. The delay costs nothing on the axis that
-# matters and buys the one thing a version number cannot tell you, which is
-# whether a release was compromised. The npm attacks of recent years followed
-# the same shape: a maintainer account is taken over, a malicious version ships,
-# and it is yanked within a day or two once someone notices. A week of soak time
-# means this repo never sees those versions at all, while a genuine CVE fix
-# still arrives the day it is published.
-#
-# A second note that applies to every entry, and the reason each one repeats
-# target-branch: Dependabot opens against the default branch unless told
-# otherwise, and the default branch here is main. Nothing else in this
-# repository is proposed against main. Work lands on development and reaches
-# main only through a release, which is a merge commit and never a squash, so a
-# bump opened against main would arrive on the published branch without ever
-# passing through the branch every other change is staged on. There is no
-# repository-wide setting for this, so it is said once per entry.
-
 updates:
-  # Actions are pinned to commit SHAs, which never move on their own. Without
-  # this, a security fix in an action would never reach us: pinning trades a
-  # moved-tag risk for a frozen-version risk, and this closes the second half.
-  # Dependabot understands SHA pins and updates both the SHA and its version
-  # comment.
   - package-ecosystem: github-actions
     directory: /
     target-branch: development
@@ -34,8 +9,6 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: ci
-    # An action is arbitrary code running with this repo's token, so a freshly
-    # published tag is exactly what should not be adopted on the day it appears.
     cooldown:
       default-days: 7
     groups:
@@ -43,15 +16,6 @@ updates:
         patterns:
           - "*"
 
-  # Every dependency here is dev-only: @playwright/test runs the browser suite,
-  # html-minifier-terser, lightningcss and terser minify the published page at
-  # build time. Nothing is served to a visitor, but the three minifiers do
-  # rewrite the bytes that are, so a bad release is a broken page rather than a
-  # broken test. The Test job builds the site and runs the browser suite over
-  # that output on every pull request, Dependabot's included, which is where
-  # such a release would surface. Dependabot security updates already cover
-  # published advisories; this adds ordinary version bumps so we do not drift
-  # far behind between advisories.
   - package-ecosystem: npm
     directory: /
     target-branch: development
@@ -60,52 +24,15 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: chore
-    # Seven days for everything, and a fortnight before a major. A compromised
-    # npm release almost always ships as a patch or a minor, because that is
-    # what dependents pick up without thinking, so the patch case deliberately
-    # inherits the full seven days rather than being waved through quickly.
-    # Majors get longer for a duller reason: they need a human to read the
-    # changelog, and there is no value in the pull request sitting open while
-    # nobody does.
     cooldown:
       default-days: 7
       semver-major-days: 14
-    # oxlint and eslint-plugin-oxlint cannot move one at a time. The plugin
-    # declares a tilde peer on oxlint, so a pull request that raises either one
-    # alone leaves a lockfile npm ci refuses, and the refusal lands at the
-    # install step, before Test or Lint has run a single check. That is not a
-    # theory: it is what happened, and the repair was closing one pull request
-    # by hand and rebasing the other onto it.
-    #
-    # Only the pair is grouped. Everything else stays a pull request of its
-    # own, so a single bad release is still one revert rather than a bisect
-    # through five packages.
     groups:
       oxlint:
         patterns:
           - oxlint
           - eslint-plugin-oxlint
 
-  # The third set of pins in this repo, and the one neither entry above can
-  # see. .pre-commit-config.yaml pins each hook to a tag on somebody else's
-  # repository, and a tag never moves on its own, so without this the hooks
-  # would sit at whatever was current on the day each one was added. prek, the
-  # runner that executes them, is a plain npm devDependency and is therefore
-  # already covered by the entry above; this entry exists for the revs alone.
-  #
-  # Described as a mechanism rather than as a list on purpose. Dependabot reads
-  # the config file itself and moves the rev of every remote hook repository it
-  # finds there, so adding or removing a hook needs no edit here. The one
-  # "repo: local" block has no rev and no upstream, so there is nothing in it
-  # to bump.
-  #
-  # The prefix is ci rather than chore because these hooks are the lint gate CI
-  # itself runs, which puts the bumps next to the workflow bumps in the log.
-  # A bump is also exercised by the pull request proposing it: the Lint job
-  # runs the hooks straight out of this config file, so a hook release that
-  # trips over this repo lands as a red check rather than passing unnoticed.
-  # Both rulesets require that check by name, so such a bump cannot merge until
-  # someone deals with it.
   - package-ecosystem: pre-commit
     directory: /
     target-branch: development
@@ -114,20 +41,8 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: ci
-    # Seven days, matching the two entries above. The note at the top of this
-    # file holds here as well: cooldown delays version updates only and never
-    # holds back a Dependabot security update. Worth recording plainly, though,
-    # that GitHub's supported ecosystems table marks pre-commit as version
-    # updates only, with security updates unsupported, so on this entry there
-    # is no security path for the cooldown to leave alone. The week is a plain
-    # delay, accepted knowingly: a hook is arbitrary code that runs over the
-    # working tree on every commit, which is precisely the thing not to adopt
-    # on publication day.
     cooldown:
       default-days: 7
-    # One pull request a week for all of them. The hooks are independent tools
-    # that happen to share a config file, and reviewing a handful of one-line
-    # rev bumps separately costs more attention than it returns.
     groups:
       hooks:
         patterns:

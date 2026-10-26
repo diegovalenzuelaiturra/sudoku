@@ -1,16 +1,3 @@
-# Editor defaults for this repo. https://editorconfig.org
-#
-# These values were not chosen, they were measured: every tracked text file here
-# already uses LF endings, a final newline, no trailing whitespace and two-space
-# indents, HTML excepted below. This file just stops an editor with different
-# defaults from quietly reformatting a file on save and burying a real change in
-# noise.
-#
-# The line-ending rule is deliberately the same one .gitattributes enforces
-# ("* text=auto eol=lf"). .gitattributes normalises on the way into the object
-# store; this normalises in the editor before the file is ever staged. Keep the
-# two in agreement, because disagreeing is worse than having neither.
-
 root = true
 
 [*]
@@ -21,22 +8,12 @@ indent_size = 2
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-# Markdown gives two trailing spaces a meaning: a hard line break. No file here
-# relies on that today, but stripping it is a silent change to rendered output,
-# so this is exempt from trimming rather than risking it.
 [*.md]
 trim_trailing_whitespace = false
 
-# HTML is the one exception to the two spaces above, because markup nests far
-# deeper than the code does: the board sits eight levels in. This has to keep
-# saying the same number as the html/indent rule in eslint.config.mjs, which is
-# what actually reformats these files. If the two disagree, an editor and the
-# linter take turns rewriting the file.
 [*.html]
 indent_size = 4
 
-# Binary assets. Editors will not reindent a PNG, but tooling that reads this
-# file and walks every path can try to "fix" one, so unset the text rules.
 [*.{png,ico,woff,woff2}]
 charset = unset
 end_of_line = unset

@@ -1,18 +1,3 @@
-/* What ships is not what is in the repository, it is what lands in _site, and
-   every failure this file catches is invisible in a source diff: a path that
-   resolves on a laptop and 404s in production.
-
-   Two traps in particular. GitHub Pages serves this repository as a project
-   site under /sudoku/, so a reference that starts with a slash resolves against
-   a different repository at the account root, loads nothing, and logs nothing.
-   And macOS matches filenames without regard to case while the Pages server
-   does not, so Icon.png happily resolves locally and 404s once deployed.
-
-   The manifest, the service worker and their icons are optional entries in the
-   build allowlist, so a build without them still succeeds. These checks match
-   that: an absent file is a skip, and enforcement begins the moment it
-   appears. */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -23,8 +8,6 @@ const root = join(import.meta.dirname, '..');
 const siteDir = join(root, '_site');
 const buildScript = join(root, 'scripts', 'build.mjs');
 
-/* Built into the real _site rather than a temp directory: these assertions are
-   worth most when they run against the exact bytes the deploy uploads. */
 const build = existsSync(buildScript)
   ? spawnSync(process.execPath, [buildScript], { cwd: root, encoding: 'utf8', timeout: 120000 })
   : null;
@@ -32,21 +15,14 @@ const build = existsSync(buildScript)
 const haveSite = existsSync(siteDir) && statSync(siteDir).isDirectory();
 const buildFailed = build !== null && (build.error !== undefined || build.status !== 0);
 
-/* Everything below inspects the build output, so a failed or absent build makes
-   those checks meaningless rather than false: skip them and let the one test
-   that owns the build report it. */
 const checkable = haveSite && !buildFailed;
 const SKIPPED = buildFailed
   ? 'the build failed, see "the build assembles a publishable _site"'
   : 'no _site to check yet, scripts/build.mjs has not landed';
 
-/* Where a manifest or a service worker sits when nothing in the HTML points at
-   one. Checked in addition to whatever the HTML references, so an orphan file
-   that ships but is never registered is still held to the same rules. */
 const MANIFEST_NAMES = ['manifest.webmanifest', 'site.webmanifest', 'manifest.json'];
 const WORKER_NAMES = ['sw.js', 'service-worker.js', 'serviceworker.js'];
 
-/* The deploy publishes _site verbatim, so anything below is world readable. */
 const PRIVATE = new Set([
   'tests',
   'node_modules',
@@ -60,17 +36,8 @@ const PRIVATE = new Set([
 const ASSET =
   /\.(?:html|js|mjs|css|json|webmanifest|map|txt|xml|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf)$/iu;
 
-/* navigator.serviceWorker.register lives inside an inline script, so it is not
-   an attribute and the attribute sweep cannot see it. */
 const REGISTER = /serviceWorker\s*\.\s*register\s*\(\s*['"`]([^'"`\n]+)['"`]/gu;
 
-/* The published HTML is swept for start tags rather than parsed into a DOM.
-   That sweep was the only thing this repository ever needed a DOM for, and it
-   is not worth a dependency: the questions that genuinely need one are asked of
-   a real browser in e2e/. Comments and the bodies of <script> and <style> are
-   dropped first, so a path written inside a string literal is not mistaken for
-   a reference the browser would resolve, while the start tags themselves stay,
-   so <script src> is still swept. */
 const COMMENT = /<!--[\s\S]*?-->/gu;
 const RAW_TEXT = /(<(script|style)\b[^>]*>)[\s\S]*?<\/\2\s*>/giu;
 const START_TAG =
@@ -82,10 +49,6 @@ const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))
 const ENTITY = /&(?:#([0-9]+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z]+));/gu;
 const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
 
-/* Array literals holding nothing but strings and commas, which is what a
-   precache list looks like. Anything cleverer needs a parser, and anything
-   looser starts flagging cache names and header values. An array this misses is
-   a check not run; an array it invents is a red build for no reason. */
 const QUOTED = '(?:\'[^\'\\n]*\'|"[^"\\n]*"|`[^`\\n]*`)';
 const STRING_ARRAY = new RegExp(`\\[\\s*(${QUOTED}(?:\\s*,\\s*${QUOTED})*\\s*,?)\\s*\\]`, 'gu');
 const QUOTED_ITEM = new RegExp(QUOTED, 'gu');
@@ -125,8 +88,6 @@ function* startTags(source) {
   }
 }
 
-/* Anything carrying a scheme (https:, data:, mailto:, blob:) is somebody else's
-   server, and a bare fragment never leaves the page. Everything else is ours. */
 function localValue(raw) {
   const value = typeof raw === 'string' ? raw.trim() : '';
   if (value === '' || value.startsWith('#')) return null;
@@ -134,7 +95,6 @@ function localValue(raw) {
   return value;
 }
 
-/* Query and fragment are the server's business, not the filesystem's. */
 function toPath(from, value) {
   const bare = value.split('#')[0].split('?')[0];
   if (bare === '') return null;
@@ -142,8 +102,7 @@ function toPath(from, value) {
   try {
     decoded = decodeURIComponent(bare);
   } catch {
-    /* A malformed escape is not a path we can check; the raw form still gets
-       the leading slash and existence checks below. */
+    // MUST KILL: a malformed escape throws URIError here and is swallowed, which no-empty only allows for app.js in eslint.config.mjs.
   }
   return resolve(dirname(from), decoded);
 }
@@ -171,7 +130,6 @@ function existsExactCase(target) {
 
 let cached = null;
 
-/* One pass over the published tree, shared by every test below. */
 function inspect() {
   if (cached) return cached;
 
@@ -261,7 +219,6 @@ function localTarget(from, raw) {
   return toPath(from, value);
 }
 
-/* Keeps 'sudoku-cache-v3' and 'no-store' out of the precache list. */
 function looksLikePath(raw) {
   const value = localValue(raw);
   if (value === null) return false;
@@ -270,14 +227,11 @@ function looksLikePath(raw) {
   return ASSET.test(value.split('#')[0].split('?')[0]);
 }
 
-/* Every reference that should resolve to a file inside _site, and does not. */
 function missing(refs) {
   const offences = [];
 
   for (const ref of refs) {
     const value = localValue(ref.value);
-    /* A rooted reference is reported by its own test; resolving it here would
-       only produce a second, less useful message. */
     if (value === null || value.startsWith('/')) continue;
 
     const target = toPath(ref.file, value);
@@ -393,13 +347,6 @@ test('the service worker precaches only paths that ship', (t) => {
   );
 });
 
-/* The canonical origin, and the only place this site is allowed to write one.
-   Social scrapers fetch og:image and og:url out of context, so those cannot be
-   relative, which also means every check above skips them: localValue() drops
-   anything carrying a scheme, so a typo in one of these four paths ships green
-   and every preview 404s forever, since a scraper caches the failure. Checked
-   by stripping the origin back off and asking the published tree the same
-   question the relative sweep asks of everything else. */
 const CANONICAL = 'https://diegovalenzuelaiturra.github.io/sudoku/';
 
 test('the absolute social URLs point at files this site publishes', (t) => {
@@ -447,11 +394,6 @@ test('the absolute social URLs point at files this site publishes', (t) => {
   );
 });
 
-/* tests/assets.test.mjs asks the same two questions of the repository, which is
-   the wrong artifact for both: the minifier rewrites index.html and substitutes
-   sw.js on the way into _site, so a source file can satisfy them while the
-   bytes a visitor receives do not. */
-
 test('the published page still carries the Apache-2.0 sprite attribution', (t) => {
   if (!checkable) return t.skip(SKIPPED);
   const published = readFileSync(join(siteDir, 'index.html'), 'utf8');
@@ -469,18 +411,10 @@ test('the published page still carries the Apache-2.0 sprite attribution', (t) =
   );
 });
 
-/* The minifier can turn a valid declaration into an invalid one, and a source
-   diff cannot show it. clean-css rewrote animation-duration:.01ms as NaNs,
-   which is not a time, so the browser dropped the declaration and every reader
-   who asked for reduced motion got the animations at full length anyway. The
-   leading zero avoids it. This asks the published bytes instead of trusting
-   the source, because the source was correct the whole time. */
 test('the published styles carry no value the minifier broke', (t) => {
   if (!checkable) return t.skip(SKIPPED);
   const published = readFileSync(join(siteDir, 'index.html'), 'utf8');
 
-  /* Only the stylesheet. The inlined game holds Number.isNaN legitimately, and
-     a search over the whole page would fail on it forever. */
   const styles = [...published.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gu)]
     .map((match) => match[1])
     .join('\n');
@@ -496,8 +430,6 @@ test('the published styles carry no value the minifier broke', (t) => {
   const reduced = styles.match(/prefers-reduced-motion:\s*reduce\)\s*\{([^}]*)\}/u);
   assert.ok(reduced, '_site/index.html publishes no prefers-reduced-motion block');
 
-  /* Both properties, because the bug hit them one at a time and a rule that
-     stills the animations while the transitions run is still broken. */
   for (const property of ['animation-duration', 'transition-duration']) {
     const declared = reduced[1].match(new RegExp(`${property}:\\s*([^;!}]+)`, 'u'));
     assert.ok(declared, `the reduced motion rule no longer sets ${property}`);
@@ -516,12 +448,6 @@ test('the published service worker carries a substituted cache name', (t) => {
   if (!existsSync(worker)) return t.skip('no service worker in _site yet');
   const published = readFileSync(worker, 'utf8');
 
-  /* Both literals are written out here rather than imported from
-     scripts/build.mjs on purpose. The failure this catches is the build and
-     the worker disagreeing about the placeholder, and a check that asks the
-     build what it substitutes cannot see that: it would substitute nothing,
-     report zero, and pass. A cache name frozen at a constant pins every
-     returning visitor to the copy they already have. */
   assert.doesNotMatch(
     published,
     /__BUILD__/u,

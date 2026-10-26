@@ -1,11 +1,3 @@
-/* Guards against the PNG icons going stale against the SVG they came from.
-
-   Deliberately NOT by re-rendering and comparing bytes: a Chromium update can
-   shift antialiasing by a pixel and fail this for no reason, and a guard that
-   flakes gets deleted. Instead scripts/icons.mjs records the hash of the SVG it
-   last rendered, and this asserts the artwork has not moved since. Cheap,
-   deterministic, and needs no browser in CI. */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';

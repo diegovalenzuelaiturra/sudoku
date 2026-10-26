@@ -1,16 +1,3 @@
-/* The finished games, the lock that keeps the screen on while one is in play,
-   and the personal best that lands at the end of it.
-
-   All three live in app.js, which calls matchMedia and builds eighty one
-   buttons at module scope, so it cannot be imported. This reads the source
-   instead, the way tests/prizes.test.mjs does.
-
-   The arithmetic over a stored game is tests/stats.test.mjs, which drives the
-   real engine, and what the player sees is the browser suite. What is left, and
-   what is here, is the wiring between the two plus the rules a passing run
-   cannot show, which are all rules about bytes somebody else wrote: another
-   tab, an older build, or a newer build the player still has cached. */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -21,31 +8,15 @@ const root = join(import.meta.dirname, '..');
 const source = readFileSync(join(root, 'app.js'), 'utf8');
 const html = readFileSync(join(root, 'index.html'), 'utf8');
 
-/* The engine app.js hands its rows to, loaded the way tests/stats.test.mjs
-   loads it, so the bound asserted below is the number the ring is trimmed to
-   and not a copy of it that can drift. */
 const require = createRequire(import.meta.url);
 require(join(root, 'stats.js'));
 const S = globalThis.SudokuStats;
 delete globalThis.SudokuStats;
 
-/* The source with the comments taken out. Several assertions below count how
-   often a name appears or ask that it appears nowhere, and the comments beside
-   these functions name every one of them. */
 const strip = (text) => text.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^[ \t]*\/\/.*$/gmu, '');
 const code = strip(source);
 
-/* The body of a top level function declaration, closing brace included. Every
-   function read here is written flush against the left margin, so the first
-   unindented brace ends it.
-
-   The parameter list is matched up to the opening brace rather than up to the
-   first `)`, because a default argument puts a `)` inside the parentheses and
-   readHistory(raw = historyRaw()) is such a signature.
-
-   And the braces are counted. Several assertions below are assert.doesNotMatch,
-   which pass on a fragment as readily as on the whole function, so a `}`
-   reaching column 0 mid function would not fail this file, it would empty it. */
+// MUST KILL: body() finds the function end with a regex and a brace count, so flush-left functions are load bearing; use a real parser
 function body(name) {
   const found = source.match(new RegExp(`function ${name}\\([^{]*\\)\\s*\\{[\\s\\S]*?\\n\\}`, 'u'));
   assert.ok(found, `${name}() is not where this test expects to find it`);
@@ -70,11 +41,6 @@ test('the finished games have their own key, and their own version on it', () =>
     /const HISTORY_KEY = 'sudoku:history',\s*HISTORY_VERSION = 1;/u,
     'the history key or its version moved, and every game a player has finished is now under a name nothing reads',
   );
-  /* As many distinct strings as there are key constants. Counted rather than
-     compared against a number written here, so adding a key is not a failure
-     while two constants holding the same string still is: that gives one key
-     two writers with two payload shapes, and the second write of a session
-     deletes whatever the first put there. */
   const declared = code.match(/const \w+_KEY = 'sudoku:[a-z]+'/gu) || [];
   const keys = [...new Set(code.match(/'sudoku:[a-z]+'/gu))];
   assert.equal(
@@ -120,11 +86,6 @@ test('the reader refuses a version it has never heard of', () => {
   );
 });
 
-/* The wallet rule, and the opposite of what the record does: readStats() also
-   answers null on a version it does not know, but loadStats() falls back to a
-   blank and the next saveStats() writes that blank over the bytes. Nothing on
-   the history side may do the same. A lost streak is a lost count; a lost game
-   was played and cannot be played again. */
 test('reading the games never writes them back', () => {
   for (const name of ['historyRaw', 'readHistory', 'loadHistory']) {
     assert.doesNotMatch(
@@ -205,12 +166,6 @@ test('the game is written down beside the prize, never on a timer', () => {
   );
 });
 
-/* The counters in sudoku:stats are the record and the ring is the trend, and
-   the two are only separate because bumping this version deletes the first.
-   readStats() answers null on a version it does not know, loadStats() falls
-   back to blankStats() and the next saveStats() writes it, so a build that
-   ships STATS_VERSION 2 has taken every existing player's played, won, best and
-   streak with it. */
 test('the lifetime record keeps its version and its shape', () => {
   assert.match(
     code,
@@ -253,12 +208,6 @@ test('the wake lock is asked for only where the platform has one', () => {
 
 test('every wake lock promise ends in a rejection handler', () => {
   const wake = strip(body('syncWakeLock'));
-  /* The last link in the chain, so nothing is left to reject into nowhere: the
-     request answers NotAllowedError for a hidden document, for a blocking
-     permissions policy and for a battery the platform will not spend, and an
-     unhandled rejection is a console error that e2e/console.spec.mjs fails the
-     run on. The flag it clears is the other half: left standing, the guard
-     above it turns down every later request for the life of the tab. */
   assert.match(
     wake,
     /\.request\('screen'\)[\s\S]*\.catch\(\(\) => \{\s*wakeLockPending = false;\s*\}\);\s*\}$/u,
@@ -297,10 +246,6 @@ test('the screen is held awake only while the clock runs', () => {
     /addEventListener\('visibilitychange',[\s\S]{0,200}?syncWakeLock\(\);/u,
     'a tab hidden after the board is won keeps its lock: setPaused() returns early there, so this listener is the only release path left',
   );
-  /* The platform is allowed to take the lock back mid board for low battery or
-     power save. The three call sites above are a pause, a win and a hidden tab,
-     none of which a player solving a board has to reach, so without this one the
-     display timeout comes back for the rest of the game. */
   assert.match(
     body('saveGame'),
     /syncWakeLock\(\);/u,
@@ -325,17 +270,11 @@ test('the personal best is the answer recordWin gave, and a first win is not one
     /streak: held > 0 && stats\.bestStreak > held && streakMilestone\(stats\.streak\),/u,
     'recordWin() no longer answers both records, and neither comparison can be made anywhere else: both have to be read before the counts move',
   );
-  /* Once a player is on their longest run ever, every game after it breaks the
-     record again. Announcing each one rained nine times over ten wins and made
-     the rarest celebration in the game the most frequent. */
   assert.match(
     source,
     /const streakMilestone = \(run\) => run === 3 \|\| \(run >= 5 && run % 5 === 0\);/u,
     'every extension of a best streak is announced again, which is a shower on nearly every flawless win',
   );
-  /* The same rule the best time follows, for the same reason. The first flawless
-     win of all takes the best streak from 0 to 1, which is a record against
-     nothing. */
   assert.match(
     record,
     /const held = stats\.bestStreak;/u,
@@ -348,9 +287,6 @@ test('the personal best is the answer recordWin gave, and a first win is not one
   );
 });
 
-/* Celebration, and nothing else. The flawless bonus is the paying axis and the
-   code already clamps against farming it; a prize on the best time would need
-   its own clamps and would be farmable by clearing the history. */
 test('a personal best pays nothing', () => {
   const win = strip(body('win'));
   const paid = win.indexOf('bankPrize(');
@@ -382,8 +318,6 @@ test('both records reach the dialog and the announcement', () => {
     /\$\('wStreakLine'\)\.hidden = !flawless;/u,
     'the run is back to being shown only when it breaks a record, which leaves every other clean win saying nothing about a counter it moved',
   );
-  /* Which of the three numbers in the dialog the record belongs to. "Nuevo
-     récord" over a row of three tiles does not say what was broken. */
   assert.match(
     win,
     /\$\('wTimeStat'\)\.classList\.toggle\('record', beatBest\);/u,
@@ -394,9 +328,6 @@ test('both records reach the dialog and the announcement', () => {
     /\$\('srAlert'\)\.textContent =\s*`Ganaste\./u,
     'the win announcement no longer opens with Ganaste., which e2e/interface.spec.mjs reads as the first word of it',
   );
-  /* Both showers have a sentence behind them. Rain is nothing at all to a
-     screen reader, so a record that only rains is a celebration some players
-     are never invited to. */
   assert.match(
     win,
     /\(beatBest \? ' ¡Nuevo récord de tiempo!' : ''\)/u,
@@ -407,16 +338,11 @@ test('both records reach the dialog and the announcement', () => {
     /\(flawless \? ` \$\{streakSaid\(streakNow, beatStreak\)\}` : ''\)/u,
     'the assertive announcement drops the run, so a player who cannot see the line is told about the streak only when it breaks a record',
   );
-  /* One is not "1 secas seguidas", and a record is the only sentence that
-     claims one. */
   assert.match(
     source,
     /run === 1\s*\?\s*'Va 1 seca\.'\s*:\s*`Van \$\{run\} secas seguidas\.`/u,
     'the run reads as a plural whatever it is worth, or the singular lost its own wording',
   );
-  /* The table is four plain cells again. A trophy beside the best time said the
-     record was set in this session, which is a fact about the tab rather than
-     about the player, and it read as though the time itself were a trophy. */
   assert.doesNotMatch(
     body('paintRecord'),
     /🏆|bestMark|freshBest/u,
@@ -424,8 +350,6 @@ test('both records reach the dialog and the announcement', () => {
   );
 });
 
-/* One glyph, one record. The trophy is the time and the medal is the streak,
-   in the shower and in the line that explains it. */
 test('the two records are told apart by glyph, and both rain', () => {
   const win = body('win');
   assert.match(
@@ -438,8 +362,6 @@ test('the two records are told apart by glyph, and both rain', () => {
     /if \(beatStreak\) winTimers\.push\(setTimeout\(\(\) => rain\(6, '🥇'\)/u,
     'a new best streak no longer rains medals',
   );
-  /* Behind the same reduced motion gate the papas and the chocolates are
-     behind: a player who asked for no animation asked for all of it. */
   const moving = win.match(/if \(!reduceMotion\.matches\) \{[\s\S]*?\n {2}\}/u);
   assert.ok(moving, 'the reduced motion branch is not where this test expects it');
   assert.match(moving[0], /'🏆'/u, 'the trophy shower runs for a player who asked for no motion');
@@ -467,14 +389,11 @@ test('both record lines are in the markup, hidden until they are true', () => {
     /hidden\s*><span\s+id="wStreakGlyph"\s+aria-hidden="true"\s*>🔥<\/span> <b id="wStreakText">/u,
     'the streak line lost one of the two holes app.js writes into: the glyph that separates a record from a count, and the sentence itself',
   );
-  /* One glyph, one record, everywhere either appears. */
   assert.match(
     html,
     /🔥 <b id="streakNow">0<\/b> <span id="streakNowWord">seguidas<\/span> 🥇 mejor <b id="streakBest">0<\/b>/u,
     'the best streak is a trophy again, which is the glyph the best time already uses',
   );
-  /* The tile the record belongs to is marked, and it is the only one that can
-     be: a record is kept for the clock and for neither counter beside it. */
   assert.match(
     html,
     /<div class="stat" id="wTimeStat"><b id="wTime">/u,

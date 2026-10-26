@@ -1,18 +1,3 @@
-/* Validates the puzzle generator by evaluating generator.js itself, so the test
-   exercises the shipped code rather than a copy. It used to cut the same code
-   out of index.html between LOGIC markers; the generator has since moved into
-   its own file so it can run in a worker, and this reads that file directly.
-
-   Every case below is driven by an explicit seed. That is the point of seeding
-   the generator: these assertions used to run against whatever the last call
-   happened to produce, so a rate like "grades on target 85 percent of the time"
-   could only be asserted with enough slack to never mean anything. With fixed
-   seeds the same boards are built on every machine and the rate is a constant.
-
-   Regression target, still: makePuzzle used to remove clues in 180-degree
-   symmetric pairs, so parity stranded the count one below an even target while
-   the compensating pass never ran. */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -20,38 +5,13 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
-/* The game is app.js, which the build inlines into the published page. */
 const app = readFileSync(join(root, 'app.js'), 'utf8');
 
-/* Required rather than evaluated from a string, because the coverage report is
-   the point. `new Function` compiles an anonymous script that V8 attributes to
-   no file at all, so every line of the generator counted as nothing and the
-   floor `npm run test:coverage` enforces was being measured over the two build
-   scripts alone. Requiring the file gives it a real filename, so the code these
-   tests actually drive is the code the report is computed from.
-
-   It is still this repository's own committed generator.js, run by a test
-   inside that repository's CI. Anyone able to change it could change this file
-   just as easily, so loading it adds no attack surface, and running the shipped
-   code is the whole point: a hand copied generator would silently drift from
-   the one players actually run.
-
-   generator.js is a classic script that exports onto `self` where there is one
-   and `globalThis` otherwise. Node has no `self`, so loading it here puts a
-   single name on the global object, which is read once and then deleted: the
-   process is left no dirtier than the sandboxed object this replaced. What kept
-   the worker wiring at the bottom of the file dormant is unchanged, because it
-   is behind a WorkerGlobalScope check and node has no such thing. */
 const require = createRequire(import.meta.url);
 require(join(root, 'generator.js'));
 const { makePuzzle, gradePuzzle, countSolutions, GRADE_NAMES } = globalThis.SudokuGenerator;
 delete globalThis.SudokuGenerator;
 
-/* Kept in sync with the DIFF map in app.js, which the last test here checks
-   rather than trusts. `hits` is what was measured over the 24 seeds below, and
-   the assertion is set at that number: with the seeds fixed there is no run to
-   run variation to leave slack for, so a drop is a real regression in how often
-   the search finds the tier it was asked for. */
 const PRESETS = [
   { key: 'easy', label: 'Piola', clues: 40, grade: 1, hits: 24 },
   { key: 'medium', label: 'Normal', clues: 28, grade: 2, hits: 24 },
@@ -88,6 +48,7 @@ function assertCompleteValidGrid(solution) {
 }
 
 for (const preset of PRESETS) {
+  // MUST KILL: the clue floor is an inline 17 in this test, so a named MIN_UNIQUE_CLUES constant would carry the reason
   test(`${preset.label} generates valid, uniquely solvable, honestly graded puzzles`, () => {
     let onTarget = 0;
 
@@ -101,11 +62,6 @@ for (const preset of PRESETS) {
         made.puzzle.filter((v) => v !== 0).length,
         'the reported clue count disagrees with the board',
       );
-      /* A board with fewer than 17 clues cannot have a unique solution, so this
-         is a floor no correct generator can go under, and an 81 clue board is
-         not a puzzle. The count is otherwise free to move: it is where the
-         search starts now, not the promise, which is why nothing here pins it
-         to preset.clues the way this file used to. */
       assert.ok(
         made.clues >= 17 && made.clues < 81,
         `${preset.label}: ${made.clues} clues is not a puzzle`,
@@ -119,10 +75,6 @@ for (const preset of PRESETS) {
 
       assert.equal(countSolutions(made.puzzle, 3), 1, 'puzzle is not uniquely solvable');
 
-      /* The one assertion here with no tolerance at all. The search is allowed
-         to miss the tier it aimed for, because some tiers are narrow, but it is
-         never allowed to report a grade the board does not have: index.html
-         shows that grade to the player as what they just solved. */
       assert.equal(
         made.grade,
         gradePuzzle(made.puzzle),
@@ -153,8 +105,6 @@ test('the same seed rebuilds the same board', () => {
 });
 
 test('different seeds build different boards', () => {
-  /* Guards the failure a seeded generator invites: wiring a seed in but never
-     threading it through, so every board comes out identical. */
   const boards = SEEDS.slice(0, 6).map((seed) =>
     JSON.stringify(makePuzzle({ clues: 28, grade: 2, seed }).puzzle),
   );
@@ -162,13 +112,6 @@ test('different seeds build different boards', () => {
 });
 
 test('a board is graded by technique, not by how many clues it shows', () => {
-  /* The claim the grading exists to make. Difficulty used to be the clue count
-     and nothing else, so this looks for the case that arrangement could not
-     represent: the same number of clues on the board, and a different technique
-     needed to finish it.
-
-     Measured over the seeds below, six different clue counts turn up at both
-     bloques and pares, so this is not a lucky coincidence being pinned down. */
   const seen = new Map();
   for (const grade of [2, 3]) {
     const clues = new Set();
@@ -188,10 +131,6 @@ test('a board is graded by technique, not by how many clues it shows', () => {
 });
 
 test('the grade words the game shows come from the generator', () => {
-  /* app.js is inlined into the page and generator.js has to run in a worker, so
-     the table is written twice. This is what stops the two drifting: a tier renamed in
-     one and not the other would put a word on the difficulty buttons that no
-     board is ever graded with. */
   const literal = app.match(/const GRADE_WORDS\s*=\s*\{([^}]*)\}/u);
   assert.ok(literal, 'GRADE_WORDS is not where this test expects to find it');
 
