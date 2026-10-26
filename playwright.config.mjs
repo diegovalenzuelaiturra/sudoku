@@ -9,6 +9,7 @@ const BASE_PATH = 'sudoku';
 const BASE_URL = `http://127.0.0.1:${PORT}/${BASE_PATH}/`;
 
 export default defineConfig({
+  /* node --test claims every file matching *.test.*, wherever it sits. */
   testDir: './e2e',
   testMatch: /.*\.spec\.mjs$/u,
 

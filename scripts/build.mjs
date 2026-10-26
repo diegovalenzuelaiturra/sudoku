@@ -92,7 +92,6 @@ function collect(root) {
   return { paths, skipped };
 }
 
-// MUST KILL: inlining and hashing run in a fixed order inside build(); composing them as one pipeline makes the hash see only inlined bytes
 const INLINED_SCRIPTS = new Set(['app.js', 'stats.js']);
 
 const SCRIPT_TAG = /[ \t]*<script\s+src="([^"]+)"\s*>\s*<\/script>/gu;
@@ -180,14 +179,21 @@ export function build({ root = REPO_ROOT, outDir, buildId } = {}) {
   return { buildId: id, idSource, outDir: target, files: published, skipped };
 }
 
-// MUST KILL: CSS_TARGETS packs lightningcss versions as major << 16 | minor << 8 by hand; a version(major, minor) helper makes the floor readable
+const version = (major, minor = 0, patch = 0) => (major << 16) | (minor << 8) | patch;
+
+/* user-select and backdrop-filter both need -webkit- at Safari 15.4 and
+   neither carries it in the source, so the built page now grows the prefixes
+   instead of quietly dropping the declarations on the oldest browser in scope. */
 const CSS_TARGETS = {
-  safari: (15 << 16) | (4 << 8),
-  chrome: 100 << 16,
-  firefox: 98 << 16,
-  edge: 100 << 16,
+  safari: version(15, 4),
+  chrome: version(100),
+  firefox: version(98),
+  edge: version(100),
 };
 
+/* html-minifier-terser calls this for three kinds of text and says which:
+   a <style> body, a style attribute, and a media attribute. lightningcss parses
+   a stylesheet, so the last two are wrapped into one and unwrapped after. */
 const minifyCss = (text, type) => {
   const run = (code) =>
     transformCss({

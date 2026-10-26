@@ -1,5 +1,16 @@
 name: Zizmor
 
+# The offline audits read the workflow files and nothing else. The online ones
+# resolve every "uses:" against the GitHub API, which is what catches the
+# attacks that a SHA pin cannot: impostor-commit, where a pinned SHA is real but
+# is not reachable from any branch or tag of the repository it claims to come
+# from, and known-vulnerable-actions, where the pinned version is the one with
+# the advisory against it.
+#
+# Findings do not turn this job red. With advanced-security the action uploads
+# SARIF and exits zero, on the upstream reasoning that an alert belongs in the
+# Security tab where it can be triaged rather than in a red run that a rerun
+# clears.
 on:
   pull_request:
   push:
@@ -35,7 +46,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # MUST KILL: zizmor version repeated from .pre-commit-config.yaml and guarded only by a test, one source would remove the repeat
       - uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
         with:
           version: "1.31.1"

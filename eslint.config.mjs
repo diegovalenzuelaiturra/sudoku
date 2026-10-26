@@ -11,6 +11,9 @@ export default defineConfig([
     languageOptions: { sourceType: 'module', globals: globals.node },
   },
 
+  /* A spec holds two languages: node outside page.evaluate, and page code
+     inside it, which ESLint resolves against the same scope and reports as
+     undefined. */
   {
     files: ['e2e/**/*.mjs'],
     rules: { 'no-undef': 'off' },

@@ -1,5 +1,8 @@
 name: CodeQL
 
+# Findings do not turn this job red. codeql-action/analyze fails on an internal
+# error, not on an alert, which is deliberate upstream: the alert belongs in the
+# Security tab where it can be triaged and stays triaged.
 on:
   pull_request:
   push:

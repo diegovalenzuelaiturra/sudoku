@@ -30,32 +30,9 @@ jobs:
           node-version: '26'
           cache: npm
 
-      # MUST KILL: npm pin repeated in four jobs as env strings, one shared source removes the repeat
       - name: Install npm
-        env:
-          NPM_VERSION: 12.2.1
-          NPM_INTEGRITY: sha512-bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==
-        run: |
-          set -euo pipefail
-          dir="$RUNNER_TEMP/npm-${NPM_VERSION}"
-          mkdir -p "$dir/npm" "$dir/bin"
-          curl --fail --silent --show-error --location \
-            --output "$dir/npm.tgz" \
-            "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
-          actual="sha512-$(openssl dgst -sha512 -binary "$dir/npm.tgz" | base64 -w0)"
-          if [ "$actual" != "$NPM_INTEGRITY" ]; then
-            echo "::error::npm ${NPM_VERSION} does not match its pinned integrity" >&2
-            exit 1
-          fi
-          tar -xzf "$dir/npm.tgz" -C "$dir/npm" --strip-components 1
-          for cli in npm npx; do
-            printf '#!/bin/sh\nexec node "%s/npm/bin/%s-cli.js" "$@"\n' "$dir" "$cli" > "$dir/bin/$cli"
-            chmod 755 "$dir/bin/$cli"
-          done
-          [ "$("$dir/bin/npm" --version)" = "$NPM_VERSION" ]
-          echo "$dir/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-npm
 
-      # MUST KILL: later steps gate on steps.install.outcome, a job boundary would state the gate
       - id: install
         run: npm ci --ignore-scripts
 
@@ -112,7 +89,6 @@ jobs:
         with:
           path: _site
 
-  # MUST KILL: publish credentials sit in a job guarded by prose and a regex test, a separate deploy workflow file would enforce it
   deploy:
     name: Deploy
     needs: verify
@@ -123,6 +99,11 @@ jobs:
       contents: read
       pages: write
       id-token: write
+    # 20 rather than 10: deploy-pages waits up to 10 minutes on its own for the
+    # rollout, and the smoke test below can spend another 3 retrying a cold
+    # address. At 10 the runner would kill the job at the exact moment
+    # deploy-pages was about to report the actionable timeout itself, and the
+    # smoke test would never run at all.
     timeout-minutes: 20
     environment:
       name: github-pages
@@ -209,31 +190,15 @@ jobs:
         with:
           node-version: '26'
 
-      # MUST KILL: npm pin repeated in four jobs as env strings, one shared source removes the repeat
       - name: Install npm
-        env:
-          NPM_VERSION: 12.2.1
-          NPM_INTEGRITY: sha512-bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==
-        run: |
-          set -euo pipefail
-          dir="$RUNNER_TEMP/npm-${NPM_VERSION}"
-          mkdir -p "$dir/npm" "$dir/bin"
-          curl --fail --silent --show-error --location \
-            --output "$dir/npm.tgz" \
-            "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
-          actual="sha512-$(openssl dgst -sha512 -binary "$dir/npm.tgz" | base64 -w0)"
-          if [ "$actual" != "$NPM_INTEGRITY" ]; then
-            echo "::error::npm ${NPM_VERSION} does not match its pinned integrity" >&2
-            exit 1
-          fi
-          tar -xzf "$dir/npm.tgz" -C "$dir/npm" --strip-components 1
-          for cli in npm npx; do
-            printf '#!/bin/sh\nexec node "%s/npm/bin/%s-cli.js" "$@"\n' "$dir" "$cli" > "$dir/bin/$cli"
-            chmod 755 "$dir/bin/$cli"
-          done
-          [ "$("$dir/bin/npm" --version)" = "$NPM_VERSION" ]
-          echo "$dir/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-npm
 
+      # That pin covers the top level only: Lighthouse's own dependencies are
+      # caret ranges and are resolved fresh here, with no lockfile.
+      # npm_config_ignore_scripts is what keeps that from being an arbitrary
+      # code path, since npx runs the lifecycle scripts of everything it
+      # resolves; it is the same protection npm ci --ignore-scripts gives the
+      # other jobs.
       - name: Run Lighthouse against the published site
         env:
           PAGE_URL: ${{ needs.deploy.outputs.page_url }}

@@ -1,0 +1,7 @@
+# zizmor's self-repository audit asks for "uses: $/..." in place of "./...",
+# and actionlint 1.7.12 rejects "$/" as an action with no ref, so the two hooks
+# cannot both pass on a local action. Delete this file once an actionlint
+# release accepts "$/".
+rules:
+  self-repository:
+    disable: true

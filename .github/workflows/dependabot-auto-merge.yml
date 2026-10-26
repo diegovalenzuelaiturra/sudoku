@@ -5,6 +5,21 @@ name: Dependabot auto-merge
 # and osv-scanner raising no alert above the rule's thresholds, the branch up to
 # date with its base, and the commit signed. A red check leaves the pull request
 # sitting open exactly as it does today.
+#
+# gh chooses between two calls on the state it reads. A pull request nothing is
+# blocking is merged on the spot; one that is still blocked is queued, and
+# GitHub releases it later.
+#
+# The obvious shape for this is pull_request_target, because a workflow
+# Dependabot triggers through pull_request gets a read only token and cannot
+# merge anything. zizmor rejects that shape twice over, and it is right to:
+# dangerous-triggers, because pull_request_target hands the base repository's
+# token to a run started by a pull request, and bot-conditions, because
+# github.actor is spoofable and is therefore not something to gate a merge on.
+#
+# The cost is that a schedule only ever runs on the default branch, so this file
+# does nothing until it reaches main through a release, and a new pull request
+# waits at most six hours.
 on:
   schedule:
     # Four times a day, off the hour. GitHub drops scheduled runs when too many

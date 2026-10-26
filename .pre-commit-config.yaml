@@ -1,4 +1,11 @@
-# MUST KILL: prek ignores this key, so it only binds plain pre-commit and guards nothing in this repo
+# Three of them, check-added-large-files, end-of-file-fixer and
+# trailing-whitespace, declare minimum_pre_commit_version 3.2.0 in their own
+# upstream manifest, and pre-commit exits on any hook whose floor is above the
+# installed version.
+#
+# prek, the runner this repo installs and the one CI runs, ignores this key and
+# every hook's own floor: measured against the prek in this lockfile, "99.99.0"
+# here still runs every hook and exits 0.
 minimum_pre_commit_version: "3.2.0"
 
 repos:
@@ -7,6 +14,9 @@ repos:
     hooks:
       - id: actionlint
 
+  # actionlint judges a workflow valid and a missing timeout-minutes is valid;
+  # zizmor judges it safe and a missing one is safe. Neither objects, and the
+  # job then runs to GitHub's six hour default.
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.38.2
     hooks:
@@ -14,6 +24,14 @@ repos:
       - id: check-github-workflows
       - id: check-github-workflows-require-timeout
 
+  # Left to itself zizmor uses the network when a GitHub token happens to be in
+  # the environment and stays quietly offline when one is not, so the same
+  # commit could pass on a laptop and fail in CI purely because of an exported
+  # variable.
+  #
+  # --no-progress is from the upstream manifest and has to be repeated here,
+  # because setting args in this file replaces the manifest's args rather than
+  # adding to them.
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
     rev: v1.31.1
     hooks:
@@ -23,16 +41,31 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # --enforce-all is what makes it a tripwire in CI rather than only at
+      # commit time. Without it the hook intersects the paths it is handed with
+      # the files added to the index, and a fresh runner checkout stages
+      # nothing, so "prek run --all-files" reports Passed over a tree holding a
+      # 900 KB blob.
       - id: check-added-large-files
         args: [--enforce-all, --maxkb=1024]
 
       - id: check-case-conflict
 
-      # MUST KILL: types overrides the upstream json type, so .webmanifest is covered only by this files regex
+      # manifest.webmanifest is JSON as well, but its extension is not .json,
+      # and neither identify nor prek's port of that table maps .webmanifest to
+      # the json tag, so the upstream manifest's "types: [json]" walks straight
+      # past it.
+      #
+      # Setting types in this file replaces the manifest's value instead of
+      # adding to it, so [file] widens the hook to everything and the files
+      # pattern narrows it back to the two extensions.
       - id: check-json
         types: [file]
         files: \.(json|webmanifest)$
 
+      # The hook returns 0 immediately unless .git/MERGE_HEAD exists, so without
+      # this flag it is inert on every ordinary commit and on every CI run, which
+      # is the whole window a marker has to arrive through.
       - id: check-merge-conflict
         args: [--assume-in-merge]
 
@@ -40,7 +73,15 @@ repos:
 
       - id: check-yaml
 
-      # MUST KILL: CI skips this hook because it fails on any run from main or development, so a commit-time only split removes the skip
+      # The hook shells out to "git symbolic-ref HEAD" and reports success when
+      # that command fails, which is what a detached HEAD does. On a pull
+      # request actions/checkout resolves refs/pull/N/merge and checks it out
+      # detached, so the Lint job is unaffected; a past run logs "git checkout
+      # --progress --force refs/remotes/pull/16/merge". For a ref under
+      # refs/heads, which is what a push to main or a workflow_dispatch run
+      # gives it, the same action logs "git checkout --progress --force -B main
+      # refs/remotes/origin/main" and leaves HEAD on a real branch, where this
+      # hook fails.
       - id: no-commit-to-branch
         args: [--branch=main, --branch=development]
 
@@ -60,6 +101,7 @@ repos:
 
   - repo: local
     hooks:
+      # "files" decides whether the hook runs, not what it reads.
       - id: oxlint
         name: oxlint
         entry: npm run --silent lint:oxlint
@@ -89,7 +131,6 @@ repos:
         pass_filenames: false
         files: ^(index\.html|404\.html|app\.js|cspell\.config\.mjs)$
 
-      # MUST KILL: files regex is hand copied, and a path missing from it silently skips the workflow guard test
       - id: unit-tests-coverage
         name: unit tests with coverage floor
         entry: npm run test:coverage

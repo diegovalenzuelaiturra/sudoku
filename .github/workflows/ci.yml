@@ -33,32 +33,9 @@ jobs:
           node-version: '26'
           cache: npm
 
-      # MUST KILL: npm pin repeated in four jobs as env strings, one shared source removes the repeat
       - name: Install npm
-        env:
-          NPM_VERSION: 12.2.1
-          NPM_INTEGRITY: sha512-bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==
-        run: |
-          set -euo pipefail
-          dir="$RUNNER_TEMP/npm-${NPM_VERSION}"
-          mkdir -p "$dir/npm" "$dir/bin"
-          curl --fail --silent --show-error --location \
-            --output "$dir/npm.tgz" \
-            "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
-          actual="sha512-$(openssl dgst -sha512 -binary "$dir/npm.tgz" | base64 -w0)"
-          if [ "$actual" != "$NPM_INTEGRITY" ]; then
-            echo "::error::npm ${NPM_VERSION} does not match its pinned integrity" >&2
-            exit 1
-          fi
-          tar -xzf "$dir/npm.tgz" -C "$dir/npm" --strip-components 1
-          for cli in npm npx; do
-            printf '#!/bin/sh\nexec node "%s/npm/bin/%s-cli.js" "$@"\n' "$dir" "$cli" > "$dir/bin/$cli"
-            chmod 755 "$dir/bin/$cli"
-          done
-          [ "$("$dir/bin/npm" --version)" = "$NPM_VERSION" ]
-          echo "$dir/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-npm
 
-      # MUST KILL: later steps gate on steps.install.outcome, a job boundary would state the gate
       - id: install
         run: npm ci --ignore-scripts
 
@@ -102,35 +79,22 @@ jobs:
           node-version: '26'
           cache: npm
 
-      # MUST KILL: npm pin repeated in four jobs as env strings, one shared source removes the repeat
       - name: Install npm
-        env:
-          NPM_VERSION: 12.2.1
-          NPM_INTEGRITY: sha512-bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==
-        run: |
-          set -euo pipefail
-          dir="$RUNNER_TEMP/npm-${NPM_VERSION}"
-          mkdir -p "$dir/npm" "$dir/bin"
-          curl --fail --silent --show-error --location \
-            --output "$dir/npm.tgz" \
-            "https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
-          actual="sha512-$(openssl dgst -sha512 -binary "$dir/npm.tgz" | base64 -w0)"
-          if [ "$actual" != "$NPM_INTEGRITY" ]; then
-            echo "::error::npm ${NPM_VERSION} does not match its pinned integrity" >&2
-            exit 1
-          fi
-          tar -xzf "$dir/npm.tgz" -C "$dir/npm" --strip-components 1
-          for cli in npm npx; do
-            printf '#!/bin/sh\nexec node "%s/npm/bin/%s-cli.js" "$@"\n' "$dir" "$cli" > "$dir/bin/$cli"
-            chmod 755 "$dir/bin/$cli"
-          done
-          [ "$("$dir/bin/npm" --version)" = "$NPM_VERSION" ]
-          echo "$dir/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-npm
 
-      # MUST KILL: later steps gate on steps.install.outcome, a job boundary would state the gate
       - id: install
         run: npm ci --ignore-scripts
 
+      # --skip no-commit-to-branch: that hook exists to stop a commit being made
+      # locally on main or development, and this runner never commits anything.
+      # Leaving it in would fail this job on exactly the events where the check
+      # matters most. On a pull request actions/checkout resolves the merge ref
+      # and leaves HEAD detached, where the hook passes because "git
+      # symbolic-ref HEAD" fails; on a push to main or a workflow_dispatch run
+      # the same action checks out with "-B main", HEAD sits on a real branch,
+      # and the hook fails the run for a commit that was already made and
+      # already merged.
+      #
       # The flag is repeated rather than given a comma separated list. Measured
       # against the prek in this lockfile: "--skip a,b" is read as one hook name
       # and warns "selector did not match any hooks", then runs both of them.

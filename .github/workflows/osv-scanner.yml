@@ -41,14 +41,20 @@ jobs:
           echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --strict -
           chmod +x osv-scanner
 
-      # MUST KILL: scan exit code survives only through an implicit bash -e shell, naming the shell in code would make it obvious
       - name: Scan the dependency tree
         id: scan
         run: |
           set -uo pipefail
+          # A run block with no shell named runs under "bash -e", and "set -uo
+          # pipefail" leaves -e on, so a bare scanner call exiting 1 ended the
+          # step right there: no code was written, the upload step was skipped,
+          # and the rule held every pull request on an analysis that never
+          # arrived.
           code=0
           ./osv-scanner scan source --recursive --format=sarif --output-file=osv.sarif . || code=$?
           echo "code=${code}" >> "$GITHUB_OUTPUT"
+          # 0 is a clean tree and 1 is findings. Both wrote the file the upload
+          # step needs, so neither ends the job on this line.
           [ "$code" -le 1 ]
 
       - name: Publish findings to code scanning

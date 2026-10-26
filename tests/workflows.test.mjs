@@ -102,32 +102,70 @@ test('the merge workflow names every tool that gates it', () => {
   }
 });
 
-test('every job that sets up node installs the same pinned npm', () => {
+const NPM_ACTION = '.github/actions/install-npm/action.yml';
+const SETUP_NODE = /^[ \t]*- uses: actions\/setup-node@/gmu;
+const INSTALL_NPM = /^[ \t]*(?:- )?uses: \.\/\.github\/actions\/install-npm[ \t]*$/gmu;
+
+test('every job that sets up node installs the pinned npm right after', () => {
   const dir = join(root, '.github', 'workflows');
-  const pins = [];
   let setups = 0;
 
   for (const name of readdirSync(dir)) {
     const yaml = readFileSync(join(dir, name), 'utf8');
-    setups += [...yaml.matchAll(/^\s*- uses: actions\/setup-node@/gmu)].length;
-    for (const [, version, integrity] of yaml.matchAll(
-      /- name: Install npm\s*\n\s*env:\s*\n\s*NPM_VERSION: (\S+)\s*\n\s*NPM_INTEGRITY: (\S+)/gu,
-    )) {
-      pins.push({ name, version, integrity });
-    }
+    const kinds = [
+      ...[...yaml.matchAll(SETUP_NODE)].map(({ index }) => ({ index, kind: 'setup-node' })),
+      ...[...yaml.matchAll(INSTALL_NPM)].map(({ index }) => ({ index, kind: 'install-npm' })),
+    ]
+      .toSorted((a, b) => a.index - b.index)
+      .map(({ kind }) => kind);
+    const nodeSetups = kinds.filter((kind) => kind === 'setup-node').length;
+
+    assert.deepEqual(
+      kinds,
+      Array.from({ length: nodeSetups }, () => ['setup-node', 'install-npm']).flat(),
+      `${name} does not follow each setup-node step with one call of ./.github/actions/install-npm: ` +
+        'a job that sets up node without the pinned npm runs the npm node ships instead.',
+    );
+    assert.doesNotMatch(
+      yaml,
+      /NPM_VERSION|NPM_INTEGRITY/u,
+      `${name} pins npm itself, and the one pin lives in ${NPM_ACTION}, so two copies would drift.`,
+    );
+    setups += nodeSetups;
   }
 
   assert.ok(setups > 0, 'no actions/setup-node step found in .github/workflows');
-  assert.equal(
-    pins.length,
-    setups,
-    `${setups} setup-node steps but ${pins.length} "Install npm" steps: a job that sets up node ` +
-      'without the pin runs the npm node ships instead.',
+});
+
+test('the npm pin is written once, as a version and its registry integrity', () => {
+  const action = read(NPM_ACTION);
+  const versions = [...action.matchAll(/^[ \t]*NPM_VERSION: (\S+)[ \t]*$/gmu)].map(
+    ([, value]) => value,
+  );
+  const integrities = [...action.matchAll(/^[ \t]*NPM_INTEGRITY: (\S+)[ \t]*$/gmu)].map(
+    ([, value]) => value,
+  );
+
+  assert.match(
+    action,
+    /^[ \t]*using: composite[ \t]*$/mu,
+    `${NPM_ACTION} is no longer a composite action`,
+  );
+  assert.equal(versions.length, 1, `${NPM_ACTION} sets NPM_VERSION ${versions.length} times`);
+  assert.match(
+    versions[0],
+    /^\d+\.\d+\.\d+$/u,
+    `NPM_VERSION ${versions[0]} is not one exact release, so the integrity beside it cannot describe it`,
   );
   assert.equal(
-    new Set(pins.map((p) => `${p.version} ${p.integrity}`)).size,
+    integrities.length,
     1,
-    `the npm pins disagree: ${pins.map((p) => `${p.name} ${p.version}`).join(', ')}. ` +
-      'Move NPM_VERSION and NPM_INTEGRITY together in every workflow.',
+    `${NPM_ACTION} sets NPM_INTEGRITY ${integrities.length} times`,
+  );
+  assert.match(
+    integrities[0],
+    /^sha512-[A-Za-z0-9+/]{86}==$/u,
+    'NPM_INTEGRITY is not a sha512 integrity as the registry publishes it, the only form the step ' +
+      'computes from the tarball to compare against',
   );
 });

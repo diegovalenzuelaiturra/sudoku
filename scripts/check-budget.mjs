@@ -8,8 +8,11 @@
    cannot be read or the Lighthouse run itself failed. Plain Node, no
    dependencies, so it runs on the runner's Node with nothing installed. */
 
-import { readFileSync, writeSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
+/* Every audit in the category scores 0 or 1, so the category score is a
+   weighted mean of binary results and a single failing audit drops it below
+   1.0. */
 const REQUIRED_ACCESSIBILITY = 1;
 
 const CHECKS = [
@@ -36,30 +39,11 @@ const CHECKS = [
   },
 ];
 
-// MUST KILL: abort exits with process.exit, which can truncate async stderr writes; a top level catch that sets exitCode removes the need for writeSync
+class BudgetAbort extends Error {}
+
+/** @returns {never} */
 function abort(message) {
-  writeSync(2, `check-budget: ${message}\n`);
-  process.exit(2);
-}
-
-const reportPath = process.argv[2];
-if (!reportPath) abort('usage: node scripts/check-budget.mjs <lighthouse-report.json>');
-
-let report;
-try {
-  report = JSON.parse(readFileSync(reportPath, 'utf8'));
-} catch (error) {
-  abort(`cannot read ${reportPath}: ${error.message}`);
-}
-
-if (report === null || typeof report !== 'object') {
-  abort(`${reportPath} does not hold a lighthouse json report`);
-}
-
-if (report.runtimeError?.code && report.runtimeError.code !== 'NO_ERROR') {
-  abort(
-    `lighthouse run failed: ${report.runtimeError.code} ${report.runtimeError.message ?? ''}`.trim(),
-  );
+  throw new BudgetAbort(message);
 }
 
 function ceilingFor({ env, budget }) {
@@ -70,58 +54,92 @@ function ceilingFor({ env, budget }) {
   return parsed;
 }
 
-const rows = [];
-const breaches = [];
+/** @returns {0|1} */
+function main() {
+  const reportPath = process.argv[2];
+  if (!reportPath) abort('usage: node scripts/check-budget.mjs <lighthouse-report.json>');
 
-const score = report.categories?.accessibility?.score;
-if (typeof score !== 'number' || !Number.isFinite(score)) {
-  breaches.push(
-    'accessibility: the report carries no accessibility category, so the gate could not be checked',
-  );
-  rows.push(['A11Y', 'not reported', '100', 'FAIL']);
-} else {
-  const measured = String(Number((score * 100).toFixed(2)));
-  const ok = score >= REQUIRED_ACCESSIBILITY;
-  if (!ok) breaches.push(`accessibility scored ${measured}, and 100 is required`);
-  rows.push(['A11Y', measured, '100', ok ? 'ok' : 'FAIL']);
-}
-
-for (const check of CHECKS) {
-  const budget = ceilingFor(check);
-  const measured = report.audits?.[check.audit]?.numericValue;
-
-  if (typeof measured !== 'number' || !Number.isFinite(measured)) {
-    breaches.push(`${check.key}: lighthouse reported no value for audit "${check.audit}"`);
-    rows.push([check.key, 'not reported', check.format(budget), 'FAIL']);
-    continue;
+  let report;
+  try {
+    report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  } catch (error) {
+    abort(`cannot read ${reportPath}: ${error.message}`);
   }
 
-  const ok = measured <= budget;
-  if (!ok) {
-    breaches.push(
-      `${check.key} was ${check.format(measured)}, over its ${check.format(budget)} budget`,
+  if (report === null || typeof report !== 'object') {
+    abort(`${reportPath} does not hold a lighthouse json report`);
+  }
+
+  if (report.runtimeError?.code && report.runtimeError.code !== 'NO_ERROR') {
+    abort(
+      `lighthouse run failed: ${report.runtimeError.code} ${report.runtimeError.message ?? ''}`.trim(),
     );
   }
-  rows.push([check.key, check.format(measured), check.format(budget), ok ? 'ok' : 'FAIL']);
+
+  const rows = [];
+  const breaches = [];
+
+  const score = report.categories?.accessibility?.score;
+  if (typeof score !== 'number' || !Number.isFinite(score)) {
+    breaches.push(
+      'accessibility: the report carries no accessibility category, so the gate could not be checked',
+    );
+    rows.push(['A11Y', 'not reported', '100', 'FAIL']);
+  } else {
+    const measured = String(Number((score * 100).toFixed(2)));
+    const ok = score >= REQUIRED_ACCESSIBILITY;
+    if (!ok) breaches.push(`accessibility scored ${measured}, and 100 is required`);
+    rows.push(['A11Y', measured, '100', ok ? 'ok' : 'FAIL']);
+  }
+
+  for (const check of CHECKS) {
+    const budget = ceilingFor(check);
+    const measured = report.audits?.[check.audit]?.numericValue;
+
+    if (typeof measured !== 'number' || !Number.isFinite(measured)) {
+      breaches.push(`${check.key}: lighthouse reported no value for audit "${check.audit}"`);
+      rows.push([check.key, 'not reported', check.format(budget), 'FAIL']);
+      continue;
+    }
+
+    const ok = measured <= budget;
+    if (!ok) {
+      breaches.push(
+        `${check.key} was ${check.format(measured)}, over its ${check.format(budget)} budget`,
+      );
+    }
+    rows.push([check.key, check.format(measured), check.format(budget), ok ? 'ok' : 'FAIL']);
+  }
+
+  const header = ['metric', 'measured', 'budget', 'status'];
+  const widths = header.map((cell, i) =>
+    Math.max(cell.length, ...rows.map((row) => row[i].length)),
+  );
+  const pad = (cell, i) => (i === 0 || i === 3 ? cell.padEnd(widths[i]) : cell.padStart(widths[i]));
+  const render = (row) => row.map(pad).join('  ').trimEnd();
+
+  console.log(`report: ${reportPath}`);
+  console.log(`url:    ${report.finalDisplayedUrl ?? report.requestedUrl ?? 'unknown'}`);
+  console.log('');
+  console.log(render(header));
+  console.log(widths.map((width) => '-'.repeat(width)).join('  '));
+  for (const row of rows) console.log(render(row));
+  console.log('');
+
+  if (breaches.length === 0) {
+    console.log('check-budget: pass, every gate holds');
+  } else {
+    for (const breach of breaches) console.log(`breach: ${breach}`);
+    console.log(`check-budget: fail, ${breaches.length} of ${rows.length} gates breached`);
+    return 1;
+  }
+  return 0;
 }
 
-const header = ['metric', 'measured', 'budget', 'status'];
-const widths = header.map((cell, i) => Math.max(cell.length, ...rows.map((row) => row[i].length)));
-const pad = (cell, i) => (i === 0 || i === 3 ? cell.padEnd(widths[i]) : cell.padStart(widths[i]));
-const render = (row) => row.map(pad).join('  ').trimEnd();
-
-console.log(`report: ${reportPath}`);
-console.log(`url:    ${report.finalDisplayedUrl ?? report.requestedUrl ?? 'unknown'}`);
-console.log('');
-console.log(render(header));
-console.log(widths.map((width) => '-'.repeat(width)).join('  '));
-for (const row of rows) console.log(render(row));
-console.log('');
-
-if (breaches.length === 0) {
-  console.log('check-budget: pass, every gate holds');
-} else {
-  for (const breach of breaches) console.log(`breach: ${breach}`);
-  console.log(`check-budget: fail, ${breaches.length} of ${rows.length} gates breached`);
-  process.exitCode = 1;
+try {
+  process.exitCode = main();
+} catch (error) {
+  if (!(error instanceof BudgetAbort)) throw error;
+  console.error(`check-budget: ${error.message}`);
+  process.exitCode = 2;
 }
