@@ -331,6 +331,9 @@ test('the board is built in a worker, off the main thread', async ({ page }) => 
 });
 
 test('a browser that refuses to make a worker still deals a board', async ({ page }) => {
+  /* The fallback, which is not decoration: some engines refuse to construct a
+     worker for a file:// document, and a hardened configuration or an extension
+     can block it outright. */
   await page.addInitScript(() => {
     window.Worker = function BlockedWorker() {
       throw new Error('workers are blocked here');
@@ -374,8 +377,8 @@ test('the win dialog reports the technique the board needed and its code', async
   await startGame(page, 'medium');
 
   const expected = await page.evaluate(() => ({
-    word: GRADE_WORDS[puzzleGrade],
-    code: puzzleSeed.toString(36),
+    word: GRADE_WORDS[measuredBoard.grade],
+    code: measuredBoard.seed.toString(36),
   }));
 
   await solve(page);

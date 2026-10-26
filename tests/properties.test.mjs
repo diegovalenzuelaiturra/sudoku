@@ -18,6 +18,8 @@ const preset = fc.constantFrom(
   { clues: 24, grade: 4 },
 );
 
+const MIN_UNIQUE_CLUES = 17;
+
 const boxOf = (i) => ((((i / 9) | 0) / 3) | 0) * 3 + (((i % 9) / 3) | 0);
 
 test('a seed always rebuilds the same board', () => {
@@ -88,13 +90,15 @@ test('the grade reported is the grade measured, and it is a grade that has a nam
   );
 });
 
-// MUST KILL: the clue floor is an inline 17 in this test, so a named MIN_UNIQUE_CLUES constant would carry the reason
 test('the clue count is the count of clues, and it leaves a puzzle', () => {
   fc.assert(
     fc.property(seed, preset, (s, p) => {
       const made = makePuzzle({ clues: p.clues, grade: p.grade, seed: s });
       assert.equal(made.clues, made.puzzle.filter((v) => v !== 0).length);
-      assert.ok(made.clues >= 17 && made.clues < 81, `seed ${s} produced ${made.clues} clues`);
+      assert.ok(
+        made.clues >= MIN_UNIQUE_CLUES && made.clues < 81,
+        `seed ${s} produced ${made.clues} clues`,
+      );
     }),
     { numRuns: 30 },
   );

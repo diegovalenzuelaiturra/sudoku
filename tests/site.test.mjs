@@ -98,11 +98,11 @@ function localValue(raw) {
 function toPath(from, value) {
   const bare = value.split('#')[0].split('?')[0];
   if (bare === '') return null;
-  let decoded = bare;
+  let decoded;
   try {
     decoded = decodeURIComponent(bare);
   } catch {
-    // MUST KILL: a malformed escape throws URIError here and is swallowed, which no-empty only allows for app.js in eslint.config.mjs.
+    decoded = bare;
   }
   return resolve(dirname(from), decoded);
 }

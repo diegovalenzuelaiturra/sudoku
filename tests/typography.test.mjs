@@ -13,9 +13,16 @@ const BANNED = [
   ['\u2015', 'HORIZONTAL BAR'],
 ];
 
+/* .claude holds git worktrees, so from the main checkout the walk would descend
+   into a full second copy of this repository for every branch someone has open,
+   police files that belong to another branch, and let the file count asserted
+   below be met without the real tree contributing anything. */
 const SKIP_DIRS = new Set(['node_modules', '.git', '_site', '.claude']);
 const SKIP_FILES = new Set(['package-lock.json']);
 
+/* readFileSync(file, 'utf8') does not
+   throw on bytes that are not valid utf8: it substitutes, and along the way a
+   deflate stream can emit C2 B7, which decodes to a real MIDDLE DOT. */
 const BINARY_EXTENSIONS = new Set([
   '.png',
   '.jpg',
@@ -42,6 +49,10 @@ const isBinary = (name) => BINARY_EXTENSIONS.has(extname(name).toLowerCase());
 function walk(dir) {
   const out = [];
   for (const entry of readdirSync(dir)) {
+    /* tests/site.test.mjs runs the build,
+       which removes and recreates _site, and node --test runs test files in
+       parallel processes, so statting an entry this walk was going to discard
+       anyway can throw ENOENT and fail this unrelated test. */
     if (SKIP_DIRS.has(entry) || SKIP_FILES.has(entry) || isBinary(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) out.push(...walk(full));

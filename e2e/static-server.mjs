@@ -1,3 +1,9 @@
+/* It mounts that directory under a path prefix, because the site is
+   published as a GitHub Pages project site at /sudoku/ and not at the
+   account root. A leading slash in an asset path resolves against a
+   different repository in production and quietly 404s; serving at / here
+   would hide that, so the prefix reproduces it. */
+
 import { createReadStream, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -35,6 +41,8 @@ function plain(res, status, body) {
   res.end(body);
 }
 
+/* Pages answers an unknown path under the site with the published 404.html and
+   a 404 status, leaving the address bar on the path that was asked for. */
 function notFound(req, res) {
   const page = resolve(ROOT, '404.html');
   if (!existsSync(page)) return plain(res, 404, 'not found');

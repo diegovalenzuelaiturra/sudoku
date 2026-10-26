@@ -420,7 +420,7 @@ test('a save from before seeding never becomes a measured board', async ({ page,
   );
   await page.goto('./');
   await expect(page.locator('#board .cell')).toHaveCount(81);
-  expect(await page.evaluate(() => puzzleMeasured), 'a pre-seed save is not measured').toBe(false);
+  expect(await page.evaluate(() => measuredBoard), 'a pre-seed save is not measured').toBeNull();
 
   await page.evaluate(() => {
     const i = values.findIndex((v, k) => !v && !fixed[k]);

@@ -5,8 +5,23 @@ import { join } from 'node:path';
 const ROOT = join(import.meta.dirname, '..');
 const SVG = join(ROOT, 'icons', 'icon.svg');
 
-// MUST KILL: SIZES duplicates the sizes in manifest.webmanifest; derive them from that file so the two cannot drift
-export const SIZES = [192, 512];
+const MANIFEST = join(ROOT, 'manifest.webmanifest');
+
+/**
+ * The raster icons the manifest declares, which are exactly the files render() writes.
+ * @type {ReadonlyArray<{ src: string, size: number }>}
+ */
+export const PNG_ICONS = JSON.parse(readFileSync(MANIFEST, 'utf8'))
+  .icons.filter((icon) => icon.type === 'image/png')
+  .map(({ src, sizes }) => {
+    const square = /^(\d+)x\1$/u.exec(sizes);
+    if (!square) {
+      throw new Error(
+        `manifest.webmanifest declares ${src} as ${sizes}, and only one square size can be rendered`,
+      );
+    }
+    return { src, size: Number(square[1]) };
+  });
 
 export const SOURCE_SHA256 = '765d8ffa1730977308c2f967a6ace5630f28830304a4be85b2428daa6ea02149';
 
@@ -26,16 +41,15 @@ async function render() {
   const svg = readFileSync(SVG, 'utf8');
   const browser = await chromium.launch();
   try {
-    for (const size of SIZES) {
+    for (const { src, size } of PNG_ICONS) {
       const page = await browser.newPage({
         viewport: { width: size, height: size },
         deviceScaleFactor: 1,
       });
       await page.setContent(wrapper(svg), { waitUntil: 'load' });
-      const out = join(ROOT, 'icons', `icon-${size}.png`);
-      await page.screenshot({ path: out, omitBackground: false });
+      await page.screenshot({ path: join(ROOT, src), omitBackground: false });
       await page.close();
-      console.log(`  wrote icons/icon-${size}.png`);
+      console.log(`  wrote ${src}`);
     }
   } finally {
     await browser.close();

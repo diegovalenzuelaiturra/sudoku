@@ -1,3 +1,22 @@
+/* A service worker is only checked for updates on an in-scope navigation, or on
+   a functional event at most once a day. A home screen web app is a single page
+   that never navigates: the player switches away and back, and the worker
+   answers every request from its cache. Nothing in that loop ever asks the
+   network whether a newer build exists, so the app can stay on the version it
+   was installed with for as long as it is never closed.
+
+   clients.claim() fires controllerchange on the very first load, so an
+   unguarded reload here would restart the page under every new visitor, once,
+   for no reason they could see.
+
+   What is simulated, and stated plainly rather than implied: neither engine
+   this file runs on gives a test a way to background a page, or to install a
+   second worker without changing the bytes on the server mid run. So
+   visibilitychange and controllerchange are dispatched by hand.
+
+   Nothing here is gated to one project, deliberately: these are the specs whose
+   subject is an installed app, and every installed copy on iOS runs on WebKit. */
+
 import { expect, test } from '@playwright/test';
 
 const countUpdateChecks = (page) =>
@@ -37,6 +56,9 @@ test('a first install does not reload the page under the player', async ({ page 
   await mark(page);
   await controlled(page);
 
+  /* Reading the marker straight after the claim races the navigation this is
+     looking for, and wins often enough on Chromium that removing the guard left
+     this test green there while WebKit caught it. */
   const reloaded = await page
     .waitForEvent('load', { timeout: 1500 })
     .then(() => true)
@@ -61,6 +83,9 @@ test('coming back to the app asks whether a newer worker exists', async ({ page 
   expect(problems).toEqual([]);
 });
 
+/* Offline, registration.update() is not the same call twice over: measured on
+   the built page, WebKit rejects and Chromium resolves without having reached
+   the network. */
 test('a resume with no connectivity spends nothing, and the next one still asks', async ({
   page,
   context,
@@ -113,6 +138,9 @@ test('a failing check backs off instead of firing on every switch', async ({ pag
   expect(problems).toEqual([]);
 });
 
+/* Installed apps are exempt from idle eviction but not from eviction under
+   storage pressure, and both the saved game and the prize totals live in
+   localStorage. */
 test('storage is only asked to persist once the app is installed', async ({ page }) => {
   const problems = watch(page);
   await page.addInitScript(() => {
@@ -131,6 +159,9 @@ test('storage is only asked to persist once the app is installed', async ({ page
     'a browser tab was asked for persistent storage, which prompts the visitor in some engines',
   ).toBe(0);
 
+  /* A test cannot launch anything from a home screen, and CDP's display-mode
+     emulation does not reach matchMedia, so the query is answered the way an
+     installed copy would answer it. */
   await page.addInitScript(() => {
     const real = window.matchMedia.bind(window);
     window.matchMedia = (query) =>

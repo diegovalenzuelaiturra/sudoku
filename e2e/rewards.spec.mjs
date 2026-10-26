@@ -118,6 +118,8 @@ test('a mistake undone still costs the flawless bonus', async ({ page }) => {
   const problems = await boot(page);
   await startGame(page);
 
+  /* The bounds check is the other half: nth(-1) resolves to the last cell rather
+     than throwing. */
   const target = await spoil(page);
   expect(target, 'the board had no empty cell to spoil').toBeGreaterThanOrEqual(0);
   const cell = page.locator('#board .cell').nth(target);

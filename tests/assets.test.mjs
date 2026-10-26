@@ -36,6 +36,9 @@ function appShell() {
     .map((s) => s.slice(1, -1));
 }
 
+/* A PNG opens with an 8 byte signature, then a length and the tag "IHDR",
+   whose first eight bytes of data are the width and the height as big endian
+   32 bit integers. */
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function pngSize(rel) {

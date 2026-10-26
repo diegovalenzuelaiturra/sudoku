@@ -20,6 +20,7 @@ const PRESETS = [
 ];
 
 const SEEDS = [...Array(24).keys()].map((n) => 1000 + n * 7);
+const MIN_UNIQUE_CLUES = 17;
 
 const boxOf = (i) => ((((i / 9) | 0) / 3) | 0) * 3 + (((i % 9) / 3) | 0);
 
@@ -48,7 +49,6 @@ function assertCompleteValidGrid(solution) {
 }
 
 for (const preset of PRESETS) {
-  // MUST KILL: the clue floor is an inline 17 in this test, so a named MIN_UNIQUE_CLUES constant would carry the reason
   test(`${preset.label} generates valid, uniquely solvable, honestly graded puzzles`, () => {
     let onTarget = 0;
 
@@ -63,7 +63,7 @@ for (const preset of PRESETS) {
         'the reported clue count disagrees with the board',
       );
       assert.ok(
-        made.clues >= 17 && made.clues < 81,
+        made.clues >= MIN_UNIQUE_CLUES && made.clues < 81,
         `${preset.label}: ${made.clues} clues is not a puzzle`,
       );
 

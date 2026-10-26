@@ -1,6 +1,7 @@
 (function (root) {
   const HISTORY_MAX = 120;
   const MAX_GRADE = 4;
+  const GRADE_UNMEASURED = 0;
   const MAX_SECONDS = 86400;
   const MIN_MEDIAN_N = 5;
   const MIN_TREND_N = 8;
@@ -27,9 +28,10 @@
     const h = Math.floor(Number(raw.h));
     if (!Number.isSafeInteger(h) || h < 0) return null;
     const measured = Math.floor(Number(raw.g));
-    // MUST KILL: grade 0 is an unmeasured sentinel shared with real numbers; a null grade makes the held-out rule explicit
     const g =
-      Number.isSafeInteger(measured) && measured >= 1 && measured <= MAX_GRADE ? measured : 0;
+      Number.isSafeInteger(measured) && measured > GRADE_UNMEASURED && measured <= MAX_GRADE
+        ? measured
+        : GRADE_UNMEASURED;
     const d = typeof raw.d === 'string' && keys.includes(raw.d) ? raw.d : '';
     return { t, s, m, h, g, d };
   }
@@ -48,6 +50,9 @@
     return run;
   }
 
+  /* unicorn/no-array-sort reports a sort on an expression, and toSorted is
+     Safari 16.4 against a 15.4 floor. Sorting a named local in statement
+     position satisfies both, so every sort in this file comes through here. */
   function ascending(values) {
     const out = values.slice();
     out.sort((a, b) => a - b);
@@ -78,7 +83,6 @@
     };
   }
 
-  // MUST KILL: wilson accepts any count and clamps it; taking the rows instead of two numbers makes successes at most n by construction
   function wilson(successes, n) {
     if (!Number.isFinite(n) || n <= 0) return { n: 0, rate: null, low: null, high: null };
     const k = Math.min(Math.max(successes, 0), n);
@@ -161,7 +165,7 @@
   }
 
   function staleOffer(grades, measured, top) {
-    if (top < 1 || top >= MAX_GRADE) return null;
+    if (top <= GRADE_UNMEASURED || top >= MAX_GRADE) return null;
     const here = grades[top];
     if (here.n < STALE_MIN_N) return null;
     if (here.verdict !== 'same') return null;
@@ -172,7 +176,7 @@
   }
 
   function topGrade(grades, measured) {
-    if (measured.length === 0) return 0;
+    if (measured.length === 0) return GRADE_UNMEASURED;
     for (let i = measured.length - 1; i >= 0; i--) {
       if (grades[measured[i].g].n >= MIN_MEDIAN_N) return measured[i].g;
     }
@@ -180,7 +184,7 @@
   }
 
   function report(rows) {
-    const measured = rows.filter((row) => row.g >= 1);
+    const measured = rows.filter((row) => row.g > GRADE_UNMEASURED);
     const grades = {};
     for (let g = 1; g <= MAX_GRADE; g++) {
       grades[g] = gradeReport(measured.filter((row) => row.g === g));
@@ -198,6 +202,7 @@
   root.SudokuStats = {
     HISTORY_MAX,
     MAX_GRADE,
+    GRADE_UNMEASURED,
     MAX_SECONDS,
     MIN_MEDIAN_N,
     MIN_TREND_N,

@@ -16,7 +16,6 @@ delete globalThis.SudokuStats;
 const strip = (text) => text.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^[ \t]*\/\/.*$/gmu, '');
 const code = strip(source);
 
-// MUST KILL: body() finds the function end with a regex and a brace count, so flush-left functions are load bearing; use a real parser
 function body(name) {
   const found = source.match(new RegExp(`function ${name}\\([^{]*\\)\\s*\\{[\\s\\S]*?\\n\\}`, 'u'));
   assert.ok(found, `${name}() is not where this test expects to find it`);

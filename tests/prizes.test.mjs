@@ -25,7 +25,6 @@ function prizeTable() {
   return rows;
 }
 
-// MUST KILL: body() finds the function end with a regex and a brace count, so flush-left functions are load bearing; use a real parser
 function body(name) {
   const found = source.match(new RegExp(`function ${name}\\([^{]*\\)\\s*\\{[\\s\\S]*?\\n\\}`, 'u'));
   assert.ok(found, `${name}() is not where this test expects to find it`);
@@ -101,6 +100,19 @@ test('the prize totals are kept out of the game save', () => {
     body('saveGame'),
     /friesTotal|chocoTotal/u,
     'saveGame() writes a prize total again, and a win deletes that save moments after paying it',
+  );
+});
+
+test('the cells a hint revealed are kept out of the game save', () => {
+  assert.doesNotMatch(
+    body('saveGame'),
+    /revealed/iu,
+    'saveGame() writes the revealed cells, and a save edited to list all 81 with hints at 0 buys a board of free hints while the flawless gate still reads zero',
+  );
+  assert.match(
+    body('loadGame'),
+    /revealedThisSession = new Set\(\);/u,
+    'loadGame() fills the revealed cells from somewhere, and the only place left to fill them from is storage the player can edit',
   );
 });
 

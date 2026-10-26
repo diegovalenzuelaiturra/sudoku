@@ -46,7 +46,6 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      # MUST KILL: while read loop shares stdin with gh pr merge, reading the list into an array would make it obvious
       - name: Queue every open Dependabot pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,13 +79,15 @@ jobs:
 
           failed=0
 
-          while read -r pr; do
+          mapfile -t prs < numbers.txt
+
+          for pr in "${prs[@]}"; do
             echo "Queueing #${pr}"
-            if ! gh pr merge --auto --squash --body "" --repo "$REPO" "$pr" < /dev/null; then
+            if ! gh pr merge --auto --squash --body "" --repo "$REPO" "$pr"; then
               echo "::error::Could not queue #${pr}"
               failed=$((failed + 1))
             fi
-          done < numbers.txt
+          done
 
           if [ "$failed" -ne 0 ]; then
             echo "${failed} pull request(s) could not be queued."

@@ -1,3 +1,11 @@
+/* Biome lints the CSS inside index.html, and it lints property NAMES. Given
+   .a{animation-duration:NaNs;width:bogus;color:notacolor} it reports nothing,
+   because every one of those names exists.
+
+   ESLint is driven through Linter here rather
+   than through eslint.config.mjs, because @html-eslint ships no processor, so
+   the ordinary CLI cannot reach CSS that lives inside an HTML file. */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -17,7 +25,8 @@ const stylesheet = () => {
     .join('\n');
 };
 
-// MUST KILL: allowUnknownVariables exists only because app.js sets --dur and --fall at run time and the stylesheet never declares them
+/* The rule cannot see a custom property that never appears in the
+   stylesheet, and without this it reports each use as invalid. */
 const check = (code) =>
   new Linter().verify(code, {
     plugins: { css },

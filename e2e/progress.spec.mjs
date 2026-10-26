@@ -18,7 +18,6 @@ const gameRow = ({ day, s, m = 0, h = 0, g = 2, d = 'medium' }) => ({
   d,
 });
 
-// MUST KILL: expected figures are pinned by hand, derive them from stats.js instead
 const IMPROVING = [600, 585, 560, 545, 520, 495, 470, 440, 400, 365, 335, 310].map((s, day) =>
   gameRow({ day, s, m: day % 4 === 0 ? 0 : 1 }),
 );
@@ -80,6 +79,14 @@ async function openRecord(page) {
   await expect(page.getByRole('dialog', { name: 'TU REGISTRO' })).toBeVisible();
 }
 
+/* Only StaticText carries the words: a paragraph broken up by <b> has no name
+   of its own, and the InlineTextBox children under each StaticText repeat it.
+
+   The array arrives in depth order, which lands every <b> hole in a sentence
+   after the whole sentence: read flat, "Típico 8:03. La mayoría entre 6:31"
+   comes back as "Típico . La mayoría entre " with the numbers in a heap at the
+   end, and this test passes on markup no screen reader could make a sentence
+   of. Walking childIds from the root is what restores reading order. */
 async function spokenText(cdp) {
   const { nodes } = await cdp.send('Accessibility.getFullAXTree');
   const byId = new Map(nodes.map((node) => [node.nodeId, node]));
@@ -99,6 +106,9 @@ async function spokenText(cdp) {
   return said.join('');
 }
 
+/* A real sentinel has no observable effect in either engine here: CI's WebKit
+   is a Linux build whose backend is not Safari's, and a headless browser has no
+   display to keep awake. */
 const stubWakeLock = (page) =>
   page.addInitScript(() => {
     window.wakeLockLog = { requests: 0, releases: 0, held: 0, types: [] };
@@ -140,12 +150,17 @@ const stubWakeLock = (page) =>
         },
       },
     });
+    /* The platform takes the lock back on its own whenever the page is hidden,
+       and a released sentinel cannot be reused. */
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'hidden') return;
       for (const sentinel of Array.from(live)) sentinel.release();
     });
   });
 
+/* A page driven by Playwright is never really backgrounded, which
+   e2e/update.spec.mjs records, so the hidden path is only reachable by saying
+   so. */
 const stubVisibility = (page) =>
   page.addInitScript(() => {
     let pageHidden = false;
@@ -499,6 +514,10 @@ test('a board dealt into a hidden tab never asks for the lock', async ({ page })
 });
 
 test('a lock the platform refuses is not a console error', async ({ page }) => {
+  /* NotAllowedError is the name this rejects with, and it covers a blocking
+     permissions policy and a battery the platform will not spend. An unhandled
+     rejection is a console error in both engines, which is what the problems
+     array below is watching for. */
   await page.addInitScript(() => {
     window.wakeLockRefusals = 0;
     Object.defineProperty(navigator, 'wakeLock', {
@@ -528,6 +547,8 @@ test('a lock the platform refuses is not a console error', async ({ page }) => {
 });
 
 test('a browser with no wake lock at all plays exactly the same game', async ({ page }) => {
+  /* The Safari 15.4 floor. The API arrived in 16.4, so its absence is the
+     ordinary case here and has to change nothing. */
   await page.addInitScript(() => {
     delete Navigator.prototype.wakeLock;
     Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: undefined });

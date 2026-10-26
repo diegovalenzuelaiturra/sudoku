@@ -36,13 +36,10 @@ const candidates = (cells, i) => {
   return open;
 };
 
-// MUST KILL: the full board check has to run before the placement pass, so the loop shape is order dependent; restructure as a loop while empty cells remain
 function singlesAloneSolve(puzzle) {
   const cells = Array.from(puzzle, (v) => v || 0);
 
-  for (;;) {
-    if (cells.every((v) => v !== 0)) return true;
-
+  while (cells.includes(0)) {
     let placed = false;
 
     for (let i = 0; i < 81; i++) {
@@ -69,6 +66,7 @@ function singlesAloneSolve(puzzle) {
     }
     if (!placed) return false;
   }
+  return true;
 }
 
 const SEEDS = [...Array(24).keys()].map((n) => 1000 + n * 7);

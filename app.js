@@ -1,5 +1,6 @@
 const GENERATOR_URL = './generator.js';
 const GENERATOR_TIMEOUT = 10000;
+class GeneratorRanAndFailed extends Error {}
 let genWorker = null,
   genJobs = new Map(),
   genNextId = 1,
@@ -15,11 +16,7 @@ function generatorWorker() {
       if (!job) return;
       genJobs.delete(reply.id);
       if (reply.ok) job.resolve(reply);
-      // MUST KILL: ranAndFailed is an untyped flag on an Error, so the retry rule in requestPuzzle reads as a guess.
-      else
-        job.reject(
-          Object.assign(new Error(reply.error || 'the generator failed'), { ranAndFailed: true }),
-        );
+      else job.reject(new GeneratorRanAndFailed(reply.error || 'the generator failed'));
     });
     worker.addEventListener('error', () => {
       genWorker = false;
@@ -67,19 +64,17 @@ function requestPuzzle(request) {
     }, GENERATOR_TIMEOUT);
     worker.postMessage({ clues: request.clues, grade: request.grade, seed: request.seed, id });
   }).catch((error) => {
-    if (error?.ranAndFailed) throw error;
+    if (error instanceof GeneratorRanAndFailed) throw error;
     return generateOnThisThread(request);
   });
 }
 
-// MUST KILL: DIFF is a plain object, so lookups by untrusted save data reach Object.prototype and every hasOwn guard exists only for that.
 const DIFF = {
   easy: { clues: 40, grade: 1, label: 'Piola', fries: 5, choco: 1 },
   medium: { clues: 28, grade: 2, label: 'Normal', fries: 10, choco: 2 },
   hard: { clues: 32, grade: 3, label: 'Peludo', fries: 15, choco: 3 },
   expert: { clues: 24, grade: 4, label: 'Brígido', fries: 25, choco: 5 },
 };
-// MUST KILL: GRADE_WORDS is a hand copy of generator.js GRADE_NAMES read by bracket lookup; one shared table removes the copy and the guard.
 const GRADE_WORDS = { 1: 'directas', 2: 'bloques', 3: 'pares', 4: 'avanzado' };
 const GRADE_KEYS = {};
 for (const key of Object.keys(DIFF)) GRADE_KEYS[DIFF[key].grade] = key;
@@ -99,29 +94,28 @@ let notesMode = false,
   seconds = 0,
   tick = null,
   paused = false,
-  // MUST KILL: playing, solved and paused encode one game state across three booleans; a single state value makes the guard combinations unnecessary.
   solved = false,
   playing = false;
+/* Safari shipped this in 16.4 and the floor here is 15.4, so a missing
+   navigator.wakeLock is the ordinary case rather than a failure. */
 let wakeLock = null,
   wakeLockWanted = false,
   wakeLockPending = false;
-// MUST KILL: revealed is left out of the save by omission and nothing in its name says so; a separate in-memory store would make that visible.
-let revealed = new Set();
-// MUST KILL: The announcement is split between a pending string and srLast; one announcer object would make the single-writer rule self-evident.
-let srAction = '';
+let revealedThisSession = new Set();
+let srAction = '',
+  srLast = { mistakes: 0, hints: 0, remaining: null };
 let undoStack = [],
   diffKey = 'medium',
   friesTotal = 0,
   chocoTotal = 0,
-  // MUST KILL: Win timers are a bare array cleared in several places; a scheduler with one cancel() removes the need to remember every clear.
   winTimers = [],
   pausedByDialog = false;
-let puzzleGrade = 1,
-  puzzleSeed = 0;
-// MUST KILL: A flag beside the grade and seed it qualifies; one record holding grade, seed and measured state would make the guess-or-measure rule a type.
-let puzzleMeasured = false;
+function cancelWinTimers() {
+  winTimers.forEach(clearTimeout);
+  winTimers = [];
+}
+let measuredBoard = null;
 const reduceMotion = matchMedia('(prefers-reduced-motion:reduce)');
-// MUST KILL: SAVE_VERSION and the shape checks in loadGame() are kept by hand in two places; one schema definition would make the coupling self-evident.
 const SAVE_KEY = 'sudoku:save',
   SAVE_VERSION = 1;
 const WALLET_KEY = 'sudoku:wallet',
@@ -178,7 +172,6 @@ function snapshot() {
   undoStack.push({ values: values.slice(), fixed: fixed.slice(), notes: notes.map((s) => [...s]) });
   if (undoStack.length > 300) undoStack.shift();
 }
-// MUST KILL: boxOf is a top-level name duplicated with generator.js; scoping app.js or sharing one geometry module removes the collision.
 const boxOf = (i) => ((((i / 9) | 0) / 3) | 0) * 3 + (((i % 9) / 3) | 0);
 function peers(i) {
   const r = (i / 9) | 0,
@@ -195,11 +188,15 @@ const PEERS = Array.from({ length: 81 }, (_, i) => peers(i));
 
 const appEl = document.querySelector('.app');
 const controlsEl = document.querySelector('.controls');
-// MUST KILL: The overlays are siblings of .app, so each one is made inert by hand; nesting them under a shared inert root removes this loop.
 const OVERLAYS = ['startOverlay', 'winOverlay', 'recordOverlay'];
 function showOverlay(el) {
   el.classList.add('show');
   appEl.inert = true;
+  /* The record dialog leads with its two redeem buttons, which are the wrong
+     thing to hand a player on opening and are disabled outright when there is
+     nothing to redeem, and a focus() on a disabled button silently does
+     nothing: focus stayed on the body and the next Tab started again from the
+     top of the page. */
   for (const id of OVERLAYS) $(id).inert = $(id) !== el;
   const first =
     el.querySelector('[data-autofocus]') ||
@@ -208,10 +205,17 @@ function showOverlay(el) {
 }
 function hideOverlay(el) {
   el.classList.remove('show');
+  /* Done before the caller does anything else: closeRecord() focuses
+     #recordBtn straight after this, and focus() on an inert element silently
+     does nothing. */
   for (const id of OVERLAYS) $(id).inert = false;
   if (!OVERLAYS.some((id) => $(id).classList.contains('show'))) appEl.inert = false;
 }
 
+/* Guarding the click alone closes the dialog on a drag that starts on a button
+   and lifts off beside it, because a click is dispatched to the nearest ancestor
+   of where the press began and where it ended, and for that drag the ancestor is
+   the backdrop. */
 function dismissOnBackdrop(el, close) {
   let fromBackdrop = false;
   el.addEventListener('pointerdown', (e) => {
@@ -275,10 +279,15 @@ function syncWakeLock() {
         return;
       }
       wakeLock = sentinel;
+      /* The platform revokes this on its own for low battery and power save,
+         and a released sentinel cannot be reused. */
       sentinel.addEventListener('release', () => {
         if (wakeLock === sentinel) wakeLock = null;
       });
     })
+    /* NotAllowedError is the only name this rejects with, and it covers a
+       hidden document, a blocking permissions policy and a battery the platform
+       will not spend: nothing a player can act on. */
     .catch(() => {
       wakeLockPending = false;
     });
@@ -298,8 +307,7 @@ function setGenerating(busy) {
 
 async function newGame(key) {
   if (generating) return;
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
+  cancelWinTimers();
   setGenerating(true);
   let made;
   try {
@@ -318,17 +326,14 @@ async function newGame(key) {
 
 function startGame(key, made) {
   diffKey = key;
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
+  cancelWinTimers();
   document.querySelectorAll('.drop').forEach((f) => {
     f.remove();
   });
   const generated = made.puzzle;
   puzzle = generated;
   solution = made.solution;
-  puzzleGrade = made.grade;
-  puzzleSeed = made.seed;
-  puzzleMeasured = true;
+  measuredBoard = { grade: made.grade, seed: made.seed };
   recordPlayed(key);
   values = generated.slice();
   fixed = generated.map((v) => v !== 0);
@@ -340,7 +345,7 @@ function startGame(key, made) {
   solved = false;
   playing = true;
   pausedByDialog = false;
-  revealed = new Set();
+  revealedThisSession = new Set();
   sel = values.indexOf(0);
   setNotes(false);
   paintWallet();
@@ -358,7 +363,6 @@ function startGame(key, made) {
   saveGame();
 }
 
-// MUST KILL: The counters live in both globals and the save and must be merged on every write; a single store removes the merge.
 function adoptCounters() {
   let s;
   try {
@@ -391,7 +395,7 @@ function saveGame() {
         seconds,
         diffKey,
         solved,
-        ...(puzzleMeasured ? { grade: puzzleGrade, seed: puzzleSeed } : {}),
+        ...measuredBoard,
       }),
     );
   } catch {}
@@ -719,6 +723,9 @@ function savePrefs() {
 function loadPrefs() {
   prefs = readPrefs() || { buzz: true };
 }
+/* Missing on iPhone entirely, where WebKit has never shipped the Vibration
+   API, and Chrome there is WebKit too, so the detection is the ordinary case
+   and not a failure. */
 const MISTAKE_BUZZ = [40, 30, 40];
 function buzz(pattern) {
   if (!prefs.buzz || reduceMotion.matches || typeof navigator.vibrate !== 'function') return;
@@ -762,7 +769,7 @@ function recordGame(time, mist, used) {
     s: time,
     m: mist,
     h: used,
-    g: puzzleMeasured ? puzzleGrade : 0,
+    g: measuredBoard ? measuredBoard.grade : SudokuStats.GRADE_UNMEASURED,
     d: diffKey,
   });
   if (stored || raw === null) saveHistory();
@@ -827,16 +834,13 @@ function loadGame() {
   diffKey = s.diffKey;
   const graded = Object.hasOwn(GRADE_WORDS, s.grade);
   const seeded = Number.isInteger(s.seed) && s.seed >= 0;
-  puzzleGrade = graded ? Number(s.grade) : DIFF[s.diffKey].grade;
-  puzzleSeed = seeded ? s.seed : 0;
-  puzzleMeasured = graded && seeded;
+  measuredBoard = graded && seeded ? { grade: Number(s.grade), seed: s.seed } : null;
   solved = false;
   playing = true;
   pausedByDialog = false;
   undoStack = [];
-  revealed = new Set();
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
+  revealedThisSession = new Set();
+  cancelWinTimers();
   setNotes(false);
   $('diffLabel').textContent = DIFF[diffKey].label;
   $('time').textContent = clockText(seconds);
@@ -926,10 +930,10 @@ function win() {
         $('wStreakGlyph').textContent = beatStreak ? '🥇' : '🔥';
         $('wStreakText').textContent = streakSaid(streakNow, beatStreak);
       }
-      $('wCodeLine').hidden = !puzzleMeasured;
-      if (puzzleMeasured) {
-        $('wGrade').textContent = GRADE_WORDS[puzzleGrade];
-        $('wCode').textContent = puzzleSeed.toString(36);
+      $('wCodeLine').hidden = !measuredBoard;
+      if (measuredBoard) {
+        $('wGrade').textContent = GRADE_WORDS[measuredBoard.grade];
+        $('wCode').textContent = measuredBoard.seed.toString(36);
       }
       $('fryBanner').innerHTML =
         `<b aria-hidden="true">🍟 +${earned}</b>` +
@@ -1045,9 +1049,9 @@ function hint() {
   fixed[i] = true;
   notes[i].clear();
   for (const p of PEERS[i]) notes[p].delete(solution[i]);
-  if (!revealed.has(i)) {
+  if (!revealedThisSession.has(i)) {
     hints++;
-    revealed.add(i);
+    revealedThisSession.add(i);
   }
   sel = i;
   render();
@@ -1055,7 +1059,6 @@ function hint() {
   if (values.every((v, k) => v === solution[k])) win();
 }
 
-let srLast = { mistakes: 0, hints: 0, remaining: null };
 function render() {
   const selVal = sel >= 0 ? values[sel] : 0;
   const pr = sel >= 0 ? PEERS[sel] : null;
@@ -1122,6 +1125,9 @@ function render() {
     if (srBits.length) {
       const said = `${srBits.join('. ')}.`;
       const node = $('srStatus');
+      /* An aria-atomic live region is only read out when its content changes,
+         and two undos in a row produce the same sentence, so the second press
+         was silent. */
       if (node.textContent === said) {
         node.textContent = '';
         setTimeout(() => {
@@ -1156,8 +1162,7 @@ $('settleBtn').addEventListener('click', settleSingles);
 $('undoBtn').addEventListener('click', undo);
 $('hintBtn').addEventListener('click', hint);
 $('newBtn').addEventListener('click', () => {
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
+  cancelWinTimers();
   $('cancelNew').hidden = !playing;
   pausedByDialog = playing && !paused;
   if (pausedByDialog) setPaused(true);
@@ -1225,6 +1230,10 @@ document.querySelectorAll('.redeem').forEach((button) => {
     }
     const amount = redeem(kind);
     disarmRedeem();
+    /* Before the repaint, which disables the button that has focus the moment
+       its balance hits zero, and a disabled element is blurred: focus fell to
+       the body from inside an open dialog and the next Tab restarted from the
+       top of the page. */
     $('closeRecord').focus();
     paintWallet();
     paintRecord();
@@ -1296,6 +1305,9 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) setPaused(true);
   syncWakeLock();
 });
+/* Fires only in the other tabs, never the writer's, which is exactly the tab
+   that needs telling. A clear() reports a null key and is ignored: bankPrize()
+   falls back to memory, so this tab keeps counting. */
 addEventListener('storage', (e) => {
   if (e.key === STATS_KEY) {
     const s = readStats();
@@ -1336,6 +1348,7 @@ if (!loadGame()) {
   $('cancelNew').hidden = true;
   showOverlay($('startOverlay'));
 }
+/* Relative path so the worker's scope is this directory, not the account root. */
 if ('serviceWorker' in navigator) {
   const wasControlled = !!navigator.serviceWorker.controller;
   let registration = null,
@@ -1352,10 +1365,19 @@ if ('serviceWorker' in navigator) {
       .catch(() => {});
   });
 
+  /* A worker is only checked for updates on an in-scope navigation, or on a
+     functional event at most once a day. A home screen web app is a single page
+     that never navigates: it is resumed, not loaded. */
   const CHECK_EVERY = 36e5,
     RETRY_AFTER = 6e4;
   function checkForUpdate() {
     if (registration === null || document.hidden || checking) return;
+    /* Refused here, before anything is spent, because reacting to the
+       failure afterwards cannot work: the two engines do not agree on what a
+       failure is. Measured on the built page, offline: WebKit rejects,
+       Chromium resolves without having asked the network. onLine is false only
+       when the device knows it has no connectivity, which is the case worth
+       skipping and the one this is named for. */
     if (navigator.onLine === false) return;
     if (Date.now() < nextCheckAt) return;
     checking = true;
@@ -1381,6 +1403,11 @@ if ('serviceWorker' in navigator) {
     location.reload();
   });
 
+  /* Installed apps are exempt from the seven day rule and from idle eviction,
+     but not from eviction under storage pressure, and the save and the prize
+     totals are both in localStorage. Asked for only when actually installed:
+     in a browser tab this is a permission prompt in some engines, which is a
+     lot to spend on a sudoku nobody has chosen to keep yet. */
   if (matchMedia('(display-mode: standalone)').matches && navigator.storage?.persist) {
     navigator.storage.persist().catch(() => {});
   }

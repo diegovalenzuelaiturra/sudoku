@@ -33,6 +33,7 @@ test('every threshold is the number it was chosen to be', () => {
     {
       HISTORY_MAX: S.HISTORY_MAX,
       MAX_GRADE: S.MAX_GRADE,
+      GRADE_UNMEASURED: S.GRADE_UNMEASURED,
       MAX_SECONDS: S.MAX_SECONDS,
       MIN_MEDIAN_N: S.MIN_MEDIAN_N,
       MIN_TREND_N: S.MIN_TREND_N,
@@ -50,6 +51,7 @@ test('every threshold is the number it was chosen to be', () => {
     {
       HISTORY_MAX: 120,
       MAX_GRADE: 4,
+      GRADE_UNMEASURED: 0,
       MAX_SECONDS: 86400,
       MIN_MEDIAN_N: 5,
       MIN_TREND_N: 8,

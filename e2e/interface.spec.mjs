@@ -1,3 +1,7 @@
+/* The live regions. They must exist in the DOM from first paint (a region
+   injected together with its text is not announced) and must stay quiet
+   while the player is only moving the selection around. */
+
 import { expect, test } from '@playwright/test';
 
 /* Everything Chrome would hand to assistive tech. Text is collected from the
@@ -55,7 +59,8 @@ async function startGame(page) {
 
 const selectedCell = (page) => page.locator('#board .cell.sel').getAttribute('data-i');
 
-// MUST KILL: module level list shared by every test, move it into per test state
+/* Playwright runs one test at a time per worker, so a single list refilled per
+   test is safe. */
 const problems = [];
 
 test.beforeEach(async ({ page }) => {
@@ -146,6 +151,9 @@ test('icons decorate the buttons without touching their accessible names', async
   const graphics = nodes.filter((node) => /image|graphic|svg/iu.test(node.role));
   expect(graphics, 'an icon reached the accessibility tree').toEqual([]);
 
+  /* The sixth labelled button lives in the win modal, which is display:none
+     until the game is won, and a hidden element has no accessible name to
+     compute: measured, toHaveAccessibleName reports "" for it here. */
   await expect(page.locator('#againBtn use'), 'againBtn lost its icon').toHaveCount(1);
   await expect(page.locator('#againBtn')).toContainText('Otra al tiro');
   await expect(page.locator('#againBtn svg')).toHaveAttribute('aria-hidden', 'true');
@@ -184,6 +192,8 @@ test('pausing swaps the pause icon instead of wiping it out', async ({ page, con
     painted: true,
   });
   await expect(page.locator('#resumeBtn svg')).toHaveAttribute('aria-hidden', 'true');
+  /* Case insensitively, because .newgame uppercases its label in CSS and
+     Chrome computes the name from the transformed text. */
   await expect(page.locator('#resumeBtn')).toHaveAccessibleName('Seguir', { ignoreCase: true });
 
   await page.locator('#resumeBtn').click();
@@ -337,6 +347,9 @@ test('the board only claims a role its own children can satisfy', async ({ page,
     ).not.toHaveCount(0);
   }
 
+  /* What a browser still cannot answer here is the audit rule itself
+     (aria-required-children): Chrome reports the tree it built, not the
+     violations in it, so the flat children check above stays a DOM check. */
   await startGame(page);
   const nodes = await accessibleNodes(cdp);
   expect(nodes.some((node) => node.role === role && node.name === label)).toBe(true);
@@ -388,6 +401,14 @@ test('changing mode moves nothing, and still explains itself to a reader', async
   expect(await described(), 'the description was lost when the mode came on').toBe(text);
 });
 
+/* Double tap to zoom on iOS: a second tap within about 300ms was read as a
+   zoom gesture, so entering two digits quickly zoomed the page instead of
+   playing.
+
+   What this can check in Chromium is the declaration, not the iOS gesture. It
+   is asserted on body because the permitted behaviours are the intersection of
+   an element's value with its ancestors': the pad keys keep computing "auto"
+   and still cannot zoom, and body losing this is the only way that breaks. */
 test('a double tap cannot zoom the page, while pinch to zoom still can', async ({ page }) => {
   await startGame(page);
 
@@ -395,6 +416,9 @@ test('a double tap cannot zoom the page, while pinch to zoom still can', async (
     page.locator(selector).evaluate((node) => getComputedStyle(node).touchAction);
 
   expect(await touchAction('body'), 'double tap can zoom the page again').toBe('manipulation');
+  /* The walk up the ancestors runs only "up to the one that implements the
+     gesture (in other words, the first containing scrolling element)", and
+     .board is overflow:hidden, which makes it exactly that. */
   expect(
     await touchAction('#board'),
     'the board is back to inheriting a gesture the scroll container can truncate',
@@ -623,6 +647,8 @@ test('the buttons that close a dialog are the full width of it', async ({ page }
   expect(close.ratio, 'Listo no longer spans the dialog').toBeGreaterThan(0.8);
 });
 
+/* Stubbed, because no engine Playwright drives has a vibration motor and because
+   what is worth holding down is when the game asks and when it does not. */
 const stubVibrate = (page) =>
   page.addInitScript(() => {
     window.buzzLog = [];
@@ -689,6 +715,8 @@ test('a stored preference silences the buzz with no switch on screen', async ({ 
   ).toBe(false);
 });
 
+/* WebKit has never shipped the Vibration API and Chrome on iOS is WebKit, so
+   this is the common case. */
 test('a platform with no vibration is offered no switch and plays the same', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'vibrate', { configurable: true, value: undefined });
@@ -905,6 +933,10 @@ test('the win dialog cannot be tapped away', async ({ page }) => {
   await expect(page.locator('#winOverlay')).toBeVisible();
 });
 
+/* A click is dispatched to the nearest ancestor of where the press began and
+   where it ended, so a drag that starts on the dialog and lifts off beside it
+   arrives at the backdrop looking exactly like a tap there, and selecting a line
+   of the record used to be enough to close it. */
 test('a press that starts inside a dialog does not close it where it lifts', async ({ page }) => {
   await startGame(page);
   await page.locator('#newBtn').click();

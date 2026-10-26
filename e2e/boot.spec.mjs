@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
-// MUST KILL: labels and technique words are copied from the DIFF map in app.js, read them from the page
 const PRESETS = [
   { key: 'easy', label: 'Piola', word: 'directas' },
   { key: 'medium', label: 'Normal', word: 'bloques' },
@@ -325,6 +324,8 @@ test('keyboard focus is painted on the board, a pointer click is not', async ({ 
   expect(await ring()).toEqual({ visible: true, outline: 'solid 2px rgb(49, 80, 126)' });
 });
 
+/* The registration is deliberately swallowed by the page, so a worker that
+   never registers leaves navigator.serviceWorker.ready pending forever. */
 const readyScope = (page) =>
   page.evaluate(
     (limit) =>
@@ -340,9 +341,13 @@ const readyScope = (page) =>
 test('the service worker registers, scoped to the directory the site ships from', async ({
   page,
 }) => {
+  /* The scope has to be the directory index.html sits in: a worker registered
+     a level up would control everything else published from the same account. */
   const scope = await readyScope(page);
   expect(scope, 'no service worker took control of the page').not.toBeNull();
   expect(new URL(scope).pathname).toBe('/sudoku/');
+  /* Only the line below is Chromium bound, because Playwright reports worker
+     instances for Chromium alone. */
   if (test.info().project.name === 'chromium') {
     expect(page.context().serviceWorkers().length).toBeGreaterThan(0);
   }

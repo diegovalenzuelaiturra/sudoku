@@ -1,7 +1,6 @@
 /* Cache-first service worker for the sudoku app shell.
    Scope is the directory this file lives in: keep it beside index.html,
    never one level up, so it controls the whole app and nothing outside it. */
-// MUST KILL: build-time placeholder literal; a build-generated constant says so without prose.
 const CACHE_NAME = 'sudoku-__BUILD__';
 /* CacheStorage is keyed by origin, not by service worker scope. This site is a
    project page on an account domain shared with every other repository the same

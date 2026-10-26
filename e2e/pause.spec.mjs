@@ -1,3 +1,10 @@
+/* Playwright's own role engine is not enough either: measured on Playwright
+   1.62, getByRole() and ariaSnapshot() both still report all 81 cells while
+   the board is inert, because they compute roles from the DOM rather than
+   reading the browser's tree. So these tests ask Chrome over CDP for the tree
+   it actually exposes, where an inert subtree is ignored wholesale. That is
+   the tree a screen reader walks, and it is the only place this bug shows. */
+
 import { expect, test } from '@playwright/test';
 
 const CELL_NAME = /^Fila \d, columna \d/u;

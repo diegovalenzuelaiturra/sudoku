@@ -120,7 +120,8 @@ test('every job that builds the site installs what the build imports', () => {
 test('the job holding the publish credentials runs no third party code', () => {
   const workflow = readFileSync(join(root, '.github/workflows/deploy-pages.yml'), 'utf8');
 
-  // MUST KILL: jobs are sliced out of the YAML with a regex and a lookahead tail, so a real YAML parser would remove the \Z trap
+  /* The tail of the lookahead is $(?![\s\S]), not \Z: JavaScript has no \Z, and
+     in a non-unicode pattern it is an identity escape matching a literal "Z". */
   const jobs = [...workflow.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|$(?![\s\S]))/gmu)]
     .map(([, name, body]) => ({ name, body }))
     .filter(({ body }) => /^ {6}pages:\s*write/mu.test(body));
@@ -165,6 +166,16 @@ test('the test:coverage script still asks node to enforce a coverage floor', () 
     ['branches', 88],
     ['functions', 90],
   ]) {
+    /* Both spellings node accepts, "--flag=85" and "--flag 85", so reformatting
+       the script does not fail this test with a message claiming the flag was
+       dropped. Measured against node v24.18.0: the space form enforces the
+       threshold exactly like the = form.
+
+       Matched globally and read from the LAST occurrence, because that is the
+       one node applies. Also measured: appending "--test-coverage-lines=1" to a
+       script that already asks for 85 exits 0 on a tree at 57% coverage, so the
+       first match is the value node ignores, and reading it would let a floor
+       be lowered by adding to the script rather than by editing it. */
     const asked = [
       ...script.matchAll(new RegExp(`--test-coverage-${metric}[= ](\\d+(?:\\.\\d+)?)`, 'gu')),
     ];

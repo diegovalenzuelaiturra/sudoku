@@ -21,6 +21,7 @@ repos:
     rev: 0.38.2
     hooks:
       - id: check-dependabot
+      - id: check-github-actions
       - id: check-github-workflows
       - id: check-github-workflows-require-timeout
 
@@ -123,7 +124,6 @@ repos:
         pass_filenames: false
         files: \.(m?js|html|css)$|^biome\.json$
 
-      # MUST KILL: file scope is copied from the lint:spelling script, so a new player facing file must be added in both places
       - id: cspell
         name: cspell
         entry: npm run --silent lint:spelling
@@ -136,4 +136,4 @@ repos:
         entry: npm run test:coverage
         language: system
         pass_filenames: false
-        files: ^(scripts/|tests/|e2e/|\.github/workflows/|index\.html|app\.js|stats\.js|generator\.js|sw\.js|manifest\.webmanifest|404\.html|robots\.txt|package(-lock)?\.json|icons/)
+        files: ^(scripts/|tests/|e2e/|\.github/|index\.html|app\.js|stats\.js|generator\.js|sw\.js|manifest\.webmanifest|404\.html|robots\.txt|package(-lock)?\.json|icons/)

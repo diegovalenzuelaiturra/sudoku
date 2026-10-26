@@ -445,14 +445,13 @@
     const clues = request.clues;
     const target = request.grade;
     const attempts = request.attempts || 16;
-    // MUST KILL: the returned seed is the search seed and not the winning attempt seed; a separate named field makes that obvious
-    const baseSeed =
+    const searchSeed =
       (request.seed === undefined ? (Math.random() * 4294967296) >>> 0 : request.seed) >>> 0;
 
     let best = null;
     for (let t = 0; t < attempts; t++) {
-      const seed = (baseSeed + Math.imul(t, 0x9e3779b1)) >>> 0;
-      const board = attemptPuzzle(clues, target, seed);
+      const attemptSeed = (searchSeed + Math.imul(t, 0x9e3779b1)) >>> 0;
+      const board = attemptPuzzle(clues, target, attemptSeed);
       if (best === null || Math.abs(board.grade - target) < Math.abs(best.grade - target)) {
         best = board;
       }
@@ -465,8 +464,8 @@
       clues: best.clues,
       grade: best.grade,
       gradeName: GRADE_NAMES[best.grade],
-      seed: baseSeed,
-      code: baseSeed.toString(36),
+      seed: searchSeed,
+      code: searchSeed.toString(36),
     };
   }
 
