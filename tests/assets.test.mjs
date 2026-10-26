@@ -22,6 +22,12 @@ const PUBLISHED = [
   'icons/icon-512.png',
 ];
 
+const NOT_PRECACHED = {
+  'sw.js':
+    'the browser fetches a service worker script itself, on registration and on every ' +
+    'update check, and never routes that request through the fetch handler',
+};
+
 const PRIVATE = ['tests', 'node_modules', 'package.json', 'package-lock.json', '.github'];
 
 /* The paths sw.js promises to put in the cache on install. Parsed out of the
@@ -110,6 +116,25 @@ test('the service worker precaches relative paths that all exist', () => {
     /CACHE_NAME\s*=\s*'sudoku-__BUILD__'/u.test(sw),
     'the cache name no longer carries the build placeholder, so every deploy would reuse one cache',
   );
+});
+
+test('the service worker precaches every published file it can serve', () => {
+  const shell = new Set(appShell());
+
+  for (const rel of PUBLISHED) {
+    if (Object.hasOwn(NOT_PRECACHED, rel)) {
+      assert.ok(!shell.has(`./${rel}`), `${rel} is precached and also listed as not precached`);
+    } else {
+      assert.ok(
+        shell.has(`./${rel}`),
+        `${rel} is published but the app shell never caches it, so the installed app ` +
+          'loses it offline. Add it to APP_SHELL in sw.js, or to NOT_PRECACHED with the reason',
+      );
+    }
+  }
+  for (const rel of Object.keys(NOT_PRECACHED)) {
+    assert.ok(PUBLISHED.includes(rel), `NOT_PRECACHED names ${rel}, which is not published`);
+  }
 });
 
 test('the service worker precaches every icon the manifest names', () => {
