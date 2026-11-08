@@ -26,7 +26,7 @@
     "@j178/prek": "^0.5.9",
     "@playwright/test": "^1.64.1",
     "cspell": "^10.4.0",
-    "eslint": "^10.13.0",
+    "eslint": "^10.14.0",
     "eslint-plugin-oxlint": "^1.90.0",
     "fast-check": "^4.10.2",
     "globals": "^17.13.0",
