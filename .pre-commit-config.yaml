@@ -18,7 +18,7 @@ repos:
   # zizmor judges it safe and a missing one is safe. Neither objects, and the
   # job then runs to GitHub's six hour default.
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.38.2
+    rev: 0.39.0
     hooks:
       - id: check-dependabot
       - id: check-github-actions
@@ -34,7 +34,7 @@ repos:
   # because setting args in this file replaces the manifest's args rather than
   # adding to them.
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.31.1
+    rev: v1.32.0
     hooks:
       - id: zizmor
         args: ["--no-progress", "--offline"]
