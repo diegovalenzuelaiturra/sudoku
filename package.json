@@ -18,7 +18,7 @@
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.4",
+    "@biomejs/biome": "^2.6.6",
     "@cspell/dict-es-es": "^3.0.9",
     "@eslint/css": "^2.0.1",
     "@eslint/js": "^10.0.1",
